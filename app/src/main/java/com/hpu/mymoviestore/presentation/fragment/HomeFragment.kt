@@ -139,8 +139,10 @@ class HomeFragment : Fragment() {
             putExtra(DetailActivity.EXTRA_VIDEO_DIRECTOR, video.director)
             putExtra(DetailActivity.EXTRA_VIDEO_ACTORS, video.actors)
             putExtra(DetailActivity.EXTRA_VIDEO_DESCRIPTION, video.description)
+            // 新增：传递详情页URL
+            putExtra(DetailActivity.EXTRA_VIDEO_DETAIL_URL, video.detailUrl)
         }
-        Log.d(TAG, "跳转到详情页: id=${video.id}, title=${video.title}")
+        Log.d(TAG, "跳转到详情页: id=${video.id}, title=${video.title}, detailUrl=${video.detailUrl}")
         startActivity(intent)
     }
 

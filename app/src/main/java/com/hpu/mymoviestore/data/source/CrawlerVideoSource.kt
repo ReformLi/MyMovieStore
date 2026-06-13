@@ -112,67 +112,55 @@ class CrawlerVideoSource(
             humanDelay()
             Log.d("Crawler", "开始解析详情页: $detailUrl")
 
-            // 1. 请求详情页，获取第一个播放链接
+            // 1. 先请求详情页，找到第一个播放链接（如 /vodplay/68381-1-1.html）
             val detailDoc = Jsoup.connect(detailUrl)
                 .timeout(15000)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .get()
 
-            // 从第一个播放通道中提取第一个剧集链接
-            val firstPlayLink = detailDoc.select(".channel-set[data-index='1'] a.item").first()
-                ?: detailDoc.select(".channel-set a.item").first()
-
-            if (firstPlayLink == null) {
-                Log.e("Crawler", "详情页中未找到任何播放链接")
+            val playLink = detailDoc.select(".channel-set a.item").first()
+            if (playLink == null) {
+                Log.e("Crawler", "未找到播放链接")
                 return@withContext Result.failure(IOException("未找到播放链接"))
             }
 
-            val playPageUrl = firstPlayLink.attr("abs:href")
+            val playPageUrl = playLink.attr("abs:href")
             Log.d("Crawler", "找到播放页: $playPageUrl")
 
-            // 2. 请求播放页，提取视频地址
+            // 2. 请求播放页，提取 player_aaaa 变量中的 url
             val playDoc = Jsoup.connect(playPageUrl)
                 .timeout(15000)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .get()
 
-            // 打印播放页的前2000字符，方便你分析结构
-            val pageSample = playDoc.html().take(2000)
-            Log.d("Crawler", "播放页片段: $pageSample")
-
-            // 常见视频地址提取方式（按优先级尝试）
-            var videoUrl = ""
-
-            // 方式1：video 标签的 src
-            videoUrl = playDoc.select("video source").attr("abs:src")
-            if (videoUrl.isBlank()) {
-                videoUrl = playDoc.select("video").attr("src")
+            // 查找包含 player_aaaa 的 script 标签
+            val scriptElement = playDoc.select("script:containsData(player_aaaa)").first()
+            if (scriptElement == null) {
+                Log.e("Crawler", "未找到 player_aaaa 脚本")
+                return@withContext Result.failure(IOException("未找到播放数据"))
             }
 
-            // 方式2：iframe 的 src（可能嵌套第三方播放器）
-            if (videoUrl.isBlank()) {
-                videoUrl = playDoc.select("iframe").attr("abs:src")
-            }
+            val scriptContent = scriptElement.html()
+            Log.d("Crawler", "脚本片段: ${scriptContent.take(200)}")
 
-            // 方式3：从 JavaScript 变量中提取（例如 player_aaaa= {url:"..."}）
-            if (videoUrl.isBlank()) {
-                val scripts = playDoc.select("script").eachText()
-                val regex = Regex("(https?://[^\"]+\\.m3u8[^\"]*)")
-                for (script in scripts) {
-                    val match = regex.find(script)
-                    if (match != null) {
-                        videoUrl = match.value
-                        break
-                    }
-                }
-            }
-
-            if (videoUrl.isNotBlank()) {
+            // 使用正则提取 "url":"https://..."
+            val urlRegex = Regex("\"url\":\"([^\"]+)\"")
+            val match = urlRegex.find(scriptContent)
+            val videoUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+            if (!videoUrl.isNullOrBlank()) {
                 Log.d("Crawler", "成功提取视频地址: $videoUrl")
                 Result.success(videoUrl)
             } else {
-                Log.e("Crawler", "播放页中未找到视频地址")
-                Result.failure(IOException("未找到视频地址"))
+                // 备用方案：直接查找 .m3u8 链接
+                val m3u8Regex = Regex("https?://[^\"]+\\.m3u8")
+                val m3u8Match = m3u8Regex.find(scriptContent)
+                if (m3u8Match != null) {
+                    Log.d("Crawler", "通过 m3u8 正则找到: ${m3u8Match.value}")
+                    Result.success(m3u8Match.value)
+                } else {
+                    Log.e("Crawler", "未能提取视频地址")
+                    Result.failure(IOException("未找到视频地址"))
+                }
             }
         } catch (e: Exception) {
             Log.e("Crawler", "获取视频地址失败", e)

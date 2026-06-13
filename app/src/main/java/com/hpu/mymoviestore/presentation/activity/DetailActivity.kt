@@ -53,6 +53,7 @@ class DetailActivity : AppCompatActivity() {
         const val EXTRA_VIDEO_DIRECTOR = "extra_video_director"
         const val EXTRA_VIDEO_ACTORS = "extra_video_actors"
         const val EXTRA_VIDEO_DESCRIPTION = "extra_video_description"
+        const val EXTRA_VIDEO_DETAIL_URL = "extra_video_detail_url"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,6 +76,7 @@ class DetailActivity : AppCompatActivity() {
         val director = intent.getStringExtra(EXTRA_VIDEO_DIRECTOR) ?: ""
         val actors = intent.getStringExtra(EXTRA_VIDEO_ACTORS) ?: ""
         val description = intent.getStringExtra(EXTRA_VIDEO_DESCRIPTION) ?: ""
+        val detailUrl = intent.getStringExtra(EXTRA_VIDEO_DETAIL_URL) ?: ""
 
         title = videoTitle
 
@@ -123,7 +125,7 @@ class DetailActivity : AppCompatActivity() {
         } else {
             Log.d(TAG, "封面为空，不加载封面图")
         }
-
+        binding.btnPlay.isEnabled = false   // 初始不可点
         // 3. 播放按钮
         binding.btnPlay.setOnClickListener {
             Log.d(TAG, "点击播放: url=${if (videoUrl.isNotEmpty()) videoUrl.take(60) + "..." else "(空)"}")
@@ -139,7 +141,7 @@ class DetailActivity : AppCompatActivity() {
                     )
                 )
             } else {
-                Toast.makeText(this@DetailActivity, "视频链接为空", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@DetailActivity, "视频地址加载中，请稍后", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -157,19 +159,47 @@ class DetailActivity : AppCompatActivity() {
     }
 
     /**
-     * 异步从 VideoRepository（JSON 挡板）回查视频详情，填充导演/演员/简介/playUrl
-     * 若 videoId 无效或找不到，会在日志中提示并保持 UI 不变。
+     * 获取视频详情（优先使用 detailUrl 爬取，否则 fallback 到本地 JSON）
      */
     private fun fetchVideoDetail() {
+        val detailUrl = intent.getStringExtra(EXTRA_VIDEO_DETAIL_URL) ?: ""
         lifecycleScope.launch {
+            if (detailUrl.isNotBlank()) {
+                // 优先使用爬虫获取真实播放地址
+                Log.d(TAG, "使用爬虫获取视频地址: detailUrl=$detailUrl")
+                val videoFromCrawler = MovieApplication.get().videoRepository.getVideoByDetailUrl(detailUrl)
+                if (videoFromCrawler != null && videoFromCrawler.playUrl.isNotBlank()) {
+                    // 更新播放地址
+                    videoUrl = videoFromCrawler.playUrl
+                    Log.d(TAG, "爬虫获取到播放地址: ${videoUrl.take(60)}")
+                    // 可选：同时更新其他字段（如果爬虫返回了完整信息）
+                    if (videoFromCrawler.title.isNotBlank()) binding.tvTitle.text = videoFromCrawler.title
+                    if (videoFromCrawler.coverUrl.isNotBlank()) {
+                        videoCover = videoFromCrawler.coverUrl
+                        binding.ivCover.load(videoFromCrawler.coverUrl)
+                    }
+                    if (videoFromCrawler.director.isNotBlank()) binding.tvDirector.text = videoFromCrawler.director
+                    if (videoFromCrawler.actors.isNotBlank()) binding.tvActors.text = videoFromCrawler.actors
+                    if (videoFromCrawler.description.isNotBlank()) binding.tvDescription.text = videoFromCrawler.description
+                    // 年份、地区等按需更新
+                    // ...
+                    // 刷新播放按钮可用性
+                    binding.btnPlay.isEnabled = true
+                    return@launch
+                } else {
+                    Log.w(TAG, "爬虫获取播放地址失败，尝试本地 JSON 回查")
+                }
+            }
+
+            // 降级：从本地 JSON 挡板根据 videoId 回查
             val video = MovieApplication.get().videoRepository.getVideoById(videoId)
             if (video == null) {
                 Log.w(TAG, "回查失败: 未找到 videoId=$videoId 的视频")
                 return@launch
             }
-            Log.d(TAG, "回查成功: director=${video.director}, actors=${video.actors}")
+            Log.d(TAG, "本地回查成功: director=${video.director}, actors=${video.actors}")
 
-            // 年份/地区（仅当尚未显示时才补）
+            // 更新 UI 缺失字段
             if (binding.tvYear.text.isNullOrEmpty()) {
                 val yearArea = StringBuilder()
                 if (video.year.isNotEmpty()) yearArea.append(video.year)
@@ -182,12 +212,10 @@ class DetailActivity : AppCompatActivity() {
                     binding.tvYear.visibility = android.view.View.VISIBLE
                 }
             }
-
             if (video.rating.isNotEmpty() && binding.tvRating.text.isNullOrEmpty()) {
                 binding.tvRating.text = video.rating
                 binding.tvRating.visibility = android.view.View.VISIBLE
             }
-
             if (binding.tvDirector.text == "加载中...") binding.tvDirector.text = video.director
             if (binding.tvActors.text == "加载中...") binding.tvActors.text = video.actors
             if (binding.tvDescription.text == "加载中...") binding.tvDescription.text = video.description
@@ -195,9 +223,8 @@ class DetailActivity : AppCompatActivity() {
             // 若 playUrl 此前为空，用回查结果更新
             if (videoUrl.isEmpty() && video.playUrl.isNotEmpty()) {
                 videoUrl = video.playUrl
-                Log.d(TAG, "从回查结果获取 playUrl: ${video.playUrl.take(60)}")
+                Log.d(TAG, "从本地回查获取 playUrl: ${video.playUrl.take(60)}")
             }
-
             // 封面兜底
             if (videoCover.isEmpty() && video.coverUrl.isNotEmpty()) {
                 videoCover = video.coverUrl

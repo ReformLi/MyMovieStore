@@ -75,10 +75,9 @@ class VideoRepository(
         val playUrlResult = crawlerSource.fetchVideoUrl(detailUrl)
         if (playUrlResult.isSuccess) {
             val playUrl = playUrlResult.getOrNull() ?: return null
-            // 这里可以返回一个临时的 VideoItem，只包含播放地址
             return VideoItem(
                 id = detailUrl.hashCode().toLong(),
-                title = "",
+                title = "",  // 可以留空，或者额外解析标题
                 coverUrl = "",
                 category = "",
                 rating = "",
@@ -87,7 +86,8 @@ class VideoRepository(
                 director = "",
                 actors = "",
                 description = "",
-                playUrl = playUrl
+                playUrl = playUrl,
+                detailUrl = detailUrl
             )
         }
         return null
