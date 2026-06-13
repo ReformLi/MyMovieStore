@@ -1,0 +1,147 @@
+{
+  "class": [
+    {
+      "type_id": "1",
+      "type_name": "电影"
+    },
+    {
+      "type_id": "2",
+      "type_name": "电视剧"
+    },
+    {
+      "type_id": "3",
+      "type_name": "综艺"
+    },
+    {
+      "type_id": "4",
+      "type_name": "动漫"
+    },
+    {
+      "type_id": "5",
+      "type_name": "纪录片"
+    }
+  ],
+  "list": [
+    {
+      "vod_id": 1001,
+      "vod_name": "流浪地球2",
+      "vod_pic": "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2877710888.webp",
+      "vod_remarks": "8.3",
+      "vod_actor": "吴京/刘德华/李雪健/沙溢",
+      "vod_director": "郭帆",
+      "vod_year": "2023",
+      "vod_area": "中国大陆",
+      "vod_content": "太阳即将毁灭，人类在地球表面建造出巨大的推进器，寻找新的家园。然而宇宙之路危机四伏，为了拯救地球，流浪地球时代的年轻人再次挺身而出，展开争分夺秒的生死之战。",
+      "vod_play_url": "http://vjs.zencdn.net/v/oceans.mp4",
+      "type_name": "电影"
+    },
+    {
+      "vod_id": 1002,
+      "vod_name": "满江红",
+      "vod_pic": "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2883689840.webp",
+      "vod_remarks": "7.8",
+      "vod_actor": "沈腾/易烊千玺/张译/雷佳音",
+      "vod_director": "张艺谋",
+      "vod_year": "2023",
+      "vod_area": "中国大陆",
+      "vod_content": "南宋绍兴年间，岳飞死后四年，秦桧率领大军与金国会谈。会谈前夜，金国使者死在宰相驻地，所携密信也不翼而飞。小兵张大与亲兵营副统领孙均机缘巧合被裹挟进这巨大阴谋之中。",
+      "vod_play_url": "https://www.w3schools.com/html/movie.mp4",
+      "type_name": "电影"
+    },
+    {
+      "vod_id": 1003,
+      "vod_name": "阿凡达：水之道",
+      "vod_pic": "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2883432250.webp",
+      "vod_remarks": "8.0",
+      "vod_actor": "萨姆·沃辛顿/佐伊·索尔达娜",
+      "vod_director": "詹姆斯·卡梅隆",
+      "vod_year": "2022",
+      "vod_area": "美国",
+      "vod_content": "杰克·萨利与奈蒂莉组建了家庭，他们的孩子也逐渐成长。然而危机未曾消散，萨利一家拼尽全力彼此守护、奋力求生，最终来到潘多拉星球临海的岛礁族寻求庇护。",
+      "vod_play_url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      "type_name": "电影"
+    },
+    {
+      "vod_id": 2001,
+      "vod_name": "狂飙",
+      "vod_pic": "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2886519423.webp",
+      "vod_remarks": "9.1",
+      "vod_actor": "张译/张颂文/李一桐/张志坚",
+      "vod_director": "徐纪周",
+      "vod_year": "2023",
+      "vod_area": "中国大陆",
+      "vod_content": "讲述了以一线刑警安欣为代表的正义力量，与黑恶势力展开的长达二十年的生死搏斗故事，展现扫黑行动中的黑白较量和复杂人性。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_5mb.mp4",
+      "type_name": "电视剧"
+    },
+    {
+      "vod_id": 2002,
+      "vod_name": "三体",
+      "vod_pic": "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2892878043.webp",
+      "vod_remarks": "8.7",
+      "vod_actor": "张鲁一/于和伟/陈瑾/王子文",
+      "vod_director": "杨磊",
+      "vod_year": "2023",
+      "vod_area": "中国大陆",
+      "vod_content": "2007年，人类对宇宙的认知被彻底推翻。纳米科学家汪淼进入神秘的网络游戏《三体》，开始逐步逼近这个世界的真相。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_10mb.mp4",
+      "type_name": "电视剧"
+    },
+    {
+      "vod_id": 3001,
+      "vod_name": "奔跑吧",
+      "vod_pic": "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2549998601.webp",
+      "vod_remarks": "6.5",
+      "vod_actor": "李晨/郑恺/杨颖/沙溢",
+      "vod_director": "姚译添",
+      "vod_year": "2023",
+      "vod_area": "中国大陆",
+      "vod_content": "大型户外竞技真人秀节目，嘉宾分组进行各种有趣的游戏挑战。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4",
+      "type_name": "综艺"
+    },
+    {
+      "vod_id": 4001,
+      "vod_name": "灌篮高手",
+      "vod_pic": "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2893311894.webp",
+      "vod_remarks": "9.2",
+      "vod_actor": "动画",
+      "vod_director": "井上雄彦",
+      "vod_year": "2022",
+      "vod_area": "日本",
+      "vod_content": "湘北高中篮球队挑战全国大赛的热血故事。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_2mb.mp4",
+      "type_name": "动漫"
+    },
+    {
+      "vod_id": 4002,
+      "vod_name": "进击的巨人",
+      "vod_pic": "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2570791709.webp",
+      "vod_remarks": "9.4",
+      "vod_actor": "动画",
+      "vod_director": "荒木哲郎",
+      "vod_year": "2013",
+      "vod_area": "日本",
+      "vod_content": "743年，人类的天敌「巨人」突然出现，幸存的人类躲进了三重高墙之中，苟延残喘。主人公艾伦·耶格尔目睹母亲被巨人吞食后，立誓要驱逐所有的巨人。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_5mb.mp4",
+      "type_name": "动漫"
+    },
+    {
+      "vod_id": 5001,
+      "vod_name": "地球脉动",
+      "vod_pic": "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p1910824951.webp",
+      "vod_remarks": "9.9",
+      "vod_actor": "David Attenborough",
+      "vod_director": "Alastair Fothergill",
+      "vod_year": "2016",
+      "vod_area": "英国",
+      "vod_content": "BBC出品的自然纪录片，以极富冲击力的镜头语言和震撼心灵的音乐，全方位、多角度地展现了地球的壮丽风光和野生动物的生活。",
+      "vod_play_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_10mb.mp4",
+      "type_name": "纪录片"
+    }
+  ],
+  "page": 1,
+  "pagecount": 1,
+  "limit": 20,
+  "total": 9
+}
