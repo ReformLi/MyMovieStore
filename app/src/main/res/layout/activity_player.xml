@@ -1,20 +1,107 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/playerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#000000">
+    android:background="#000000"
+    android:keepScreenOn="true">
 
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_gravity="center"
-        app:use_controller="true"
+        app:resize_mode="fit"
+        app:show_timeout="4000"
         app:show_buffering="when_playing"
         app:show_subtitle_button="false"
         app:show_vr_button="false"
-        app:surface_type="texture_view" />
+        app:surface_type="texture_view"
+        app:use_controller="true" />
 
-</LinearLayout>
+    <LinearLayout
+        android:id="@+id/topControls"
+        android:layout_width="match_parent"
+        android:layout_height="88dp"
+        android:background="@drawable/bg_player_top_gradient"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingTop="16dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="16dp"
+        tools:visibility="visible">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_player_round_button"
+            android:contentDescription="返回"
+            android:padding="10dp"
+            android:src="@drawable/ic_player_back" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvPlayerTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                tools:text="红了樱桃绿了芭蕉" />
+
+            <TextView
+                android:id="@+id/tvPlayerEpisode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#CCFFFFFF"
+                android:textSize="13sp"
+                android:visibility="gone"
+                tools:text="第2集"
+                tools:visibility="visible" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btnRotate"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_player_round_button"
+            android:contentDescription="切换屏幕方向"
+            android:padding="10dp"
+            android:src="@drawable/ic_player_rotate" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvGestureTip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_player_gesture_tip"
+        android:gravity="center"
+        android:minWidth="120dp"
+        android:paddingStart="18dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="12dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:text="音量 60%"
+        tools:visibility="visible" />
+</FrameLayout>

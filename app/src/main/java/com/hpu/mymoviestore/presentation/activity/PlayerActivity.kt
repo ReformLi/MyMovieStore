@@ -2,8 +2,14 @@ package com.hpu.mymoviestore.presentation.activity
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.media.AudioManager
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.media3.common.MediaItem
@@ -15,9 +21,12 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.smoothstreaming.SsMediaSource
+import androidx.media3.ui.PlayerView
 import com.hpu.mymoviestore.databinding.ActivityPlayerBinding
 import com.hpu.mymoviestore.presentation.viewmodel.PlayerViewModel
 import okhttp3.OkHttpClient
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 播放器 Activity
@@ -58,6 +67,31 @@ class PlayerActivity : AppCompatActivity() {
     private val progressSaveIntervalMs: Long = 30_000L   // 每 30 秒写入一次
     private var playbackRunnable: Runnable? = null
     private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hideGestureTipRunnable = Runnable {
+        if (::binding.isInitialized) {
+            binding.tvGestureTip.visibility = View.GONE
+        }
+    }
+
+    private lateinit var audioManager: AudioManager
+    private var maxVolume: Int = 0
+    private var downX: Float = 0f
+    private var downY: Float = 0f
+    private var startVolume: Int = 0
+    private var startBrightness: Float = 0.5f
+    private var startSeekPositionMs: Long = 0L
+    private var targetSeekPositionMs: Long = 0L
+    private var gestureMode: GestureMode = GestureMode.NONE
+    private var isVerticalGestureAdjusting: Boolean = false
+    private var isHorizontalSeekAdjusting: Boolean = false
+    private var ignoreGestureForControls: Boolean = false
+
+    private enum class GestureMode {
+        NONE,
+        BRIGHTNESS,
+        VOLUME,
+        SEEK
+    }
 
     companion object {
         private const val TAG = "PlayerActivity"
@@ -108,6 +142,9 @@ class PlayerActivity : AppCompatActivity() {
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        enterImmersiveMode()
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -127,6 +164,9 @@ class PlayerActivity : AppCompatActivity() {
         title = videoTitle
 
         viewModel = ViewModelProvider(this)[PlayerViewModel::class.java]
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        setupPlayerUi()
 
         // ① 查询历史记录中的播放进度（用于续播）
         Log.d(TAG, "查询历史记录中的进度: videoId=$videoId")
@@ -247,6 +287,240 @@ class PlayerActivity : AppCompatActivity() {
             }
     }
 
+    private fun setupPlayerUi() {
+        binding.tvPlayerTitle.text = videoTitle.ifBlank { "正在播放" }
+        val normalizedEpisode = normalizeEpisodeTitle(episodeTitle)
+        if (normalizedEpisode.isNotBlank()) {
+            binding.tvPlayerEpisode.text = normalizedEpisode
+            binding.tvPlayerEpisode.visibility = View.VISIBLE
+        } else {
+            binding.tvPlayerEpisode.visibility = View.GONE
+        }
+
+        binding.btnBack.setOnClickListener {
+            finish()
+        }
+
+        binding.btnRotate.setOnClickListener {
+            val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+            requestedOrientation = if (isPortrait) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            }
+            binding.playerView.showController()
+            binding.topControls.visibility = View.VISIBLE
+        }
+
+        binding.playerView.setControllerVisibilityListener(
+            PlayerView.ControllerVisibilityListener { visibility ->
+                binding.topControls.visibility = visibility
+            }
+        )
+    }
+
+    private fun enterImmersiveMode() {
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            enterImmersiveMode()
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enterImmersiveMode()
+        binding.playerView.showController()
+        binding.topControls.visibility = View.VISIBLE
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (!::binding.isInitialized) return super.dispatchTouchEvent(event)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                startBrightness = currentWindowBrightness()
+                startSeekPositionMs = player?.currentPosition ?: 0L
+                targetSeekPositionMs = startSeekPositionMs
+                gestureMode = GestureMode.NONE
+                isVerticalGestureAdjusting = false
+                isHorizontalSeekAdjusting = false
+                ignoreGestureForControls = isTouchInControllerArea(downY)
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                if (ignoreGestureForControls) {
+                    return super.dispatchTouchEvent(event)
+                }
+
+                val deltaX = event.x - downX
+                val deltaY = event.y - downY
+                val absDeltaX = abs(deltaX)
+                val absDeltaY = abs(deltaY)
+
+                if (!isHorizontalSeekAdjusting &&
+                    !isVerticalGestureAdjusting &&
+                    absDeltaX > dp(24) &&
+                    absDeltaX > absDeltaY * 1.2f
+                ) {
+                    isHorizontalSeekAdjusting = true
+                    gestureMode = GestureMode.SEEK
+                    binding.playerView.hideController()
+                }
+
+                if (!isHorizontalSeekAdjusting &&
+                    !isVerticalGestureAdjusting &&
+                    absDeltaY > dp(18) &&
+                    absDeltaY > absDeltaX * 1.2f
+                ) {
+                    isVerticalGestureAdjusting = true
+                    gestureMode = if (downX < binding.playerRoot.width / 2f) {
+                        GestureMode.BRIGHTNESS
+                    } else {
+                        GestureMode.VOLUME
+                    }
+                }
+
+                if (isVerticalGestureAdjusting) {
+                    handleVerticalGesture(deltaY)
+                    return true
+                }
+
+                if (isHorizontalSeekAdjusting) {
+                    handleHorizontalSeekGesture(deltaX)
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (isHorizontalSeekAdjusting) {
+                    player?.seekTo(targetSeekPositionMs)
+                    saveCurrentProgress(true)
+                    hideGestureTipDelay()
+                    isHorizontalSeekAdjusting = false
+                    gestureMode = GestureMode.NONE
+                    binding.playerView.showController()
+                    return true
+                }
+
+                if (isVerticalGestureAdjusting) {
+                    hideGestureTipDelay()
+                    isVerticalGestureAdjusting = false
+                    gestureMode = GestureMode.NONE
+                    return true
+                }
+            }
+        }
+
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun handleHorizontalSeekGesture(deltaX: Float) {
+        val p = player ?: return
+        val duration = p.duration
+        if (duration <= 0) {
+            showGestureTip("正在获取时长")
+            return
+        }
+
+        val width = binding.playerRoot.width.coerceAtLeast(1)
+        val maxSeekDeltaMs = (duration / 5).coerceIn(30_000L, 300_000L)
+        val ratio = (deltaX / width).coerceIn(-1f, 1f)
+        val seekOffsetMs = (ratio * maxSeekDeltaMs).roundToInt().toLong()
+        targetSeekPositionMs = (startSeekPositionMs + seekOffsetMs).coerceIn(0L, duration)
+
+        val actionText = if (seekOffsetMs >= 0) "快进" else "后退"
+        showGestureTip(
+            "$actionText ${formatTime(abs(seekOffsetMs))}\n" +
+                "${formatTime(targetSeekPositionMs)} / ${formatTime(duration)}"
+        )
+    }
+
+    private fun handleVerticalGesture(deltaY: Float) {
+        val height = binding.playerRoot.height.coerceAtLeast(1)
+        val percentDelta = (-deltaY / height).coerceIn(-1f, 1f)
+
+        when (gestureMode) {
+            GestureMode.BRIGHTNESS -> {
+                val brightness = (startBrightness + percentDelta).coerceIn(0.02f, 1f)
+                val attrs = window.attributes
+                attrs.screenBrightness = brightness
+                window.attributes = attrs
+                showGestureTip("亮度 ${(brightness * 100).roundToInt()}%")
+            }
+
+            GestureMode.VOLUME -> {
+                val targetVolume = (startVolume + percentDelta * maxVolume)
+                    .roundToInt()
+                    .coerceIn(0, maxVolume)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+                showGestureTip("音量 ${(targetVolume * 100f / maxVolume).roundToInt()}%")
+            }
+
+            GestureMode.SEEK -> Unit
+            GestureMode.NONE -> Unit
+        }
+    }
+
+    private fun isTouchInControllerArea(y: Float): Boolean {
+        val height = binding.playerRoot.height
+        return height > 0 && y > height - dp(96)
+    }
+
+    private fun currentWindowBrightness(): Float {
+        val current = window.attributes.screenBrightness
+        return if (current >= 0f) current else 0.5f
+    }
+
+    private fun showGestureTip(text: String) {
+        binding.tvGestureTip.text = text
+        binding.tvGestureTip.visibility = View.VISIBLE
+        binding.tvGestureTip.removeCallbacks(hideGestureTipRunnable)
+    }
+
+    private fun hideGestureTipDelay() {
+        binding.tvGestureTip.removeCallbacks(hideGestureTipRunnable)
+        binding.tvGestureTip.postDelayed(hideGestureTipRunnable, 700)
+    }
+
+    private fun normalizeEpisodeTitle(title: String): String {
+        if (title.isBlank()) return ""
+        val number = Regex("\\d+").find(title)?.value?.toIntOrNull()
+        return if (number != null && title.contains("集")) {
+            "第${number}集"
+        } else {
+            title
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        val totalSeconds = (ms / 1000).coerceAtLeast(0)
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            "%d:%02d:%02d".format(hours, minutes, seconds)
+        } else {
+            "%02d:%02d".format(minutes, seconds)
+        }
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
     /**
      * 启动定期写入进度的轮询（避免频繁写入数据库）
      * 规则：每 30 秒写入一次；实际位置与上次写入位置差异 ≥ 30s 才写（避免抖动）
@@ -324,6 +598,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "onResume → 恢复播放")
+        enterImmersiveMode()
         player?.play()
         startProgressSaver()
     }
@@ -335,5 +610,6 @@ class PlayerActivity : AppCompatActivity() {
         saveCurrentProgress(true)
         stopProgressSaver()
         releasePlayer()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }
