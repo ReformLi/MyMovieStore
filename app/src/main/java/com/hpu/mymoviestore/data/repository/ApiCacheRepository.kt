@@ -42,6 +42,20 @@ class ApiCacheRepository(private val dao: ApiCacheDao) {
     }
 
     /**
+     * 获取某条有效缓存的剩余 TTL 秒数。
+     *
+     * 用于同一组分页缓存对齐过期时间：例如搜索结果首页缓存 30 分钟，
+     * 后续页缓存时复用首页剩余秒数，让同一关键词的分页同时失效。
+     */
+    suspend fun getRemainingTtlSeconds(cacheKey: String): Long? {
+        val now = System.currentTimeMillis()
+        val cached = dao.getValidCache(cacheKey, now) ?: return null
+        val remainSec = ((cached.expiredAt - now) / 1000).coerceAtLeast(0)
+        Log.d(TAG, "缓存剩余 TTL: key='$cacheKey', remain=${remainSec}s")
+        return remainSec
+    }
+
+    /**
      * 写入缓存（cacheKey 为主键，已存在则替换，实现 upsert）
      */
     suspend fun put(cacheKey: String, jsonPayload: String, ttlSeconds: Long = ApiCacheEntity.TTL_ONE_DAY) {

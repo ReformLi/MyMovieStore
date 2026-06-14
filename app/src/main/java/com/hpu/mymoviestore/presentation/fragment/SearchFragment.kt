@@ -7,6 +7,7 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.inputmethod.EditorInfo
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -20,7 +21,7 @@ import com.hpu.mymoviestore.data.entity.SearchHistoryEntity
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentSearchBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
-import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
+import com.hpu.mymoviestore.presentation.adapter.SearchResultAdapter
 import com.hpu.mymoviestore.presentation.viewmodel.SearchHistoryViewModel
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 
@@ -45,7 +46,11 @@ class SearchFragment : Fragment() {
 
     private lateinit var viewModel: VideoViewModel
     private lateinit var historyViewModel: SearchHistoryViewModel
-    private lateinit var adapter: VideoAdapter
+    private lateinit var adapter: SearchResultAdapter
+    private var currentKeyword: String = ""
+    private var currentPage: Int = 1
+    private var hasPrevPage: Boolean = false
+    private var hasNextPage: Boolean = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -62,13 +67,11 @@ class SearchFragment : Fragment() {
 
         viewModel = ViewModelProvider(this)[VideoViewModel::class.java]
         historyViewModel = ViewModelProvider(this)[SearchHistoryViewModel::class.java]
-        adapter = VideoAdapter { video -> openDetail(video) }
+        adapter = SearchResultAdapter { video -> openDetail(video) }
 
         setupViews()
         observeData()
-
-        // 首次加载：全量视频列表
-        viewModel.loadAllVideos()
+        binding.tvEmpty.visibility = View.VISIBLE
     }
 
     private fun setupViews() {
@@ -76,7 +79,7 @@ class SearchFragment : Fragment() {
         binding.recyclerView.adapter = adapter
         Log.d(TAG, "RecyclerView + VideoAdapter 初始化完成")
 
-        // 文本变化：关键字为空 → 显示搜索历史 + 全量列表；非空 → 隐藏历史 + 搜索
+        // 文本变化：关键字为空时显示搜索历史；实际搜索由按钮、键盘搜索或历史词触发，避免频繁请求源站
         binding.etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
@@ -84,12 +87,13 @@ class SearchFragment : Fragment() {
                 val keyword = s?.toString()?.trim() ?: ""
                 Log.d(TAG, "搜索框变化: '$keyword'")
                 if (keyword.isEmpty()) {
-                    viewModel.loadAllVideos()
-                    // 关键字为空，显示搜索历史
                     binding.layoutSearchHistory.visibility = View.VISIBLE
+                    binding.tvSearchSummary.visibility = View.GONE
+                    binding.layoutPagination.visibility = View.GONE
+                    binding.recyclerView.visibility = View.GONE
+                    binding.tvEmpty.text = "输入关键词后点击搜索"
+                    binding.tvEmpty.visibility = View.VISIBLE
                 } else {
-                    viewModel.searchVideos(keyword)
-                    // 输入内容后，隐藏搜索历史（避免干扰搜索结果）
                     binding.layoutSearchHistory.visibility = View.GONE
                 }
             }
@@ -100,11 +104,31 @@ class SearchFragment : Fragment() {
         // 输入法的"搜索"按钮：提交搜索 → 写入搜索历史
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             val keyword = binding.etSearch.text?.toString()?.trim() ?: ""
-            if (keyword.isNotEmpty()) {
-                Log.d(TAG, "用户提交搜索: '$keyword' → 写入搜索历史")
-                historyViewModel.addKeyword(keyword)
+            if (actionId == EditorInfo.IME_ACTION_SEARCH && keyword.isNotEmpty()) {
+                performSearch(keyword, 1)
+                true
+            } else {
+                false
             }
-            false
+        }
+
+        binding.btnSearch.setOnClickListener {
+            val keyword = binding.etSearch.text?.toString()?.trim().orEmpty()
+            if (keyword.isNotEmpty()) {
+                performSearch(keyword, 1)
+            }
+        }
+
+        binding.btnPrevPage.setOnClickListener {
+            if (hasPrevPage && currentPage > 1) {
+                performSearch(currentKeyword, currentPage - 1)
+            }
+        }
+
+        binding.btnNextPage.setOnClickListener {
+            if (hasNextPage) {
+                performSearch(currentKeyword, currentPage + 1)
+            }
         }
 
         // 点击"清空历史"
@@ -120,13 +144,25 @@ class SearchFragment : Fragment() {
      *  - 搜索历史：searchHistory → 动态生成 Chip 并展示
      */
     private fun observeData() {
-        viewModel.allVideos.observe(viewLifecycleOwner) { list ->
-            Log.d(TAG, "allVideos 观察到变化: ${list?.size ?: 0} 条")
-            renderList(list.orEmpty())
+        viewModel.searchPageResult.observe(viewLifecycleOwner) { result ->
+            Log.d(TAG, "searchPageResult: keyword=${result.keyword}, page=${result.page}, size=${result.items.size}")
+            currentKeyword = result.keyword
+            currentPage = result.page
+            hasPrevPage = result.hasPrev
+            hasNextPage = result.hasNext
+            renderList(result.items)
+            renderPagination(result.page, result.totalPages, result.hasPrev, result.hasNext)
+            binding.tvSearchSummary.text = "“${result.keyword}”搜索结果：第 ${result.page} 页，共 ${result.items.size} 条"
+            binding.tvSearchSummary.visibility = View.VISIBLE
         }
-        viewModel.searchVideos.observe(viewLifecycleOwner) { list ->
-            Log.d(TAG, "searchVideos 观察到变化: ${list?.size ?: 0} 条")
-            renderList(list.orEmpty())
+
+        viewModel.loading.observe(viewLifecycleOwner) { loading ->
+            if (loading == true) {
+                binding.recyclerView.visibility = View.GONE
+                binding.tvEmpty.text = "搜索中..."
+                binding.tvEmpty.visibility = View.VISIBLE
+                binding.layoutPagination.visibility = View.GONE
+            }
         }
 
         // 搜索历史变化：重新构建 Chip 列表
@@ -140,11 +176,39 @@ class SearchFragment : Fragment() {
         if (list.isEmpty()) {
             binding.recyclerView.visibility = View.GONE
             binding.tvEmpty.visibility = View.VISIBLE
+            binding.tvEmpty.text = "没有搜索到相关影片"
         } else {
             binding.recyclerView.visibility = View.VISIBLE
             binding.tvEmpty.visibility = View.GONE
             adapter.submitList(list)
         }
+    }
+
+    private fun renderPagination(page: Int, totalPages: Int, hasPrev: Boolean, hasNext: Boolean) {
+        val showPagination = hasPrev || hasNext || totalPages > 1
+        Log.d(
+            TAG,
+            "renderPagination: page=$page, totalPages=$totalPages, " +
+                "hasPrev=$hasPrev, hasNext=$hasNext, show=$showPagination"
+        )
+        binding.layoutPagination.visibility = if (showPagination) View.VISIBLE else View.GONE
+        binding.tvPageInfo.text = "第 $page / $totalPages 页"
+        binding.btnPrevPage.isEnabled = hasPrev && page > 1
+        binding.btnNextPage.isEnabled = hasNext
+        binding.btnPrevPage.alpha = if (binding.btnPrevPage.isEnabled) 1f else 0.45f
+        binding.btnNextPage.alpha = if (binding.btnNextPage.isEnabled) 1f else 0.45f
+    }
+
+    private fun performSearch(keyword: String, page: Int) {
+        val cleanKeyword = keyword.trim()
+        if (cleanKeyword.isBlank()) return
+        currentKeyword = cleanKeyword
+        currentPage = page.coerceAtLeast(1)
+        historyViewModel.addKeyword(cleanKeyword)
+        binding.layoutSearchHistory.visibility = View.GONE
+        binding.tvSearchSummary.text = "正在搜索“$cleanKeyword”..."
+        binding.tvSearchSummary.visibility = View.VISIBLE
+        viewModel.searchVideosPage(cleanKeyword, currentPage)
     }
 
     /**
@@ -198,10 +262,7 @@ class SearchFragment : Fragment() {
                     Log.d(TAG, "点击历史关键词: '${item.keyword}'")
                     binding.etSearch.setText(item.keyword)
                     binding.etSearch.setSelection(item.keyword.length)
-                    // 写入历史（刷新搜索次数 & 时间）
-                    historyViewModel.addKeyword(item.keyword)
-                    // 立即搜索
-                    viewModel.searchVideos(item.keyword)
+                    performSearch(item.keyword, 1)
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -247,6 +308,7 @@ class SearchFragment : Fragment() {
             putExtra(DetailActivity.EXTRA_VIDEO_DIRECTOR, video.director)
             putExtra(DetailActivity.EXTRA_VIDEO_ACTORS, video.actors)
             putExtra(DetailActivity.EXTRA_VIDEO_DESCRIPTION, video.description)
+            putExtra(DetailActivity.EXTRA_VIDEO_DETAIL_URL, video.detailUrl)
         }
         Log.d(TAG, "跳转到详情页: id=${video.id}, title=${video.title}")
         startActivity(intent)

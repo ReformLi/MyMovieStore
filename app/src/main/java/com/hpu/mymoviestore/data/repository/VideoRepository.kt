@@ -3,6 +3,7 @@ package com.hpu.mymoviestore.data.repository
 
 import android.util.Log
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
+import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.data.source.CrawlerVideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
@@ -47,7 +48,36 @@ class VideoRepository(
     }
 
     suspend fun searchVideos(keyword: String): List<VideoItem> {
-        return localSource.searchVideos(keyword)
+        return if (preferCrawler && crawlerSource != null) {
+            crawlerSource.searchVideos(keyword, 1).getOrNull()?.items
+                ?: localSource.searchVideos(keyword)
+        } else {
+            localSource.searchVideos(keyword)
+        }
+    }
+
+    suspend fun searchVideosPage(keyword: String, page: Int): SearchPageResult {
+        return if (preferCrawler && crawlerSource != null) {
+            crawlerSource.searchVideos(keyword, page).getOrElse {
+                SearchPageResult(
+                    keyword = keyword,
+                    page = page.coerceAtLeast(1),
+                    totalPages = 1,
+                    hasPrev = page > 1,
+                    hasNext = false,
+                    items = localSource.searchVideos(keyword)
+                )
+            }
+        } else {
+            SearchPageResult(
+                keyword = keyword,
+                page = 1,
+                totalPages = 1,
+                hasPrev = false,
+                hasNext = false,
+                items = localSource.searchVideos(keyword)
+            )
+        }
     }
 
     // 根据 ID 获取视频详情（优先从本地，本地没有则尝试爬虫）

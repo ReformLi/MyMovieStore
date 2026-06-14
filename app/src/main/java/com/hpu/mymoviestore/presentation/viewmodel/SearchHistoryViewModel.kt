@@ -4,8 +4,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.data.entity.SearchHistoryEntity
-import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -17,7 +17,9 @@ import kotlinx.coroutines.launch
  * - deleteKeyword(keyword)：单条删除（用户点搜索记录右侧 "x"）
  * - clearAll()：清空全部（用户点"清空搜索历史"按钮）
  */
-class SearchHistoryViewModel(private val repository: SearchHistoryRepository) : ViewModel() {
+class SearchHistoryViewModel : ViewModel() {
+
+    private val repository = MovieApplication.get().searchHistoryRepository
 
     private val _searchHistory: LiveData<List<SearchHistoryEntity>> = repository.getAllHistory()
     val searchHistory: LiveData<List<SearchHistoryEntity>> = _searchHistory

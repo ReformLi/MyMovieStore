@@ -6,6 +6,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,6 +33,9 @@ class VideoViewModel : ViewModel() {
 
     private val _searchVideos = MutableLiveData<List<VideoItem>>()
     val searchVideos: LiveData<List<VideoItem>> = _searchVideos
+
+    private val _searchPageResult = MutableLiveData<SearchPageResult>()
+    val searchPageResult: LiveData<SearchPageResult> = _searchPageResult
 
     private val _loading = MutableLiveData<Boolean>()
     val loading: LiveData<Boolean> = _loading
@@ -69,6 +73,17 @@ class VideoViewModel : ViewModel() {
             _loading.postValue(true)
             val list = repository.searchVideos(keyword)
             _searchVideos.postValue(list)
+            _loading.postValue(false)
+        }
+    }
+
+    /** 网页搜索分页结果 */
+    fun searchVideosPage(keyword: String, page: Int = 1) {
+        Log.d(TAG, "searchVideosPage(keyword=$keyword, page=$page)")
+        viewModelScope.launch {
+            _loading.postValue(true)
+            val result = repository.searchVideosPage(keyword, page)
+            _searchPageResult.postValue(result)
             _loading.postValue(false)
         }
     }

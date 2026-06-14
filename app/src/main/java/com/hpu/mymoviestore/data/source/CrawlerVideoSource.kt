@@ -5,6 +5,7 @@ import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
+import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.squareup.moshi.Moshi
@@ -18,6 +19,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
 import java.io.IOException
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
@@ -44,6 +46,7 @@ class CrawlerVideoSource(
         Types.newParameterizedType(List::class.java, VideoItem::class.java)
     )
     private val detailAdapter = moshi.adapter(CrawlerVideoDetail::class.java)
+    private val searchPageAdapter = moshi.adapter(SearchPageResult::class.java)
 
     /** 模拟人类延迟，避免请求过快；缓存命中时不会执行该延迟 */
     private suspend fun humanDelay() {
@@ -190,6 +193,96 @@ class CrawlerVideoSource(
         }
     }
 
+    /**
+     * 根据网页搜索页获取分页搜索结果。
+     *
+     * 示例：
+     * https://www.laojuji.com/vodsearch/-------------.html?wd=斗罗大陆
+     */
+    suspend fun searchVideos(keyword: String, page: Int = 1): Result<SearchPageResult> = withContext(Dispatchers.IO) {
+        try {
+            val cleanKeyword = keyword.trim()
+            if (cleanKeyword.isBlank()) {
+                return@withContext Result.success(
+                    SearchPageResult("", 1, 1, hasPrev = false, hasNext = false, items = emptyList())
+                )
+            }
+
+            val safePage = page.coerceAtLeast(1)
+            val cacheKey = searchCacheKey(cleanKeyword, safePage)
+            val firstPageCacheKey = searchCacheKey(cleanKeyword, 1)
+            val url = buildSearchUrl(cleanKeyword, safePage)
+            Log.d(
+                TAG,
+                "搜索请求准备: keyword='$cleanKeyword', page=$safePage, url=$url, cacheKey=$cacheKey"
+            )
+            cacheRepository?.get(cacheKey)?.let { cachedJson ->
+                try {
+                    val cached = searchPageAdapter.fromJson(cachedJson)
+                    if (cached != null) {
+                        Log.d(
+                            TAG,
+                            "搜索结果缓存命中: keyword=$cleanKeyword, page=$safePage, " +
+                                "size=${cached.items.size}, totalPages=${cached.totalPages}, " +
+                                "hasPrev=${cached.hasPrev}, hasNext=${cached.hasNext}"
+                        )
+                        if (cached.items.isNotEmpty()) {
+                            return@withContext Result.success(cached)
+                        } else {
+                            Log.w(TAG, "搜索缓存为空结果，强制失效并重新请求: key=$cacheKey, url=$url")
+                            cacheRepository.invalidate(cacheKey)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "搜索结果缓存解析失败，重新请求: ${t.message}")
+                    cacheRepository.invalidate(cacheKey)
+                }
+            }
+
+            humanDelay()
+            Log.d(TAG, "开始网络请求搜索页: $url")
+            val doc = requestDocument(url)
+            Log.d(
+                TAG,
+                "搜索页响应成功: requestedUrl=$url, finalLocation=${doc.location()}, " +
+                    "title='${doc.title()}', htmlLength=${doc.outerHtml().length}"
+            )
+            val result = parseSearchPage(doc, cleanKeyword, safePage)
+            Log.d(
+                TAG,
+                "搜索页解析完成: keyword=$cleanKeyword, page=$safePage, " +
+                    "items=${result.items.size}, totalPages=${result.totalPages}, " +
+                    "hasPrev=${result.hasPrev}, hasNext=${result.hasNext}"
+            )
+            if (result.items.isNotEmpty()) {
+                val ttlSeconds = getSearchCacheTtlSeconds(
+                    currentPage = safePage,
+                    firstPageCacheKey = firstPageCacheKey
+                )
+                if (ttlSeconds > 0) {
+                    cacheRepository?.put(cacheKey, searchPageAdapter.toJson(result), ttlSeconds)
+                    Log.d(
+                        TAG,
+                        "搜索结果写入缓存: keyword=$cleanKeyword, page=$safePage, " +
+                            "ttl=${ttlSeconds}s, firstPageKey=$firstPageCacheKey"
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "搜索首页缓存已过期或无剩余时间，本页不写入缓存: " +
+                            "keyword=$cleanKeyword, page=$safePage"
+                    )
+                }
+            } else {
+                Log.w(TAG, "搜索结果为空，本次不写入缓存，避免空结果挡住后续请求: url=$url")
+            }
+            Result.success(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "搜索视频失败", e)
+            Result.failure(e)
+        }
+    }
+
     private fun parseHomepageVideos(doc: Document): List<VideoItem> {
         val items = doc.select(".r-item")
         Log.d(TAG, "找到 .r-item 数量: ${items.size}")
@@ -303,6 +396,160 @@ class CrawlerVideoSource(
         )
     }
 
+    private fun parseSearchPage(doc: Document, keyword: String, page: Int): SearchPageResult {
+        val resultLinks = doc.select(".tList > a")
+        val resultItems = doc.select(".tList > .item")
+        val fallbackLinks = doc.select("a[href*=voddetail]")
+        Log.d(
+            TAG,
+            "解析搜索页节点: keyword=$keyword, page=$page, " +
+                ".tList>a=${resultLinks.size}, .tList>.item=${resultItems.size}, " +
+                "a[href*=voddetail]=${fallbackLinks.size}, " +
+                "searchTitle='${doc.select(".search-title").text().trim()}'"
+        )
+
+        if (resultItems.isEmpty()) {
+            Log.w(
+                TAG,
+                "未找到 .tList > .item 搜索结果节点，HTML片段=${doc.select(".movie-main").outerHtml().take(500)}"
+            )
+        } else {
+//            logLong("搜索结果容器HTML片段", doc.select(".tList").outerHtml())
+            resultItems.take(5).forEachIndexed { index, item ->
+                val firstDetailLink = item.select("a[href*=voddetail]").first()
+                Log.d(
+                    TAG,
+                    "搜索原始条目第 ${index + 1} 条: href='${firstDetailLink?.attr("href").orEmpty()}', " +
+                        "absHref='${firstDetailLink?.attr("abs:href").orEmpty()}', " +
+                        "titleAttr='${firstDetailLink?.attr("title").orEmpty()}', " +
+                        "text='${item.text().take(160)}'"
+                )
+                logLong("搜索原始条目第 ${index + 1} 条HTML", item.outerHtml())
+            }
+        }
+
+        val items = resultItems.mapIndexedNotNull { index, item ->
+            val detailLink = item.select("a[href*=voddetail]").first()
+            val detailUrl = detailLink?.attr("abs:href").orEmpty()
+            val title = item.select(".info .title").first()?.text()?.trim()
+                ?: item.select(".title").first()?.text()?.trim()
+                ?: detailLink?.attr("title")?.trim()
+                ?: ""
+            if (detailUrl.isBlank() || title.isBlank()) {
+                Log.w(
+                    TAG,
+                    "搜索结果第 ${index + 1} 条跳过: detailUrl='$detailUrl', title='$title', " +
+                        "href='${detailLink?.attr("href").orEmpty()}', html='${item.outerHtml().take(500)}'"
+                )
+                return@mapIndexedNotNull null
+            }
+
+            var coverUrl = item.select(".poster").first()?.attr("data-original").orEmpty()
+            if (coverUrl.isBlank()) {
+                val style = item.select(".poster").first()?.attr("style").orEmpty()
+                coverUrl = Regex("url\\(([^)]+)\\)").find(style)?.groupValues?.get(1).orEmpty()
+            }
+            if (coverUrl.startsWith("/")) coverUrl = BASE_URL + coverUrl
+
+            val tabs = item.select(".tab-box .tab").map { it.text().trim() }
+                .filter { it.isNotBlank() && it != "未知" }
+            val category = tabs.getOrNull(0).orEmpty()
+            val year = tabs.getOrNull(1).orEmpty()
+            val actors = item.select(".author a").joinToString(" ") { it.text().trim() }
+                .ifBlank {
+                    item.select(".author").first()?.text()
+                        ?.replace("主演：", "")
+                        ?.trim()
+                        .orEmpty()
+                }
+            val description = item.select(".content p").first()?.text()?.trim()
+                ?: item.select(".content").first()?.text()?.trim()
+                ?: ""
+
+            Log.d(
+                TAG,
+                "搜索结果第 ${index + 1} 条: title='$title', detailUrl=$detailUrl, " +
+                    "coverUrl=$coverUrl, category='$category', year='$year', " +
+                    "actors='${actors.take(40)}', descLength=${description.length}"
+            )
+
+            VideoItem(
+                id = detailUrl.hashCode().toLong(),
+                title = title,
+                coverUrl = coverUrl,
+                playUrl = "",
+                category = category,
+                detailUrl = detailUrl,
+                rating = "",
+                year = year,
+                area = "",
+                director = "",
+                actors = actors,
+                description = description
+            )
+        }
+
+        val paginationLinks = doc.select(".page-box a, .page a, .mac_pages a, .pagination a, .page-number a")
+        val maxPageFromHref = paginationLinks.mapNotNull { anchor ->
+            val href = anchor.attr("href")
+            Regex("/page/(\\d+)").find(href)?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("----------(\\d+)---\\.html").find(href)?.groupValues?.get(1)?.toIntOrNull()
+        }.maxOrNull()
+        val maxPageFromText = paginationLinks.mapNotNull { anchor ->
+            anchor.text().trim().toIntOrNull()
+        }.maxOrNull()
+        val totalPages = if (paginationLinks.isEmpty()) {
+            1
+        } else {
+            listOfNotNull(maxPageFromHref, maxPageFromText, page).maxOrNull()?.coerceAtLeast(1) ?: 1
+        }
+        val hasNextByText = paginationLinks.any {
+            val text = it.text().trim()
+            text.contains("下一页") || text.contains("下页")
+        }
+        val hasNextByHref = paginationLinks.any {
+            val href = it.attr("href")
+            href.contains("/page/${page + 1}") || href.contains("----------${page + 1}---.html")
+        }
+        val hasPrevByText = paginationLinks.any {
+            val text = it.text().trim()
+            text.contains("上一页") || text.contains("上页")
+        }
+        val hasPrevByHref = paginationLinks.any {
+            val href = it.attr("href")
+            href.contains("/page/${page - 1}") || href.contains("----------${page - 1}---.html")
+        }
+        val hasPrev = paginationLinks.isNotEmpty() && page > 1 && (hasPrevByText || hasPrevByHref || page <= totalPages)
+        val hasNext = paginationLinks.isNotEmpty() && page < totalPages && (hasNextByText || hasNextByHref || page < totalPages)
+        Log.d(
+            TAG,
+            "分页解析: paginationLinks=${paginationLinks.size}, page=$page, " +
+                "totalPages=$totalPages, hasPrevByText=$hasPrevByText, " +
+                "hasPrevByHref=$hasPrevByHref, hasNextByText=$hasNextByText, " +
+                "hasNextByHref=$hasNextByHref, hasPrev=$hasPrev, hasNext=$hasNext, " +
+                "links='${paginationLinks.joinToString(" | ") { "${it.text().trim()}=>${it.attr("href")}" }.take(500)}'"
+        )
+
+        return SearchPageResult(
+            keyword = keyword,
+            page = page,
+            totalPages = totalPages,
+            hasPrev = hasPrev,
+            hasNext = hasNext,
+            items = items
+        )
+    }
+
+    private fun logLong(label: String, content: String, chunkSize: Int = 1200) {
+        if (content.isBlank()) {
+            Log.d(TAG, "$label: <empty>")
+            return
+        }
+        content.chunked(chunkSize).take(6).forEachIndexed { index, chunk ->
+            Log.d(TAG, "$label [${index + 1}]: $chunk")
+        }
+    }
+
     /**
      * 从详情页解析首个播放页 URL。
      * 当前版本只播放第一集，因此缓存的是“详情页 → 第一集播放页”的映射。
@@ -367,6 +614,35 @@ class CrawlerVideoSource(
             .get()
     }
 
+    private fun buildSearchUrl(keyword: String, page: Int): String {
+        val encodedKeyword = URLEncoder.encode(keyword, "UTF-8")
+        return if (page <= 1) {
+            "$BASE_URL/vodsearch/-------------.html?wd=$encodedKeyword"
+        } else {
+            "$BASE_URL/vodsearch/$encodedKeyword----------$page---.html"
+        }
+    }
+
+    private suspend fun getSearchCacheTtlSeconds(
+        currentPage: Int,
+        firstPageCacheKey: String
+    ): Long {
+        if (currentPage <= 1) {
+            return ApiCacheEntity.TTL_THIRTY_MINUTES
+        }
+
+        val firstPageRemainingTtl = cacheRepository
+            ?.getRemainingTtlSeconds(firstPageCacheKey)
+            ?: ApiCacheEntity.TTL_THIRTY_MINUTES
+
+        return firstPageRemainingTtl.coerceAtMost(ApiCacheEntity.TTL_THIRTY_MINUTES)
+    }
+
+    private fun searchCacheKey(keyword: String, page: Int): String {
+        val safePage = page.coerceAtLeast(1)
+        return "$CACHE_PREFIX_SEARCH:${keyword.hashCode()}:$safePage:$keyword"
+    }
+
     private suspend fun readVideoListCache(cacheKey: String): List<VideoItem>? {
         val cachedJson = cacheRepository?.get(cacheKey) ?: return null
         return try {
@@ -396,7 +672,7 @@ class CrawlerVideoSource(
 
     companion object {
         private const val TAG = "CrawlerVideoSource"
-        private const val BASE_URL = "https://www.******.com"
+        private const val BASE_URL = "https://www.laojuji.com"
         private const val HOME_URL = "$BASE_URL/"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
@@ -412,5 +688,8 @@ class CrawlerVideoSource(
 
         /** 播放页解析出的真实播放地址：短时效 token，缓存 30 分钟 */
         private const val CACHE_PREFIX_REAL_VIDEO_URL = "crawler:play:real_url"
+
+        /** 搜索结果页：缓存 30 分钟；v3 用于刷新旧 1 天分页缓存 */
+        private const val CACHE_PREFIX_SEARCH = "crawler:search:v3"
     }
 }
