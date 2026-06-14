@@ -56,8 +56,10 @@ class MovieApplication : Application() {
         val sourceManager = VideoSourceManager(this, apiCacheRepository)
         Log.d(TAG, "VideoSourceManager 初始化完成（JSON 挡板 + ApiCache TTL 缓存）")
 
-        // 新增：初始化爬虫源（可选，可放在debug开关或配置中）
-        val crawlerSource = CrawlerVideoSource()
+        // 新增：初始化爬虫源，并接入 ApiCacheRepository 做分类型 TTL 缓存
+        // - 首页/详情页播放入口：1 天
+        // - 真实播放地址（m3u8/mp4）：30 分钟
+        val crawlerSource = CrawlerVideoSource(cacheRepository = apiCacheRepository)
 
         videoRepository = VideoRepository(
             localSource = sourceManager,

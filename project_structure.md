@@ -16,10 +16,10 @@ Repository
         ↓
 Data Source / Room DAO
         ↓
-assets JSON / SQLite
+Crawler Source / assets JSON / SQLite
 ```
 
-当前视频主数据不存入 Room，而是从 `assets/sample_video_source.json` 读取，经 Moshi 解析后映射为 `VideoItem`。Room 负责保存播放历史、搜索历史和 JSON 缓存。
+当前视频主数据不存入 Room，支持两类来源：一类是从 `assets/sample_video_source.json` 读取并映射为 `VideoItem`，另一类是通过 `CrawlerVideoSource` 爬取网页视频卡片、详情页播放入口和真实播放地址。Room 负责保存播放历史、搜索历史和 `api_cache` 缓存。
 
 ## 顶层目录
 
@@ -81,6 +81,7 @@ app/src/main/
 - 初始化 Room 数据库 `MovieDatabase`。
 - 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`。
 - 创建 `VideoSourceManager`，连接本地 JSON 数据源和 `api_cache` 缓存。
+- 创建 `CrawlerVideoSource`，连接网页爬虫逻辑和 `api_cache` 分类型 TTL 缓存。
 - 创建 `VideoRepository`，供视频相关 ViewModel 使用。
 - 启动时清理过期的 `api_cache` 记录。
 
@@ -115,6 +116,7 @@ data/
 │   ├── SearchHistoryRepository.kt
 │   └── VideoRepository.kt
 └── source/
+    ├── CrawlerVideoSource.kt
     └── VideoSourceManager.kt
 ```
 
@@ -152,12 +154,12 @@ data/
 
 | Repository | 职责 |
 |------------|------|
-| `VideoRepository` | 对上层提供视频列表、分类过滤、关键词搜索和按 ID 查询 |
+| `VideoRepository` | 对上层提供视频列表、分类过滤、关键词搜索、按 ID 查询和按详情页 URL 获取播放地址 |
 | `PlayHistoryRepository` | 播放历史去重写入、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效和过期清理 |
 
-### 视频源解析
+### 本地视频源解析
 
 `VideoSourceManager` 是视频主数据入口，数据加载顺序为：
 
@@ -182,6 +184,36 @@ RemoteVideoMapper 转为 List<VideoItem>
 - `searchVideos(keyword)`：按标题、演员、导演、简介搜索。
 - `getVideoById(id)`：按视频 ID 回查详情。
 - `clearCache()`：清空内存缓存和接口缓存。
+
+### 爬虫视频源解析
+
+`CrawlerVideoSource` 负责网页爬虫视频源，当前流程为：
+
+```text
+首页 HTML
+        ↓ select(".r-item")
+解析标题 / 封面 / 详情页 URL
+        ↓
+VideoItem(detailUrl = ...)
+        ↓ 用户点击播放
+详情页 HTML
+        ↓ select(".channel-set a.item").first()
+首个播放页 URL
+        ↓
+播放页 HTML
+        ↓ script:containsData(player_aaaa)
+真实 .m3u8 / mp4 地址
+```
+
+为避免频繁访问源站，爬虫结果统一写入 `api_cache`：
+
+| 数据类型 | 缓存键 | 缓存时长 | 说明 |
+|----------|--------|----------|------|
+| 首页视频列表 | `crawler:home:list` | 1 天 | 缓存解析后的 `List<VideoItem>` JSON |
+| 首个播放页链接 | `crawler:detail:first_play_page:{hash}:{detailUrl}` | 1 天 | 从详情页解析出的播放入口，当前对应第一集 |
+| 真实播放地址 | `crawler:play:real_url:{hash}:{detailUrl}` | 30 分钟 | `.m3u8` / `mp4` 可能包含短时效 token |
+
+`CrawlerVideoSource` 特意不按 1 天缓存播放页 HTML，因为播放页脚本中可能直接包含短时效真实视频地址。真实播放地址过期后会重新请求播放页解析，详情页播放入口仍可复用 1 天缓存。
 
 ## Presentation 层
 
@@ -321,6 +353,8 @@ VideoViewModel.loadAllVideos()
         ↓
 VideoRepository.getAllVideos()
         ↓
+preferCrawler = true 时优先 CrawlerVideoSource.fetchHomepageVideos()
+        ↓ 失败或空列表
 VideoSourceManager.loadAllVideos()
         ↓
 VideoAdapter.submitList()
@@ -424,6 +458,7 @@ Room play_history
 | Media3 ExoPlayer | 视频播放 |
 | Moshi | JSON 解析 |
 | OkHttp | 网络数据源 |
+| Jsoup | HTML 获取与解析 |
 
 ## 清单文件
 
@@ -437,11 +472,11 @@ Room play_history
 
 ## 当前实现边界
 
-- 视频主数据来自本地 JSON 示例文件，不是真实远程接口。
+- 视频主数据支持本地 JSON 示例文件和网页爬虫源；当前 `MovieApplication` 中 `preferCrawler = true`，爬虫失败时回退本地 JSON。
 - 视频列表未持久化到 Room；Room 只保存历史、搜索记录和缓存。
 - 收藏功能相关字符串仍存在于资源文件中，但当前页面和数据层未实现收藏模块。
 - 数据库升级使用破坏式迁移，适合开发阶段；正式版本应增加 Migration。
-- `api_cache` 当前主要缓存本地 JSON 解析结果，后续接入网络源后可复用同一缓存机制。
+- `api_cache` 当前缓存本地 JSON、首页爬虫列表、详情页播放入口和短时效真实播放地址。
 
 ## 新增功能建议
 
@@ -458,4 +493,3 @@ Room play_history
 9. 如需底部入口，在 `bottom_nav_menu.xml` 和 `MainActivity` 中注册。
 
 如果新增远程视频源，优先扩展 `VideoSourceManager` 和 `VideoRepository`，避免让 UI 直接感知数据来自本地 JSON 还是网络接口。
-

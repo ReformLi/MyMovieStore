@@ -125,7 +125,7 @@ class DetailActivity : AppCompatActivity() {
         } else {
             Log.d(TAG, "封面为空，不加载封面图")
         }
-        binding.btnPlay.isEnabled = false   // 初始不可点
+        binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
         // 3. 播放按钮
         binding.btnPlay.setOnClickListener {
             Log.d(TAG, "点击播放: url=${if (videoUrl.isNotEmpty()) videoUrl.take(60) + "..." else "(空)"}")

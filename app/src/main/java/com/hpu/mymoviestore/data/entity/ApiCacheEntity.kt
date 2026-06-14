@@ -31,5 +31,7 @@ data class ApiCacheEntity(
         const val TTL_ONE_DAY: Long = 86400
         /** 常用 TTL：1 小时 */
         const val TTL_ONE_HOUR: Long = 3600
+        /** 真实播放地址常用 TTL：30 分钟，避免缓存过期 token 过久 */
+        const val TTL_THIRTY_MINUTES: Long = 1800
     }
 }
