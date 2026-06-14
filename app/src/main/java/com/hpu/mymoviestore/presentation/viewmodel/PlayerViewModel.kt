@@ -41,6 +41,9 @@ class PlayerViewModel : ViewModel() {
         coverUrl: String,
         category: String,
         playUrl: String,
+        detailUrl: String = "",
+        playPageUrl: String = "",
+        episodeTitle: String = "",
         onReady: () -> Unit = {}
     ) {
         Log.d(TAG, "setVideoInfo: videoId=$videoId, title=$title")
@@ -54,7 +57,10 @@ class PlayerViewModel : ViewModel() {
                 title = title,
                 coverUrl = coverUrl,
                 category = category,
-                playUrl = playUrl
+                playUrl = playUrl,
+                detailUrl = detailUrl,
+                playPageUrl = playPageUrl,
+                episodeTitle = episodeTitle
             )
             Log.d(TAG, "播放历史写入完成: historyId=$historyId")
             onReady()

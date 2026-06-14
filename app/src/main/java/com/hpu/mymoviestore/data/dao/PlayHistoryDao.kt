@@ -26,6 +26,15 @@ interface PlayHistoryDao {
     @Query("SELECT * FROM play_history WHERE videoId = :videoId")
     suspend fun getHistoryByVideoId(videoId: Long): PlayHistoryEntity?
 
+    /** 查询某个详情页最近一次播放记录，用于详情页默认定位上次播放集数 */
+    @Query(
+        "SELECT * FROM play_history " +
+            "WHERE detailUrl = :detailUrl " +
+            "ORDER BY lastPlayTime DESC " +
+            "LIMIT 1"
+    )
+    suspend fun getLatestHistoryByDetailUrl(detailUrl: String): PlayHistoryEntity?
+
     /** 插入新记录 */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addHistory(history: PlayHistoryEntity): Long
@@ -40,7 +49,10 @@ interface PlayHistoryDao {
             "title = :title, " +
             "coverUrl = :coverUrl, " +
             "category = :category, " +
-            "playUrl = :playUrl " +
+            "playUrl = :playUrl, " +
+            "detailUrl = :detailUrl, " +
+            "playPageUrl = :playPageUrl, " +
+            "episodeTitle = :episodeTitle " +
             "WHERE videoId = :videoId"
     )
     suspend fun updateHistoryByVideoId(
@@ -49,6 +61,9 @@ interface PlayHistoryDao {
         coverUrl: String,
         category: String,
         playUrl: String,
+        detailUrl: String,
+        playPageUrl: String,
+        episodeTitle: String,
         newTime: Long
     ): Int
 

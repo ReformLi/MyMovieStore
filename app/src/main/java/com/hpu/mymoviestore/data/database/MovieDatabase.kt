@@ -21,6 +21,8 @@ import com.hpu.mymoviestore.data.entity.ApiCacheEntity
  * - v4: ① play_history 扩展 playProgressSeconds / durationSeconds（续播）
  *       ② 新增 search_history（搜索历史）
  *       ③ 新增 api_cache（爬虫源响应缓存，TTL 自动过期）
+ * - v5: play_history 扩展 detailUrl / playPageUrl / episodeTitle，
+ *       用于从历史记录回到完整详情页并定位上次播放集数
  *
  * 配合 fallbackToDestructiveMigration 使用：升级时重建数据库，避免 schema hash 校验失败。
  */
@@ -30,7 +32,7 @@ import com.hpu.mymoviestore.data.entity.ApiCacheEntity
         SearchHistoryEntity::class,
         ApiCacheEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class MovieDatabase : RoomDatabase() {

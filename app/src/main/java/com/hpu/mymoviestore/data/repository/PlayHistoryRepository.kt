@@ -25,6 +25,9 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
 
     suspend fun getHistoryByVideoId(videoId: Long): PlayHistoryEntity? = historyDao.getHistoryByVideoId(videoId)
 
+    suspend fun getLatestHistoryByDetailUrl(detailUrl: String): PlayHistoryEntity? =
+        historyDao.getLatestHistoryByDetailUrl(detailUrl)
+
     /**
      * 去重写入播放历史
      * - 若 videoId 已存在 → 更新 lastPlayTime 以及冗余信息
@@ -36,7 +39,10 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
         title: String,
         coverUrl: String,
         category: String,
-        playUrl: String
+        playUrl: String,
+        detailUrl: String = "",
+        playPageUrl: String = "",
+        episodeTitle: String = ""
     ): Long {
         val existing = historyDao.getHistoryByVideoId(videoId)
         val now = System.currentTimeMillis()
@@ -49,6 +55,9 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
                 coverUrl = coverUrl,
                 category = category,
                 playUrl = playUrl,
+                detailUrl = detailUrl,
+                playPageUrl = playPageUrl,
+                episodeTitle = episodeTitle,
                 newTime = now
             )
             Log.d(
@@ -66,6 +75,9 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
                     coverUrl = coverUrl,
                     category = category,
                     playUrl = playUrl,
+                    detailUrl = detailUrl,
+                    playPageUrl = playPageUrl,
+                    episodeTitle = episodeTitle,
                     playProgressSeconds = 0,
                     durationSeconds = 0,
                     lastPlayTime = now

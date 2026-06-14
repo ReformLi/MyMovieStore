@@ -2,25 +2,31 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_detail_page"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:padding="16dp">
+            android:paddingTop="8dp"
+            android:paddingBottom="18dp">
 
             <ImageView
                 android:id="@+id/ivCover"
-                android:layout_width="120dp"
-                android:layout_height="170dp"
-                android:background="@color/placeholder"
-                android:scaleType="centerCrop" />
+                android:layout_width="128dp"
+                android:layout_height="184dp"
+                android:background="@drawable/bg_poster_round"
+                android:clipToOutline="true"
+                android:scaleType="centerCrop"
+                tools:src="@mipmap/ic_launcher" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -33,159 +39,201 @@
                     android:id="@+id/tvTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:textColor="@color/white"
+                    android:textSize="24sp"
+                    android:textStyle="bold"
+                    tools:text="红了樱桃绿了芭蕉" />
 
                 <TextView
                     android:id="@+id/tvCategory"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
+                    android:layout_marginTop="14dp"
+                    android:textColor="#DDE7ECF7"
+                    android:textSize="14sp"
+                    tools:text="类型：国产剧" />
 
                 <TextView
                     android:id="@+id/tvYear"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
+                    android:layout_marginTop="8dp"
+                    android:textColor="#DDE7ECF7"
+                    android:textSize="14sp"
+                    tools:text="上映时间：2026" />
 
                 <TextView
                     android:id="@+id/tvArea"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/tvRating"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_rating"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
-                    android:textColor="@color/white"
-                    android:textSize="13sp" />
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_chip_selected"
+                    android:paddingStart="12dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="5dp"
+                    android:textColor="#FFFF6A3D"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    tools:text="评分：0.0" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 仅保留播放按钮（收藏功能已移除） -->
         <LinearLayout
+            android:id="@+id/cardPlay"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp">
+            android:background="@drawable/bg_detail_card"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="16dp">
 
             <Button
                 android:id="@+id/btnPlay"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/play" />
-        </LinearLayout>
+                android:layout_height="48dp"
+                android:background="@drawable/bg_play_button"
+                android:enabled="false"
+                android:text="立即播放"
+                android:textColor="@color/white"
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
-        <!-- 播放进度提示（从播放历史读取） —— 仅当存在进度时显示 -->
-        <TextView
-            android:id="@+id/tvProgressTip"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp"
-            android:layout_marginTop="4dp"
-            android:gravity="center"
-            android:textColor="@color/colorAccent"
-            android:textSize="13sp"
-            android:visibility="gone"
-            tools:ignore="HardcodedText"
-            tools:visibility="visible"
-            tools:text="继续观看 00:32:15  /  总时长 02:10:00" />
+            <TextView
+                android:id="@+id/tvProgressTip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:textColor="#FFFF6A3D"
+                android:textSize="13sp"
+                android:visibility="gone"
+                tools:ignore="HardcodedText"
+                tools:text="第03集  继续观看 12:36 / 总时长 45:00"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:id="@+id/layoutPlayLinesBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="播放线路"
+                    android:textColor="@color/text_primary"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:overScrollMode="never"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/layoutPlayLines"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <TextView
+                    android:id="@+id/tvEpisodeTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="选集"
+                    android:textColor="@color/text_primary"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <GridLayout
+                    android:id="@+id/gridEpisodes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:columnCount="4"
+                    android:orientation="horizontal" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_detail_card"
+            android:elevation="2dp"
             android:orientation="vertical"
             android:padding="16dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
                 android:text="@string/director"
                 android:textColor="@color/text_primary"
-                android:textSize="16sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvDirector"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/divider" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+                android:textSize="14sp"
+                tools:text="陈未衾" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="@string/actors"
+                android:layout_marginTop="18dp"
+                android:text="主演"
                 android:textColor="@color/text_primary"
-                android:textSize="16sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvActors"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="3dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/divider" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+                android:textSize="14sp"
+                tools:text="常喆宽 翟一莹 于航 赵星卉" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
+                android:layout_marginTop="18dp"
                 android:text="@string/description"
                 android:textColor="@color/text_primary"
-                android:textSize="16sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvDescription"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:lineSpacingExtra="4dp"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="5dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                tools:text="《红了樱桃绿了芭蕉》是一部融合剧情、爱情与古装元素的国产剧。" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

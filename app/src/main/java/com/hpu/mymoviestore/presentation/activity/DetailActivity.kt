@@ -1,13 +1,23 @@
 package com.hpu.mymoviestore.presentation.activity
 
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.widget.GridLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
+import com.hpu.mymoviestore.data.model.PlayEpisode
+import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
 import kotlinx.coroutines.launch
 
@@ -15,7 +25,7 @@ import kotlinx.coroutines.launch
  * 视频详情页 Activity
  *
  * 职责：
- * 1. 展示视频详细信息（标题 / 封面 / 分类 / 年份 / 地区 / 评分 / 导演 / 演员 / 简介）
+ * 1. 展示视频详细信息（标题 / 封面 / 分类 / 年份 / 地区 / 评分 / 导演 / 主演 / 简介）
  * 2. 点击「播放」按钮 → PlayerActivity
  *
  * 数据来源（两种跳转方式，统一处理）：
@@ -37,6 +47,11 @@ class DetailActivity : AppCompatActivity() {
     private var videoCover: String = ""
     private var videoCategory: String = ""
     private var videoUrl: String = ""
+    private var detailUrl: String = ""
+    private var playLines: List<PlayLine> = emptyList()
+    private var selectedLineIndex: Int = 0
+    private var selectedEpisode: PlayEpisode? = null
+    private var hasSelectedEpisodeHistory: Boolean = false
 
     companion object {
         private const val TAG = "DetailActivity"
@@ -65,7 +80,7 @@ class DetailActivity : AppCompatActivity() {
 
         // 1. 解析 Intent
         videoId = intent.getLongExtra(EXTRA_VIDEO_ID, 0)
-        videoTitle = intent.getStringExtra(EXTRA_VIDEO_TITLE) ?: ""
+        videoTitle = cleanHistoryTitle(intent.getStringExtra(EXTRA_VIDEO_TITLE) ?: "")
         videoCover = intent.getStringExtra(EXTRA_VIDEO_COVER) ?: ""
         videoCategory = intent.getStringExtra(EXTRA_VIDEO_CATEGORY) ?: ""
         videoUrl = intent.getStringExtra(EXTRA_VIDEO_PLAY_URL) ?: ""
@@ -76,7 +91,7 @@ class DetailActivity : AppCompatActivity() {
         val director = intent.getStringExtra(EXTRA_VIDEO_DIRECTOR) ?: ""
         val actors = intent.getStringExtra(EXTRA_VIDEO_ACTORS) ?: ""
         val description = intent.getStringExtra(EXTRA_VIDEO_DESCRIPTION) ?: ""
-        val detailUrl = intent.getStringExtra(EXTRA_VIDEO_DETAIL_URL) ?: ""
+        detailUrl = intent.getStringExtra(EXTRA_VIDEO_DETAIL_URL) ?: ""
 
         title = videoTitle
 
@@ -86,8 +101,8 @@ class DetailActivity : AppCompatActivity() {
         Log.d(TAG, "rating=$rating, year=$year, area=$area, director=$director")
 
         // 2. 基础 UI：立即显示已有的标题/分类/封面
-        binding.tvTitle.text = videoTitle
-        binding.tvCategory.text = videoCategory
+        binding.tvTitle.text = videoTitle.ifBlank { "加载中..." }
+        binding.tvCategory.text = formatField("类型", videoCategory)
 
         // 年份/地区（若存在则合并显示在 tvYear，tvArea 隐藏避免重复）
         val yearArea = StringBuilder()
@@ -97,23 +112,25 @@ class DetailActivity : AppCompatActivity() {
             yearArea.append(area)
         }
         if (yearArea.isNotEmpty()) {
-            binding.tvYear.text = yearArea.toString()
+            binding.tvYear.text = formatField("上映时间", yearArea.toString())
             binding.tvYear.visibility = android.view.View.VISIBLE
             binding.tvArea.visibility = android.view.View.GONE
         } else {
-            binding.tvYear.visibility = android.view.View.GONE
+            binding.tvYear.text = formatField("上映时间", "未知")
+            binding.tvYear.visibility = android.view.View.VISIBLE
             binding.tvArea.visibility = android.view.View.GONE
         }
 
         // 评分
         if (rating.isNotEmpty()) {
-            binding.tvRating.text = rating
+            binding.tvRating.text = formatField("评分", rating)
             binding.tvRating.visibility = android.view.View.VISIBLE
         } else {
-            binding.tvRating.visibility = android.view.View.GONE
+            binding.tvRating.text = formatField("评分", "0.0")
+            binding.tvRating.visibility = android.view.View.VISIBLE
         }
 
-        // 导演 / 演员 / 简介（若来自播放历史可能为空，由后面的回查补全）
+        // 导演 / 主演 / 简介（若来自播放历史可能为空，由后面的回查补全）
         binding.tvDirector.text = director.ifEmpty { "加载中..." }
         binding.tvActors.text = actors.ifEmpty { "加载中..." }
         binding.tvDescription.text = description.ifEmpty { "加载中..." }
@@ -128,24 +145,10 @@ class DetailActivity : AppCompatActivity() {
         binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
         // 3. 播放按钮
         binding.btnPlay.setOnClickListener {
-            Log.d(TAG, "点击播放: url=${if (videoUrl.isNotEmpty()) videoUrl.take(60) + "..." else "(空)"}")
-            if (videoUrl.isNotEmpty()) {
-                startActivity(
-                    PlayerActivity.newIntent(
-                        this@DetailActivity,
-                        videoId,
-                        videoTitle,
-                        videoCover,
-                        videoCategory,
-                        videoUrl
-                    )
-                )
-            } else {
-                Toast.makeText(this@DetailActivity, "视频地址加载中，请稍后", Toast.LENGTH_SHORT).show()
-            }
+            playSelectedEpisodeOrVideo()
         }
 
-        // 4. 若关键字段（导演/演员/简介/playUrl）缺失，走回查补全
+        // 4. 若关键字段（导演/主演/简介/playUrl）缺失，走回查补全
         val needFetch = director.isEmpty() || actors.isEmpty() || description.isEmpty() || videoUrl.isEmpty()
         if (needFetch) {
             Log.d(TAG, "部分字段缺失，从 JSON 挡板回查视频详情 (videoId=$videoId)")
@@ -162,32 +165,15 @@ class DetailActivity : AppCompatActivity() {
      * 获取视频详情（优先使用 detailUrl 爬取，否则 fallback 到本地 JSON）
      */
     private fun fetchVideoDetail() {
-        val detailUrl = intent.getStringExtra(EXTRA_VIDEO_DETAIL_URL) ?: ""
         lifecycleScope.launch {
             if (detailUrl.isNotBlank()) {
-                // 优先使用爬虫获取真实播放地址
-                Log.d(TAG, "使用爬虫获取视频地址: detailUrl=$detailUrl")
-                val videoFromCrawler = MovieApplication.get().videoRepository.getVideoByDetailUrl(detailUrl)
-                if (videoFromCrawler != null && videoFromCrawler.playUrl.isNotBlank()) {
-                    // 更新播放地址
-                    videoUrl = videoFromCrawler.playUrl
-                    Log.d(TAG, "爬虫获取到播放地址: ${videoUrl.take(60)}")
-                    // 可选：同时更新其他字段（如果爬虫返回了完整信息）
-                    if (videoFromCrawler.title.isNotBlank()) binding.tvTitle.text = videoFromCrawler.title
-                    if (videoFromCrawler.coverUrl.isNotBlank()) {
-                        videoCover = videoFromCrawler.coverUrl
-                        binding.ivCover.load(videoFromCrawler.coverUrl)
-                    }
-                    if (videoFromCrawler.director.isNotBlank()) binding.tvDirector.text = videoFromCrawler.director
-                    if (videoFromCrawler.actors.isNotBlank()) binding.tvActors.text = videoFromCrawler.actors
-                    if (videoFromCrawler.description.isNotBlank()) binding.tvDescription.text = videoFromCrawler.description
-                    // 年份、地区等按需更新
-                    // ...
-                    // 刷新播放按钮可用性
-                    binding.btnPlay.isEnabled = true
+                Log.d(TAG, "使用爬虫获取详情页信息: detailUrl=$detailUrl")
+                val detail = MovieApplication.get().videoRepository.getCrawlerVideoDetail(detailUrl)
+                if (detail != null) {
+                    applyCrawlerDetail(detail)
                     return@launch
                 } else {
-                    Log.w(TAG, "爬虫获取播放地址失败，尝试本地 JSON 回查")
+                    Log.w(TAG, "爬虫获取详情失败，尝试本地 JSON 回查")
                 }
             }
 
@@ -195,6 +181,9 @@ class DetailActivity : AppCompatActivity() {
             val video = MovieApplication.get().videoRepository.getVideoById(videoId)
             if (video == null) {
                 Log.w(TAG, "回查失败: 未找到 videoId=$videoId 的视频")
+                if (binding.tvDirector.text == "加载中...") binding.tvDirector.text = "暂无导演信息"
+                if (binding.tvActors.text == "加载中...") binding.tvActors.text = "暂无主演信息"
+                if (binding.tvDescription.text == "加载中...") binding.tvDescription.text = "暂无简介"
                 return@launch
             }
             Log.d(TAG, "本地回查成功: director=${video.director}, actors=${video.actors}")
@@ -208,12 +197,12 @@ class DetailActivity : AppCompatActivity() {
                     yearArea.append(video.area)
                 }
                 if (yearArea.isNotEmpty()) {
-                    binding.tvYear.text = yearArea.toString()
+                    binding.tvYear.text = formatField("上映时间", yearArea.toString())
                     binding.tvYear.visibility = android.view.View.VISIBLE
                 }
             }
             if (video.rating.isNotEmpty() && binding.tvRating.text.isNullOrEmpty()) {
-                binding.tvRating.text = video.rating
+                binding.tvRating.text = formatField("评分", video.rating)
                 binding.tvRating.visibility = android.view.View.VISIBLE
             }
             if (binding.tvDirector.text == "加载中...") binding.tvDirector.text = video.director
@@ -230,7 +219,168 @@ class DetailActivity : AppCompatActivity() {
                 videoCover = video.coverUrl
                 binding.ivCover.load(video.coverUrl)
             }
+            binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
         }
+    }
+
+    private suspend fun applyCrawlerDetail(detail: CrawlerVideoDetail) {
+        videoId = detail.id
+        videoTitle = detail.title.ifBlank { videoTitle }
+        videoCover = detail.coverUrl.ifBlank { videoCover }
+        videoCategory = detail.category.ifBlank { videoCategory }
+        playLines = detail.playLines
+        selectedLineIndex = 0
+        selectedEpisode = playLines.firstOrNull()?.episodes?.firstOrNull()
+
+        val latestHistory = MovieApplication.get().playHistoryRepository.getLatestHistoryByDetailUrl(detail.detailUrl)
+        if (latestHistory != null && latestHistory.playPageUrl.isNotBlank()) {
+            playLines.forEachIndexed { lineIndex, line ->
+                val matched = line.episodes.firstOrNull { it.playPageUrl == latestHistory.playPageUrl }
+                if (matched != null) {
+                    selectedLineIndex = lineIndex
+                    selectedEpisode = matched
+                    return@forEachIndexed
+                }
+            }
+        }
+
+        title = videoTitle
+        binding.tvTitle.text = videoTitle.ifBlank { "未知片名" }
+        binding.tvCategory.text = formatField("类型", detail.category.ifBlank { "未知" })
+        binding.tvYear.text = formatField("上映时间", detail.year.ifBlank { "未知" })
+        binding.tvRating.text = formatField("评分", detail.rating.ifBlank { "0.0" })
+        binding.tvDirector.text = detail.director.ifBlank { "暂无导演信息" }
+        binding.tvActors.text = detail.actors.ifBlank { "暂无主演信息" }
+        binding.tvDescription.text = detail.description.ifBlank { "暂无简介" }
+
+        if (videoCover.isNotBlank()) {
+            binding.ivCover.load(videoCover)
+        }
+
+        renderPlayLines()
+        binding.btnPlay.isEnabled = selectedEpisode != null || videoUrl.isNotBlank()
+        updatePlayButtonText(false)
+        loadProgressFromHistory()
+    }
+
+    private fun renderPlayLines() {
+        binding.layoutPlayLines.removeAllViews()
+        binding.gridEpisodes.removeAllViews()
+
+        if (playLines.isEmpty()) {
+            binding.layoutPlayLinesBlock.visibility = View.GONE
+            return
+        }
+
+        binding.layoutPlayLinesBlock.visibility = View.VISIBLE
+        playLines.forEachIndexed { index, line ->
+            val chip = TextView(this).apply {
+                text = line.name
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                setTextColor(if (index == selectedLineIndex) Color.parseColor("#FFFF6A3D") else Color.parseColor("#FF4B5563"))
+                setBackgroundResource(if (index == selectedLineIndex) R.drawable.bg_chip_selected else R.drawable.bg_episode_normal)
+                setOnClickListener {
+                    selectedLineIndex = index
+                    selectedEpisode = line.episodes.firstOrNull()
+                    renderPlayLines()
+                    renderEpisodes(line)
+                    updatePlayButtonText(false)
+                    loadProgressFromHistory()
+                }
+            }
+            val params = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(10)
+            }
+            binding.layoutPlayLines.addView(chip, params)
+        }
+
+        renderEpisodes(playLines[selectedLineIndex])
+    }
+
+    private fun renderEpisodes(line: PlayLine) {
+        binding.gridEpisodes.removeAllViews()
+        binding.tvEpisodeTitle.text = if (line.episodes.size <= 1) "播放入口" else "选集 · 共 ${line.episodes.size} 集"
+
+        line.episodes.forEach { episode ->
+            val isSelected = episode.playPageUrl == selectedEpisode?.playPageUrl
+            val item = TextView(this).apply {
+                text = episode.title
+                textSize = 14f
+                gravity = Gravity.CENTER
+                maxLines = 1
+                setPadding(dp(6), dp(10), dp(6), dp(10))
+                setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#FF374151"))
+                setBackgroundResource(if (isSelected) R.drawable.bg_episode_selected else R.drawable.bg_episode_normal)
+                setOnClickListener {
+                    selectedEpisode = episode
+                    renderEpisodes(line)
+                    updatePlayButtonText(false)
+                    loadProgressFromHistory()
+                    playSelectedEpisodeOrVideo()
+                }
+            }
+            val params = GridLayout.LayoutParams().apply {
+                width = 0
+                height = GridLayout.LayoutParams.WRAP_CONTENT
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                setMargins(dp(4), dp(4), dp(4), dp(8))
+            }
+            binding.gridEpisodes.addView(item, params)
+        }
+    }
+
+    private fun updatePlayButtonText(hasProgress: Boolean = hasSelectedEpisodeHistory) {
+        hasSelectedEpisodeHistory = hasProgress
+        binding.btnPlay.text = if (hasProgress) "继续播放" else "立即播放"
+    }
+
+    private fun playSelectedEpisodeOrVideo() {
+        val episode = selectedEpisode
+        if (episode != null) {
+            binding.btnPlay.isEnabled = false
+            binding.btnPlay.text = "解析中..."
+            lifecycleScope.launch {
+                val realUrl = MovieApplication.get().videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
+                binding.btnPlay.isEnabled = true
+                updatePlayButtonText()
+                if (realUrl.isNullOrBlank()) {
+                    Toast.makeText(this@DetailActivity, "播放地址解析失败，请稍后重试", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                videoUrl = realUrl
+                openPlayer(episode, realUrl)
+            }
+            return
+        }
+
+        if (videoUrl.isNotBlank()) {
+            openPlayer(null, videoUrl)
+        } else {
+            Toast.makeText(this@DetailActivity, "视频地址加载中，请稍后", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openPlayer(episode: PlayEpisode?, url: String) {
+        val playbackId = getPlaybackId(episode)
+        startActivity(
+            PlayerActivity.newIntent(
+                this@DetailActivity,
+                playbackId,
+                videoTitle,
+                videoCover,
+                videoCategory,
+                url,
+                detailUrl = detailUrl,
+                playPageUrl = episode?.playPageUrl.orEmpty(),
+                episodeTitle = if (isMultiEpisode()) episode?.title.orEmpty() else ""
+            )
+        )
     }
 
     /** 点击 ActionBar 返回箭头结束 Activity */
@@ -247,8 +397,13 @@ class DetailActivity : AppCompatActivity() {
     private fun loadProgressFromHistory() {
         val app = MovieApplication.get()
         lifecycleScope.launch {
-            val history = app.playHistoryRepository.getHistoryByVideoId(videoId)
-            if (history != null && history.playProgressSeconds > 0) {
+            val episode = selectedEpisode
+            val history = app.playHistoryRepository.getHistoryByVideoId(getPlaybackId(episode))
+            val isSameEpisode = episode == null ||
+                !isMultiEpisode() ||
+                history?.playPageUrl == episode.playPageUrl
+            if (history != null && isSameEpisode && history.playProgressSeconds > 0) {
+                updatePlayButtonText(true)
                 val curSec = history.playProgressSeconds
                 val totalSec = history.durationSeconds
 
@@ -263,7 +418,7 @@ class DetailActivity : AppCompatActivity() {
                 }
 
                 // 总时长已知，拼接成 "继续观看 00:32 / 02:10:00"
-                val displayText = if (totalSec > 0) {
+                val progressText = if (totalSec > 0) {
                     val totalH = totalSec / 3600
                     val totalM = (totalSec % 3600) / 60
                     val totalStr = if (totalH > 0) {
@@ -276,13 +431,51 @@ class DetailActivity : AppCompatActivity() {
                     tip
                 }
 
+                val displayText = if (episode != null && isMultiEpisode()) {
+                    "继续观看${normalizeEpisodeTitle(episode.title)} $progressText"
+                } else {
+                    progressText
+                }
+
                 binding.tvProgressTip.text = displayText
                 binding.tvProgressTip.visibility = android.view.View.VISIBLE
                 Log.d(TAG, "显示进度提示: $displayText (progress=${curSec}s, duration=${totalSec}s)")
             } else {
+                updatePlayButtonText(false)
                 binding.tvProgressTip.visibility = android.view.View.GONE
                 Log.d(TAG, "无历史进度，隐藏提示")
             }
         }
+    }
+
+    private fun getPlaybackId(episode: PlayEpisode?): Long {
+        // 播放历史按影视维度去重：同一部电视剧/电影只保留一条最新记录。
+        // 当前播放到哪一集通过 playPageUrl / episodeTitle 冗余字段保存。
+        return videoId
+    }
+
+    private fun isMultiEpisode(): Boolean {
+        return playLines.any { it.episodes.size > 1 }
+    }
+
+    private fun formatField(label: String, value: String): String {
+        return "$label：${value.ifBlank { "未知" }}"
+    }
+
+    private fun normalizeEpisodeTitle(title: String): String {
+        val number = Regex("\\d+").find(title)?.value?.toIntOrNull()
+        return if (number != null && title.contains("集")) {
+            "第${number}集"
+        } else {
+            title
+        }
+    }
+
+    private fun cleanHistoryTitle(title: String): String {
+        return title.replace(Regex("\\s*第\\d+集\\s*$"), "").trim()
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
     }
 }

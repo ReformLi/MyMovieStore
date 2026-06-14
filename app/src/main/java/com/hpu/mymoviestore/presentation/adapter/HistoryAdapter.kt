@@ -2,6 +2,7 @@ package com.hpu.mymoviestore.presentation.adapter
 
 import android.text.format.DateFormat
 import android.util.Log
+import android.view.View
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -55,6 +56,13 @@ class HistoryAdapter(
             val timeStr = DateFormat.format("yyyy-MM-dd HH:mm", calendar).toString()
             binding.tvTime.text = timeStr
 
+            if (history.episodeTitle.isNotBlank()) {
+                binding.tvEpisode.text = "播放至 ${normalizeEpisodeTitle(history.episodeTitle)}"
+                binding.tvEpisode.visibility = View.VISIBLE
+            } else {
+                binding.tvEpisode.visibility = View.GONE
+            }
+
             if (history.coverUrl.isNotEmpty()) {
                 binding.ivCover.load(history.coverUrl)
             }
@@ -67,5 +75,14 @@ class HistoryAdapter(
 
     companion object {
         private const val TAG = "HistoryAdapter"
+
+        private fun normalizeEpisodeTitle(title: String): String {
+            val number = Regex("\\d+").find(title)?.value?.toIntOrNull()
+            return if (number != null && title.contains("集")) {
+                "第${number}集"
+            } else {
+                title
+            }
+        }
     }
 }

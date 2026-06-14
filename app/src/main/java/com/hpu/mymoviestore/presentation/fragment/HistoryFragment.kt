@@ -103,6 +103,7 @@ class HistoryFragment : Fragment() {
             putExtra(DetailActivity.EXTRA_VIDEO_COVER, history.coverUrl)
             putExtra(DetailActivity.EXTRA_VIDEO_CATEGORY, history.category)
             putExtra(DetailActivity.EXTRA_VIDEO_PLAY_URL, history.playUrl)
+            putExtra(DetailActivity.EXTRA_VIDEO_DETAIL_URL, history.detailUrl)
         }
         Log.d(
             TAG,

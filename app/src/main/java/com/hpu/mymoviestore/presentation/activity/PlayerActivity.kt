@@ -48,6 +48,9 @@ class PlayerActivity : AppCompatActivity() {
     private var videoCover: String = ""
     private var videoCategory: String = ""
     private var videoUrl: String = ""
+    private var detailUrl: String = ""
+    private var playPageUrl: String = ""
+    private var episodeTitle: String = ""
     private var resumeFromMs: Long = 0L   // 续播起点（毫秒），= playProgressSeconds * 1000
 
     // 用于定期写入播放进度的计时器（避免每秒写数据库）
@@ -64,6 +67,9 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_VIDEO_COVER = "extra_video_cover"
         const val EXTRA_VIDEO_CATEGORY = "extra_video_category"
         const val EXTRA_VIDEO_URL = "extra_video_url"
+        const val EXTRA_DETAIL_URL = "extra_detail_url"
+        const val EXTRA_PLAY_PAGE_URL = "extra_play_page_url"
+        const val EXTRA_EPISODE_TITLE = "extra_episode_title"
 
         /**
          * 构造播放器 Intent（供 DetailActivity 调用）
@@ -76,7 +82,10 @@ class PlayerActivity : AppCompatActivity() {
             title: String,
             coverUrl: String,
             category: String,
-            url: String
+            url: String,
+            detailUrl: String = "",
+            playPageUrl: String = "",
+            episodeTitle: String = ""
         ): Intent {
             return Intent(context, PlayerActivity::class.java).apply {
                 putExtra(EXTRA_VIDEO_ID, videoId)
@@ -84,6 +93,9 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra(EXTRA_VIDEO_COVER, coverUrl)
                 putExtra(EXTRA_VIDEO_CATEGORY, category)
                 putExtra(EXTRA_VIDEO_URL, url)
+                putExtra(EXTRA_DETAIL_URL, detailUrl)
+                putExtra(EXTRA_PLAY_PAGE_URL, playPageUrl)
+                putExtra(EXTRA_EPISODE_TITLE, episodeTitle)
             }
         }
     }
@@ -104,6 +116,9 @@ class PlayerActivity : AppCompatActivity() {
         videoCover = intent.getStringExtra(EXTRA_VIDEO_COVER) ?: ""
         videoCategory = intent.getStringExtra(EXTRA_VIDEO_CATEGORY) ?: ""
         videoUrl = intent.getStringExtra(EXTRA_VIDEO_URL) ?: ""
+        detailUrl = intent.getStringExtra(EXTRA_DETAIL_URL) ?: ""
+        playPageUrl = intent.getStringExtra(EXTRA_PLAY_PAGE_URL) ?: ""
+        episodeTitle = intent.getStringExtra(EXTRA_EPISODE_TITLE) ?: ""
 
         Log.d(TAG, "========== PlayerActivity.onCreate ==========")
         Log.d(TAG, "收到 Intent: videoId=$videoId, title=$videoTitle, category=$videoCategory")
@@ -116,12 +131,15 @@ class PlayerActivity : AppCompatActivity() {
         // ① 查询历史记录中的播放进度（用于续播）
         Log.d(TAG, "查询历史记录中的进度: videoId=$videoId")
         viewModel.getHistoryByVideoId(videoId) { history ->
-            resumeFromMs = if (history != null && history.playProgressSeconds > 0) {
+            val canResumeThisEpisode = history != null &&
+                history.playProgressSeconds > 0 &&
+                (playPageUrl.isBlank() || history.playPageUrl == playPageUrl)
+            resumeFromMs = if (canResumeThisEpisode) {
                 val ms = history.playProgressSeconds * 1000
                 Log.d(
                     TAG,
-                    "发现上次播放进度: ${history.playProgressSeconds}秒 ($ms ms), " +
-                        "总时长=${history.durationSeconds}秒 → 续播"
+                    "发现当前集上次播放进度: ${history?.playProgressSeconds}秒 ($ms ms), " +
+                        "总时长=${history?.durationSeconds}秒 → 续播"
                 )
                 ms
             } else {
@@ -135,7 +153,10 @@ class PlayerActivity : AppCompatActivity() {
                 title = videoTitle,
                 coverUrl = videoCover,
                 category = videoCategory,
-                playUrl = videoUrl
+                playUrl = videoUrl,
+                detailUrl = detailUrl,
+                playPageUrl = playPageUrl,
+                episodeTitle = episodeTitle
             )
             Log.d(TAG, "ViewModel 已设置视频信息（将异步写入播放历史）")
 

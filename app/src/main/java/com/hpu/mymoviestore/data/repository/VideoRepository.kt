@@ -2,6 +2,7 @@
 package com.hpu.mymoviestore.data.repository
 
 import android.util.Log
+import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.data.source.CrawlerVideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
@@ -91,5 +92,15 @@ class VideoRepository(
             )
         }
         return null
+    }
+
+    suspend fun getCrawlerVideoDetail(detailUrl: String): CrawlerVideoDetail? {
+        if (!preferCrawler || crawlerSource == null) return null
+        return crawlerSource.fetchVideoDetail(detailUrl).getOrNull()
+    }
+
+    suspend fun getRealPlayUrlByPlayPageUrl(playPageUrl: String): String? {
+        if (!preferCrawler || crawlerSource == null) return null
+        return crawlerSource.fetchVideoUrlByPlayPageUrl(playPageUrl).getOrNull()
     }
 }
