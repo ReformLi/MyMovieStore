@@ -12,16 +12,15 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
 import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
-import kotlin.random.Random
 
 class CrawlerVideoSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -36,7 +35,16 @@ class CrawlerVideoSource(
             chain.proceed(request)
         }
         .build(),
-    private val cacheRepository: ApiCacheRepository? = null
+    private val cacheRepository: ApiCacheRepository? = null,
+    /**
+     * 单源限流器：搜索/详情/播放页统一排队，最大 3 个，最小间隔 3 秒。
+     * 同源内不同类型请求共享该队列，符合"内容播放层独立限流"的约束。
+     */
+    private val rateLimiter: RequestRateLimiter = RequestRateLimiter(
+        sourceTag = "JJU",
+        minIntervalMs = 3_000L,
+        maxQueueSize = 3
+    )
 ) {
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
@@ -48,9 +56,13 @@ class CrawlerVideoSource(
     private val detailAdapter = moshi.adapter(CrawlerVideoDetail::class.java)
     private val searchPageAdapter = moshi.adapter(SearchPageResult::class.java)
 
-    /** 模拟人类延迟，避免请求过快；缓存命中时不会执行该延迟 */
+    /**
+     * 已废弃：原本用于"模拟人类延迟"，现在统一由 [rateLimiter] 控制 3 秒最小间隔。
+     * 保留空实现以减少改动面，调用点已被移除。
+     */
+    @Deprecated("由 RequestRateLimiter 统一限流，不再单独使用", ReplaceWith(""))
     private suspend fun humanDelay() {
-        delay(Random.nextLong(1500, 3500))
+        // no-op: 由 rateLimiter 统一管理请求间隔
     }
 
     /**
@@ -71,9 +83,8 @@ class CrawlerVideoSource(
                 }
             }
             Log.d(TAG, "缓存未命中，开始网络请求")
-            humanDelay()
             Log.d(TAG, "准备请求文档: $HOME_URL")
-            val doc = requestDocument(HOME_URL)
+            val doc = requestDocument(HOME_URL, RequestRateLimiter.Priority.SEARCH)
             Log.d(TAG, "页面获取成功，状态码: ${doc.location()}")
             val videoItems = parseHomepageVideos(doc)
             Log.d(TAG, "解析完成，共 ${videoItems.size} 条视频")
@@ -134,8 +145,7 @@ class CrawlerVideoSource(
                 }
             }
 
-            humanDelay()
-            val doc = requestDocument(detailUrl)
+            val doc = requestDocument(detailUrl, RequestRateLimiter.Priority.DETAIL)
             val detail = parseVideoDetail(doc, detailUrl)
             cacheRepository?.put(cacheKey, detailAdapter.toJson(detail), ApiCacheEntity.TTL_ONE_DAY)
             Result.success(detail)
@@ -163,8 +173,7 @@ class CrawlerVideoSource(
             }
 
             Log.d(TAG, "开始请求播放页提取真实地址: $playPageUrl")
-            humanDelay()
-            val playDoc = requestDocument(playPageUrl)
+            val playDoc = requestDocument(playPageUrl, RequestRateLimiter.Priority.PLAY)
             val scriptElement = playDoc.select("script:containsData(player_aaaa)").first()
             if (scriptElement == null) {
                 Log.e(TAG, "未找到 player_aaaa 脚本")
@@ -239,9 +248,8 @@ class CrawlerVideoSource(
                 }
             }
 
-            humanDelay()
             Log.d(TAG, "开始网络请求搜索页: $url")
-            val doc = requestDocument(url)
+            val doc = requestDocument(url, RequestRateLimiter.Priority.SEARCH)
             Log.d(
                 TAG,
                 "搜索页响应成功: requestedUrl=$url, finalLocation=${doc.location()}, " +
@@ -563,7 +571,6 @@ class CrawlerVideoSource(
             }
         }
 
-        humanDelay()
         val detail = fetchVideoDetail(detailUrl).getOrThrow()
         val playLink = detail.playLines.firstOrNull()?.episodes?.firstOrNull()
             ?: throw IOException("未找到播放链接")
@@ -592,26 +599,47 @@ class CrawlerVideoSource(
         return m3u8Regex.find(scriptContent)?.value?.replace("\\/", "/")
     }
 
-    private fun requestDocument(url: String): Document {
-        return Jsoup.connect(url)
-            .timeout(15000)
-            .userAgent(USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-            .header("Accept-Encoding", "gzip, deflate, br, zstd")
+    /**
+     * 通过限流器调度的网络请求 + Jsoup 解析。
+     *
+     * 1. 通过 [rateLimiter] 排队：保证同源 3 秒最小间隔、最大 3 个并发；
+     * 2. 使用 OkHttp 发起请求（注册 Call 以支持外部取消）；
+     * 3. 收到响应后用 Jsoup 解析为 [Document]。
+     */
+    private suspend fun requestDocument(
+        url: String,
+        priority: RequestRateLimiter.Priority
+    ): Document = rateLimiter.submit(priority, url) { handle ->
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+            )
             .header("Accept-Language", "zh-CN,zh;q=0.9")
             .header("Cache-Control", "max-age=0")
             .header("Connection", "keep-alive")
-            .header("Sec-Ch-Ua", "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"")
-            .header("Sec-Ch-Ua-Mobile", "?0")
-            .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+            .header("Upgrade-Insecure-Requests", "1")
             .header("Sec-Fetch-Dest", "document")
             .header("Sec-Fetch-Mode", "navigate")
             .header("Sec-Fetch-Site", "none")
             .header("Sec-Fetch-User", "?1")
-            .header("Upgrade-Insecure-Requests", "1")
-            // Cookie 一般不需要硬编码，让会话自动管理即可，除非网站需要登录态
-            // .header("Cookie", "your_cookie_here")
             .get()
+            .build()
+
+        val call = client.newCall(request)
+        // 注册到限流器，使外部取消能直接 cancel 该 Call
+        handle.registerCall(call)
+
+        val response = call.execute()
+        response.use { resp ->
+            if (!resp.isSuccessful) {
+                throw IOException("HTTP ${resp.code} for $url")
+            }
+            val body = resp.body?.string().orEmpty()
+            Jsoup.parse(body, url)
+        }
     }
 
     private fun buildSearchUrl(keyword: String, page: Int): String {

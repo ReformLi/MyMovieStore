@@ -17,6 +17,7 @@
 | 播放 | 使用 Media3 ExoPlayer 播放真实视频地址，支持进度保存和续播 | `PlayerActivity`、`PlayerViewModel` |
 | 播放历史 | 自动保存播放记录，按最近播放倒序展示，支持清空 | `HistoryFragment`、`HistoryViewModel` |
 | 搜索历史 | 保存搜索关键词、搜索次数和最后搜索时间 | `SearchHistoryViewModel` |
+| 爬虫限流 | 内容播放层统一限流队列，同源请求 3 秒最小间隔，优先级抢占 | `RequestRateLimiter`、`CrawlerVideoSource` |
 
 底部导航当前包含：首页、搜索、历史。项目没有实现独立收藏页面。
 
@@ -39,10 +40,39 @@ DoubanDiscoverySource
         ↓
 CrawlerVideoSource
         ↓
+RequestRateLimiter（统一限流）
+        ↓
 SearchFragment / DetailActivity / PlayerActivity
 ```
 
-内容发现层只负责“发现用户可能想看的影视”；它不直接提供播放地址。内容播放层负责“根据片名搜索可播放资源，再进入详情和播放”。
+内容发现层只负责"发现用户可能想看的影视"；它不直接提供播放地址。内容播放层负责"根据片名搜索可播放资源，再进入详情和播放"，并通过 `RequestRateLimiter` 统一限流以避免触发反爬。
+
+## 爬虫限流机制
+
+内容播放层的所有网络请求通过 `RequestRateLimiter` 统一调度，避免触发反爬。
+
+### 设计要点
+
+- **单源独立**：每个播放源持有一个 `RequestRateLimiter` 实例，独立管理自己的请求队列和限流策略。
+- **最小间隔**：同一源下两次实际网络请求之间至少间隔 3 秒。
+- **队列容量**：最大同时持有 3 个未完成任务（含正在执行和等待中的）。
+- **优先级抢占**：新任务入队时，取消队列中所有优先级 ≤ 自身的旧任务（包括已开始执行的）。
+- **优先级等级**：`SEARCH(3) > DETAIL(2) > PLAY(1)`，搜索最高，播放最低。
+
+### 取消行为
+
+| 任务状态 | 处理方式 |
+|----------|----------|
+| 未开始（等待中） | 直接从队列移除，调用方收到 `CancellationException` |
+| 已开始（HTTP 请求已发出） | 通过 OkHttp `Call.cancel()` 终止网络层，但仍占用 3 秒间隔槽 |
+
+### 调用点优先级分配
+
+| 调用场景 | 优先级 | 说明 |
+|----------|--------|------|
+| 首页爬取 / 搜索 | `SEARCH` | 用户主动触发的搜索行为优先级最高 |
+| 详情页解析 | `DETAIL` | 搜索结果点击后获取详情 |
+| 播放页解析 | `PLAY` | 获取真实播放地址优先级最低 |
 
 ## 技术栈
 
@@ -241,3 +271,4 @@ app/build/outputs/apk/debug/app-debug.apk
 - 增加首页下拉刷新，用于主动刷新已过期或手动清空的发现缓存。
 - 增加视频源管理页面，允许配置内容发现源和内容播放源。
 - 增加 Room Migration，替代当前 `fallbackToDestructiveMigration()` 的破坏式迁移策略。
+- 扩展 `RequestRateLimiter` 支持更多播放源和可配置的限流策略。
