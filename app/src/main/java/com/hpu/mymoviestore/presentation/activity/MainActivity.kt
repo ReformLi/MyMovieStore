@@ -69,7 +69,9 @@ class MainActivity : AppCompatActivity() {
         setupBackPressed()
 
         if (savedInstanceState == null) {
+            Log.d(TAG, "首次启动，显式显示首页")
             binding.bottomNavigation.selectedItemId = R.id.nav_home
+            showFragment(R.id.nav_home)
         } else {
             restoreFragments()
             showFragment(binding.bottomNavigation.selectedItemId)
