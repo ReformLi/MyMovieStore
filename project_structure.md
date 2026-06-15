@@ -1,25 +1,25 @@
 # 项目结构说明
 
-本文档根据当前代码结构整理，描述 `MyMovieStore` 的分层设计、主要目录、核心类职责和数据流。当前项目是单模块 Android 应用，主包名为 `com.hpu.mymoviestore`。
+本文档描述 `MyMovieStore` 当前代码结构、分层职责和主要数据流。项目是单模块 Android 应用，主包名为 `com.hpu.mymoviestore`。
 
 ## 架构概览
 
-项目采用 MVVM + Repository + 数据源管理的轻量分层结构：
+项目采用 MVVM + Repository + Data Source 的轻量分层结构。当前实现把数据能力拆成内容发现和内容播放两条链路。
 
 ```text
-Presentation Layer
+Presentation
 Activity / Fragment / Adapter
-        ↓ observe / call
+        ↓
 ViewModel
         ↓
 Repository
         ↓
 Data Source / Room DAO
         ↓
-Crawler Source / assets JSON / SQLite
+DoubanDiscoverySource / CrawlerVideoSource / VideoSourceManager / SQLite
 ```
 
-当前视频主数据不存入 Room，支持两类来源：一类是从 `assets/sample_video_source.json` 读取并映射为 `VideoItem`，另一类是通过 `CrawlerVideoSource` 爬取网页视频卡片、详情页播放入口和真实播放地址。Room 负责保存播放历史、搜索历史和 `api_cache` 缓存。
+内容发现层由 `DoubanDiscoverySource` 负责，主要服务首页。内容播放层由 `CrawlerVideoSource` 负责，主要服务搜索、详情和播放。`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，作为首页兜底挡板和本地数据补充。
 
 ## 顶层目录
 
@@ -29,6 +29,8 @@ MyMovieStore/
 │   ├── build.gradle.kts
 │   ├── proguard-rules.pro
 │   └── src/
+├── example/
+│   └── douban/
 ├── gradle/
 │   ├── libs.versions.toml
 │   └── wrapper/
@@ -44,9 +46,8 @@ MyMovieStore/
 | 文件或目录 | 说明 |
 |------------|------|
 | `app/` | Android 应用模块 |
+| `example/` | 页面源代码示例，用于辅助爬虫解析 |
 | `gradle/libs.versions.toml` | 统一管理依赖和插件版本 |
-| `settings.gradle.kts` | Gradle 项目配置 |
-| `build.gradle.kts` | 根项目构建配置 |
 | `README.md` | 项目功能、构建和使用说明 |
 | `project_structure.md` | 当前架构与文件职责说明 |
 
@@ -76,20 +77,20 @@ app/src/main/
 
 ### `MovieApplication.kt`
 
-`MovieApplication` 是应用级初始化入口，主要职责：
+`MovieApplication` 是应用级初始化入口：
 
 - 初始化 Room 数据库 `MovieDatabase`。
 - 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`。
-- 创建 `VideoSourceManager`，连接本地 JSON 数据源和 `api_cache` 缓存。
-- 创建 `CrawlerVideoSource`，连接网页爬虫逻辑和 `api_cache` 分类型 TTL 缓存。
+- 创建本地挡板源 `VideoSourceManager`。
+- 创建播放链路爬虫源 `CrawlerVideoSource`。
+- 创建首页发现源 `DoubanDiscoverySource`。
 - 创建 `VideoRepository`，供视频相关 ViewModel 使用。
 - 启动时清理过期的 `api_cache` 记录。
+- 提供全局 Coil `ImageLoader`，为豆瓣图片自动补充 `Referer`、`Origin` 和浏览器 `User-Agent`，处理图片防盗链。
 
-当前全局依赖通过 `MovieApplication.get()` 获取，后续如引入 Hilt，可将这些单例迁移到依赖注入容器。
+当前全局依赖通过 `MovieApplication.get()` 获取。
 
 ## Data 层
-
-`data` 目录负责数据模型、数据访问、缓存、Repository 和视频源解析。
 
 ```text
 data/
@@ -104,6 +105,9 @@ data/
 │   ├── PlayHistoryEntity.kt
 │   └── SearchHistoryEntity.kt
 ├── model/
+│   ├── CrawlerVideoDetail.kt
+│   ├── DoubanMoviePageResult.kt
+│   ├── SearchPageResult.kt
 │   ├── VideoItem.kt
 │   └── remote/
 │       ├── RemoteCategory.kt
@@ -117,6 +121,7 @@ data/
 │   └── VideoRepository.kt
 └── source/
     ├── CrawlerVideoSource.kt
+    ├── DoubanDiscoverySource.kt
     └── VideoSourceManager.kt
 ```
 
@@ -131,8 +136,6 @@ data/
 | 表 | `play_history`、`search_history`、`api_cache` |
 | 迁移策略 | `fallbackToDestructiveMigration()` |
 | Schema 导出 | `exportSchema = false` |
-
-版本注释中记录了历史结构变化：早期包含视频、收藏、视频源和分类表；当前版本已精简为播放历史、搜索历史和缓存三张表。
 
 ### Entity
 
@@ -154,70 +157,97 @@ data/
 
 | Repository | 职责 |
 |------------|------|
-| `VideoRepository` | 对上层提供视频列表、分类过滤、关键词搜索、按 ID 查询和按详情页 URL 获取播放地址 |
+| `VideoRepository` | 聚合豆瓣发现源、剧集屋播放源和本地挡板源，对上层提供首页、搜索、详情和播放相关数据 |
 | `PlayHistoryRepository` | 播放历史去重写入、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
-| `ApiCacheRepository` | 封装 `api_cache` 的读写、失效和过期清理 |
+| `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、过期清理和剩余 TTL 查询 |
 
-### 本地视频源解析
+### 模型
 
-`VideoSourceManager` 是视频主数据入口，数据加载顺序为：
+| Model | 说明 |
+|-------|------|
+| `VideoItem` | UI 层通用影视卡片和详情数据 |
+| `SearchPageResult` | 剧集屋搜索分页结果，包含当前页、总页数、上下页状态和列表 |
+| `DoubanMoviePageResult` | 豆瓣首页分栏分页结果，包含 `start`、`limit`、`total`、`items` 和 `hasMore` |
+| `CrawlerVideoDetail` | 剧集屋详情页解析结果，包含播放线路和剧集 |
+
+## 数据源
+
+### `DoubanDiscoverySource`
+
+`DoubanDiscoverySource` 是内容发现层，负责首页数据。
+
+数据来源：
 
 ```text
-内存缓存 cachedVideos
-        ↓ 未命中
-Room api_cache
-        ↓ 未命中或过期
-assets/sample_video_source.json
-        ↓
-Moshi 解析 RemoteVideoResponse
-        ↓
-RemoteVideoMapper 转为 List<VideoItem>
-        ↓
-写入内存缓存和 api_cache
+https://movie.douban.com/
+https://movie.douban.com/explore/
+https://movie.douban.com/tv/
+https://m.douban.com/rexxar/api/v2/subject/recent_hot/movie
+https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 ```
 
-它还提供：
+主要方法：
 
-- `loadAllVideos()`：获取全部视频。
-- `loadVideosByCategory(category)`：按分类过滤。
-- `searchVideos(keyword)`：按标题、演员、导演、简介搜索。
-- `getVideoById(id)`：按视频 ID 回查详情。
-- `clearCache()`：清空内存缓存和接口缓存。
+| 方法 | 用途 |
+|------|------|
+| `fetchHomeAll()` | 获取首页“全部”内容，混排热门电视剧和热门电影 |
+| `fetchExploreMoviePage()` | 获取电影分栏某个分类的分页内容 |
+| `fetchExploreTvRelatedPage()` | 获取电视剧、动漫、综艺相关分页内容 |
 
-### 爬虫视频源解析
+首页“全部”的混排只在同一滑动页内部随机。电影、电视剧、综艺使用二级分类；动漫使用豆瓣 TV 页中的动画数据，不显示二级分类。
 
-`CrawlerVideoSource` 负责网页爬虫视频源，当前流程为：
+### `CrawlerVideoSource`
+
+`CrawlerVideoSource` 是内容播放层，负责搜索、详情和真实播放地址解析。
+
+主要流程：
 
 ```text
-首页 HTML
-        ↓ select(".r-item")
-解析标题 / 封面 / 详情页 URL
+搜索页 HTML
         ↓
-VideoItem(detailUrl = ...)
-        ↓ 用户点击播放
+解析搜索结果和分页
+        ↓ 点击搜索结果
 详情页 HTML
-        ↓ select(".channel-set a.item").first()
-首个播放页 URL
         ↓
+解析播放线路和剧集
+        ↓ 点击播放
 播放页 HTML
-        ↓ script:containsData(player_aaaa)
-真实 .m3u8 / mp4 地址
+        ↓
+提取真实 .m3u8 / mp4 地址
+        ↓
+PlayerActivity
 ```
 
-为避免频繁访问源站，爬虫结果统一写入 `api_cache`：
+主要方法：
 
-| 数据类型 | 缓存键 | 缓存时长 | 说明 |
-|----------|--------|----------|------|
-| 首页视频列表 | `crawler:home:list` | 1 天 | 缓存解析后的 `List<VideoItem>` JSON |
-| 首个播放页链接 | `crawler:detail:first_play_page:{hash}:{detailUrl}` | 1 天 | 从详情页解析出的播放入口，当前对应第一集 |
-| 真实播放地址 | `crawler:play:real_url:{hash}:{detailUrl}` | 30 分钟 | `.m3u8` / `mp4` 可能包含短时效 token |
+| 方法 | 用途 |
+|------|------|
+| `searchVideos()` | 按关键词爬取搜索结果页并解析分页 |
+| `fetchVideoDetail()` | 解析详情页中的元信息、播放线路和剧集 |
+| `fetchVideoUrl()` | 从详情页找到首个播放页并解析真实播放地址 |
+| `fetchVideoUrlByPlayPageUrl()` | 直接从播放页解析真实播放地址 |
 
-`CrawlerVideoSource` 特意不按 1 天缓存播放页 HTML，因为播放页脚本中可能直接包含短时效真实视频地址。真实播放地址过期后会重新请求播放页解析，详情页播放入口仍可复用 1 天缓存。
+### `VideoSourceManager`
+
+`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，主要用于豆瓣或远程网络失败时的兜底展示，也提供本地搜索和按 ID 查询能力。
+
+## 缓存策略
+
+`api_cache` 只用于网络爬取结果。本地挡板回退结果不写入首页缓存。
+
+| 数据类型 | 缓存键前缀 | 缓存时长 | 说明 |
+|----------|------------|----------|------|
+| 首页全部豆瓣内容 | `home:tab:all:v1` | 1 天 | 豆瓣发现成功后写入 |
+| 首页电影分页 | `home:tab:movie:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 同一分类分页同时过期 |
+| 首页电视剧/动漫/综艺分页 | `home:tab:tv_related:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 三个默认分栏会一起预缓存 |
+| 搜索结果页 | `crawler:search:v3` | 30 分钟 | 同一搜索词下分页一起过期 |
+| 详情页首个播放页链接 | `crawler:detail:first_play_page` | 1 天 | 复用详情页解析出的播放入口 |
+| 真实播放地址 | `crawler:play:real_url` | 30 分钟 | 短时效真实播放地址只做短缓存 |
+
+`ApiCacheRepository.getRemainingTtlSeconds()` 用于让后续分页缓存跟随首页或第一页的剩余缓存时间。
 
 ## Presentation 层
-
-`presentation` 目录负责页面展示、交互、ViewModel 状态和列表适配。
 
 ```text
 presentation/
@@ -227,6 +257,7 @@ presentation/
 │   └── PlayerActivity.kt
 ├── adapter/
 │   ├── HistoryAdapter.kt
+│   ├── SearchResultAdapter.kt
 │   └── VideoAdapter.kt
 ├── fragment/
 │   ├── HistoryFragment.kt
@@ -243,25 +274,23 @@ presentation/
 
 | Activity | 说明 |
 |----------|------|
-| `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和历史三个 Fragment |
-| `DetailActivity` | 视频详情页，展示完整视频信息，支持从历史记录回查缺失字段，并显示续播提示 |
+| `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和历史；通过 `add + hide/show` 保留 Fragment 实例 |
+| `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示 |
 | `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，负责播放生命周期和进度保存 |
 
 ### Fragment
 
 | Fragment | 说明 |
 |----------|------|
-| `HomeFragment` | 首页视频列表，使用 `TabLayout` 实现全部、电影、电视剧、综艺、动漫、纪录片分类切换 |
-| `SearchFragment` | 搜索页，支持输入实时过滤、提交搜索词、展示搜索历史 Chip、清空搜索历史 |
+| `HomeFragment` | 首页内容发现，九宫格展示，支持主分类、二级分类和列表末尾加载更多 |
+| `SearchFragment` | 搜索页，支持外部传入关键词自动搜索、手动搜索、分页、历史 Chip 和清空历史 |
 | `HistoryFragment` | 播放历史页，展示 Room 中的播放记录，支持点击进入详情和一键清空 |
-
-当前没有 `FavoriteFragment`，收藏模块未在当前代码中实现。
 
 ### ViewModel
 
 | ViewModel | 说明 |
 |-----------|------|
-| `VideoViewModel` | 加载全部视频、分类视频、搜索结果和按 ID 查询视频 |
+| `VideoViewModel` | 加载首页发现内容、豆瓣分页、搜索结果和详情相关数据 |
 | `HistoryViewModel` | 读取播放历史、写入或更新历史、清空历史 |
 | `PlayerViewModel` | 播放时写入历史、更新播放进度、查询续播记录、按 ID 回查视频 |
 | `SearchHistoryViewModel` | 读取、写入、删除和清空搜索历史 |
@@ -270,8 +299,9 @@ presentation/
 
 | Adapter | 说明 |
 |---------|------|
-| `VideoAdapter` | 渲染首页和搜索页的视频卡片 |
-| `HistoryAdapter` | 渲染播放历史列表 |
+| `VideoAdapter` | 首页九宫格卡片和列表末尾 `加载更多` Footer |
+| `SearchResultAdapter` | 搜索结果列表，展示封面、标题、类型、上映时间、主演和简介 |
+| `HistoryAdapter` | 播放历史列表 |
 
 ## 资源结构
 
@@ -281,6 +311,10 @@ res/
 │   └── bottom_nav_color.xml
 ├── drawable/
 │   ├── bg_chip.xml
+│   ├── bg_chip_selected.xml
+│   ├── bg_episode_normal.xml
+│   ├── bg_play_button.xml
+│   ├── bg_poster_round.xml
 │   ├── bg_rating.xml
 │   ├── ic_history.xml
 │   ├── ic_home.xml
@@ -293,6 +327,8 @@ res/
 │   ├── fragment_home.xml
 │   ├── fragment_search.xml
 │   ├── item_history.xml
+│   ├── item_home_load_more.xml
+│   ├── item_search_result.xml
 │   └── item_video.xml
 ├── menu/
 │   └── bottom_nav_menu.xml
@@ -317,7 +353,9 @@ res/
 | `fragment_home.xml` | `HomeFragment` |
 | `fragment_search.xml` | `SearchFragment` |
 | `fragment_history.xml` | `HistoryFragment` |
-| `item_video.xml` | `VideoAdapter` |
+| `item_video.xml` | `VideoAdapter` 的影视卡片 |
+| `item_home_load_more.xml` | `VideoAdapter` 的加载更多 Footer |
+| `item_search_result.xml` | `SearchResultAdapter` |
 | `item_history.xml` | `HistoryAdapter` |
 
 ## 页面导航
@@ -330,103 +368,109 @@ nav_search  → SearchFragment
 nav_history → HistoryFragment
 ```
 
+`MainActivity` 保留三个 Fragment 实例，切换时隐藏其他页面并显示目标页面。这样首页滚动位置、已加载分页、主分类和二级分类不会因为进入搜索或历史而重置。
+
+首页内容发现到搜索的关联：
+
+```text
+HomeFragment 点击影视卡片
+        ↓
+MainActivity.navigateToSearchWithKeyword(title)
+        ↓
+SearchFragment.searchFromExternal(title)
+        ↓
+CrawlerVideoSource.searchVideos(title)
+```
+
+手动点击底部搜索按钮时，搜索页会调用 `resetToInitialState()`，清空搜索框和旧搜索结果，只保留搜索历史。
+
 详情和播放页面通过显式 Intent 打开：
 
 ```text
-HomeFragment / SearchFragment / HistoryFragment
+SearchFragment / HistoryFragment
         ↓
 DetailActivity
         ↓
 PlayerActivity
 ```
 
-`DetailActivity` 使用一组 `EXTRA_VIDEO_*` 常量接收视频字段。来自首页和搜索页时通常携带完整字段；来自历史页时可能只携带历史表冗余字段，详情页会通过 `videoId` 回查 JSON 数据补全导演、演员、简介、评分等信息。
-
 ## 核心数据流
 
-### 首页分类浏览
+### 首页内容发现
 
 ```text
-HomeFragment.onViewCreated()
+HomeFragment
         ↓
-VideoViewModel.loadAllVideos()
+VideoViewModel.loadAllVideos() / loadHomeDoubanCategory()
         ↓
-VideoRepository.getAllVideos()
+VideoRepository
         ↓
-preferCrawler = true 时优先 CrawlerVideoSource.fetchHomepageVideos()
-        ↓ 失败或空列表
-VideoSourceManager.loadAllVideos()
+DoubanDiscoverySource
         ↓
-VideoAdapter.submitList()
+api_cache 写入网络结果
+        ↓
+VideoAdapter 九宫格展示
 ```
 
-切换分类时调用：
+豆瓣失败时：
 
 ```text
-VideoViewModel.loadVideosByCategory(category)
+DoubanDiscoverySource 失败或返回空
         ↓
-VideoSourceManager.loadVideosByCategory(category)
+VideoSourceManager 读取本地挡板
+        ↓
+不写入首页 api_cache
 ```
 
 ### 搜索与搜索历史
 
 ```text
-SearchFragment 文本变化
+SearchFragment.performSearch(keyword)
         ↓
-VideoViewModel.searchVideos(keyword)
-        ↓
-VideoSourceManager.searchVideos(keyword)
-        ↓
-列表刷新
-```
-
-用户提交搜索时：
-
-```text
 SearchHistoryViewModel.addKeyword(keyword)
         ↓
-SearchHistoryRepository.addOrUpdateKeyword(keyword)
+VideoViewModel.searchVideosPage(keyword, page)
         ↓
-Room search_history
+VideoRepository.searchVideosPage()
         ↓
-SearchFragment 渲染历史 Chip
+CrawlerVideoSource.searchVideos()
+        ↓
+SearchResultAdapter 渲染结果
 ```
 
-### 播放与续播
+### 详情和播放
 
 ```text
-DetailActivity 点击播放
+SearchFragment 点击搜索结果
+        ↓ detailUrl
+DetailActivity
+        ↓
+VideoRepository.getCrawlerVideoDetail()
+        ↓
+CrawlerVideoSource.fetchVideoDetail()
+        ↓
+用户选择播放
+        ↓ playPageUrl
+CrawlerVideoSource.fetchVideoUrlByPlayPageUrl()
         ↓
 PlayerActivity
-        ↓
-PlayerViewModel.getHistoryByVideoId(videoId)
-        ↓
-若存在 playProgressSeconds，则 ExoPlayer seekTo()
-        ↓
-PlayerViewModel.setVideoInfo()
-        ↓
-PlayHistoryRepository.addOrUpdateHistory()
-        ↓
-Room play_history
 ```
 
-播放过程中：
+### 播放历史与续播
 
 ```text
-PlayerActivity 定时读取 currentPosition
+PlayerActivity
         ↓
-PlayerViewModel.updateProgress()
+PlayerViewModel
         ↓
-PlayHistoryRepository.updateProgress()
+PlayHistoryRepository
         ↓
 Room play_history
+        ↓
+HistoryFragment / DetailActivity / PlayerActivity
 ```
 
 ## 构建配置
-
-### `app/build.gradle.kts`
-
-关键配置：
 
 | 配置项 | 当前值 |
 |--------|--------|
@@ -449,9 +493,7 @@ Room play_history
 | Material Components | Material UI 组件 |
 | ConstraintLayout | 布局 |
 | RecyclerView / CardView | 列表和卡片 |
-| SwipeRefreshLayout | 下拉刷新能力预留 |
 | Lifecycle ViewModel / LiveData / Runtime | MVVM 和生命周期感知 |
-| Navigation Fragment / UI | 导航能力依赖，当前主要使用手动 Fragment 切换 |
 | Room Runtime / KTX / Compiler | 本地数据库 |
 | Kotlin Coroutines | 异步任务 |
 | Coil | 图片加载 |
@@ -472,24 +514,9 @@ Room play_history
 
 ## 当前实现边界
 
-- 视频主数据支持本地 JSON 示例文件和网页爬虫源；当前 `MovieApplication` 中 `preferCrawler = true`，爬虫失败时回退本地 JSON。
-- 视频列表未持久化到 Room；Room 只保存历史、搜索记录和缓存。
-- 收藏功能相关字符串仍存在于资源文件中，但当前页面和数据层未实现收藏模块。
+- 首页内容发现只适配豆瓣相关页面和接口；豆瓣失败时回退本地挡板。
+- 内容播放只适配当前剧集屋搜索、详情和播放页结构。
+- 本地挡板不写入首页 `api_cache`。
+- 搜索结果、详情播放入口和真实播放地址有独立缓存周期。
+- 收藏功能未实现。
 - 数据库升级使用破坏式迁移，适合开发阶段；正式版本应增加 Migration。
-- `api_cache` 当前缓存本地 JSON、首页爬虫列表、详情页播放入口和短时效真实播放地址。
-
-## 新增功能建议
-
-新增一个完整功能模块时，可按以下顺序补齐：
-
-1. 在 `data/entity` 新增 Entity。
-2. 在 `data/dao` 新增 DAO。
-3. 在 `MovieDatabase` 注册 Entity 和 DAO。
-4. 在 `data/repository` 新增 Repository。
-5. 在 `MovieApplication` 初始化 Repository。
-6. 在 `presentation/viewmodel` 新增 ViewModel。
-7. 在 `presentation/fragment` 或 `presentation/activity` 新增页面。
-8. 在 `res/layout` 新增布局。
-9. 如需底部入口，在 `bottom_nav_menu.xml` 和 `MainActivity` 中注册。
-
-如果新增远程视频源，优先扩展 `VideoSourceManager` 和 `VideoRepository`，避免让 UI 直接感知数据来自本地 JSON 还是网络接口。

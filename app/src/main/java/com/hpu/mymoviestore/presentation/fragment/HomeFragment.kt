@@ -15,6 +15,7 @@ import com.google.android.material.tabs.TabLayout
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentHomeBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
+import com.hpu.mymoviestore.presentation.activity.MainActivity
 import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 
@@ -223,25 +224,10 @@ class HomeFragment : Fragment() {
         }
     }
 
-    /** 列表项点击 → 跳转详情页 */
+    /** 首页内容发现点击 → 跳转搜索页并按影视名自动搜索 */
     private fun openDetail(video: VideoItem) {
-        val intent = Intent(requireContext(), DetailActivity::class.java).apply {
-            putExtra(DetailActivity.EXTRA_VIDEO_ID, video.id)
-            putExtra(DetailActivity.EXTRA_VIDEO_TITLE, video.title)
-            putExtra(DetailActivity.EXTRA_VIDEO_COVER, video.coverUrl)
-            putExtra(DetailActivity.EXTRA_VIDEO_CATEGORY, video.category)
-            putExtra(DetailActivity.EXTRA_VIDEO_RATING, video.rating)
-            putExtra(DetailActivity.EXTRA_VIDEO_PLAY_URL, video.playUrl)
-            putExtra(DetailActivity.EXTRA_VIDEO_YEAR, video.year)
-            putExtra(DetailActivity.EXTRA_VIDEO_AREA, video.area)
-            putExtra(DetailActivity.EXTRA_VIDEO_DIRECTOR, video.director)
-            putExtra(DetailActivity.EXTRA_VIDEO_ACTORS, video.actors)
-            putExtra(DetailActivity.EXTRA_VIDEO_DESCRIPTION, video.description)
-            // 新增：传递详情页URL
-            putExtra(DetailActivity.EXTRA_VIDEO_DETAIL_URL, video.detailUrl)
-        }
-        Log.d(TAG, "跳转到详情页: id=${video.id}, title=${video.title}, detailUrl=${video.detailUrl}")
-        startActivity(intent)
+        Log.d(TAG, "首页点击内容发现项，跳转搜索: id=${video.id}, title=${video.title}")
+        (activity as? MainActivity)?.navigateToSearchWithKeyword(video.title)
     }
 
     override fun onDestroyView() {

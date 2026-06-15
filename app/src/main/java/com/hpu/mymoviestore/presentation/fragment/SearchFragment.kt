@@ -211,6 +211,33 @@ class SearchFragment : Fragment() {
         viewModel.searchVideosPage(cleanKeyword, currentPage)
     }
 
+    fun searchFromExternal(keyword: String) {
+        val cleanKeyword = keyword.trim()
+        if (cleanKeyword.isBlank() || _binding == null) return
+        Log.d(TAG, "外部跳转搜索: keyword='$cleanKeyword'")
+        binding.etSearch.setText(cleanKeyword)
+        binding.etSearch.setSelection(cleanKeyword.length)
+        binding.recyclerView.scrollToPosition(0)
+        performSearch(cleanKeyword, 1)
+    }
+
+    fun resetToInitialState() {
+        if (_binding == null) return
+        Log.d(TAG, "手动进入搜索页，重置为初始状态")
+        currentKeyword = ""
+        currentPage = 1
+        hasPrevPage = false
+        hasNextPage = false
+        binding.etSearch.setText("")
+        adapter.submitList(emptyList())
+        binding.recyclerView.visibility = View.GONE
+        binding.tvSearchSummary.visibility = View.GONE
+        binding.layoutPagination.visibility = View.GONE
+        binding.tvEmpty.text = "输入关键词后点击搜索"
+        binding.tvEmpty.visibility = View.VISIBLE
+        binding.layoutSearchHistory.visibility = View.VISIBLE
+    }
+
     /**
      * 渲染搜索历史 chip 列表
      * - 每行放若干 chip，超出自动换行
