@@ -11,6 +11,8 @@ import android.widget.GridLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.hpu.mymoviestore.MovieApplication
@@ -75,6 +77,7 @@ class DetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applySystemBarInsets()
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
@@ -159,6 +162,14 @@ class DetailActivity : AppCompatActivity() {
 
         // 5. 读取并显示播放进度（从播放历史）
         loadProgressFromHistory()
+    }
+
+    private fun applySystemBarInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+            insets
+        }
     }
 
     /**

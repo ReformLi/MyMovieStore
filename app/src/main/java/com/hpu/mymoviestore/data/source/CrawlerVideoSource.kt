@@ -197,7 +197,7 @@ class CrawlerVideoSource(
      * 根据网页搜索页获取分页搜索结果。
      *
      * 示例：
-     * https://www.laojuji.com/vodsearch/-------------.html?wd=斗罗大陆
+     * https://www.******.com/vodsearch/-------------.html?wd=斗罗大陆
      */
     suspend fun searchVideos(keyword: String, page: Int = 1): Result<SearchPageResult> = withContext(Dispatchers.IO) {
         try {
@@ -672,7 +672,7 @@ class CrawlerVideoSource(
 
     companion object {
         private const val TAG = "CrawlerVideoSource"
-        private const val BASE_URL = "https://www.laojuji.com"
+        private const val BASE_URL = "https://www.******.com"
         private const val HOME_URL = "$BASE_URL/"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
