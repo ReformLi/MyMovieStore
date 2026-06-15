@@ -239,6 +239,19 @@ class SearchFragment : Fragment() {
     }
 
     /**
+     * 是否处于"已展示搜索结果"的状态。
+     * 用于 MainActivity 在系统返回键时判断：
+     *   - true：先回到搜索原页面（清空结果，保留历史）
+     *   - false：再按返回，由上层切回首页或退出
+     */
+    fun isShowingSearchResult(): Boolean {
+        if (_binding == null) return false
+        return currentKeyword.isNotBlank() ||
+            binding.recyclerView.visibility == View.VISIBLE ||
+            binding.layoutPagination.visibility == View.VISIBLE
+    }
+
+    /**
      * 渲染搜索历史 chip 列表
      * - 每行放若干 chip，超出自动换行
      * - 最多显示 12 条（避免过长）

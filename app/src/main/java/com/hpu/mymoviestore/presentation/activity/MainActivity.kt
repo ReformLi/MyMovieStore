@@ -29,6 +29,15 @@ class MainActivity : AppCompatActivity() {
     private var pendingSearchKeyword: String? = null
     private var resetSearchOnNextShow: Boolean = false
 
+    /**
+     * 搜索页的进入方式：
+     *  - MANUAL：从底部导航栏点击进入，初始展示搜索原页面
+     *  - EXTERNAL：从首页点击影视跳转进入，自动按片名搜索
+     * 用于区分系统返回键的处理策略。
+     */
+    private enum class SearchEntryMode { MANUAL, EXTERNAL }
+    private var searchEntryMode: SearchEntryMode = SearchEntryMode.MANUAL
+
     private val onNavigationItemSelectedListener =
         BottomNavigationView.OnNavigationItemSelectedListener { item ->
             when (item.itemId) {
@@ -39,7 +48,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 R.id.nav_search -> {
                     Log.d(TAG, "切换到搜索")
-                    resetSearchOnNextShow = pendingSearchKeyword == null
+                    if (pendingSearchKeyword == null) {
+                        searchEntryMode = SearchEntryMode.MANUAL
+                        resetSearchOnNextShow = true
+                    }
                     showFragment(R.id.nav_search)
                     true
                 }
@@ -83,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         if (cleanKeyword.isBlank()) return
         Log.d(TAG, "首页内容发现跳转搜索: keyword=$cleanKeyword")
         pendingSearchKeyword = cleanKeyword
+        searchEntryMode = SearchEntryMode.EXTERNAL
         if (binding.bottomNavigation.selectedItemId == R.id.nav_search) {
             showFragment(R.id.nav_search)
         } else {
@@ -169,7 +182,19 @@ class MainActivity : AppCompatActivity() {
     private fun setupBackPressed() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.bottomNavigation.selectedItemId != R.id.nav_home) {
+                val currentNav = binding.bottomNavigation.selectedItemId
+
+                // 在搜索页：手动进入 + 已经展示搜索结果时，先回到搜索原页面
+                if (currentNav == R.id.nav_search &&
+                    searchEntryMode == SearchEntryMode.MANUAL &&
+                    searchFragment?.isShowingSearchResult() == true
+                ) {
+                    Log.d(TAG, "搜索结果页返回 → 回到搜索原页面")
+                    searchFragment?.resetToInitialState()
+                    return
+                }
+
+                if (currentNav != R.id.nav_home) {
                     binding.bottomNavigation.selectedItemId = R.id.nav_home
                     return
                 }
