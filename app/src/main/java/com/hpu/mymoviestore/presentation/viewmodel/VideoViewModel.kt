@@ -40,6 +40,14 @@ class VideoViewModel : ViewModel() {
     private val _loading = MutableLiveData<Boolean>()
     val loading: LiveData<Boolean> = _loading
 
+    private val _homeMovieHasMore = MutableLiveData<Boolean>()
+    val homeMovieHasMore: LiveData<Boolean> = _homeMovieHasMore
+
+    private var currentHomeCategory: String = "电影"
+    private var currentHomeMovieType: String = "全部"
+    private var currentHomeMovieItems: List<VideoItem> = emptyList()
+    private var currentHomeMovieNextStart: Int = 0
+
     /**
      * 加载全量视频列表（来自 JSON 挡板）
      * 第一次会从 assets JSON 解析并缓存到内存。
@@ -62,6 +70,53 @@ class VideoViewModel : ViewModel() {
             _loading.postValue(true)
             val list = repository.getVideosByCategory(category)
             _filterVideos.postValue(list)
+            if (category != "电影") {
+                _homeMovieHasMore.postValue(false)
+            }
+            _loading.postValue(false)
+        }
+    }
+
+    fun loadHomeMovie(type: String = "全部") {
+        loadHomeDoubanCategory(category = "电影", subType = type)
+    }
+
+    fun loadHomeDoubanCategory(category: String, subType: String = "综合") {
+        currentHomeCategory = category
+        currentHomeMovieType = subType.ifBlank { if (category == "电影") "全部" else "综合" }
+        Log.d(TAG, "loadHomeDoubanCategory(category=$currentHomeCategory, subType=$currentHomeMovieType)")
+        viewModelScope.launch {
+            _loading.postValue(true)
+            if (category == "电视剧" || category == "动漫" || category == "综艺") {
+                repository.prewarmDoubanTvBundle()
+            }
+            val page = repository.getDoubanHomePage(currentHomeCategory, currentHomeMovieType, 0)
+            currentHomeMovieItems = page.items
+            currentHomeMovieNextStart = page.nextStart
+            _filterVideos.postValue(currentHomeMovieItems)
+            _homeMovieHasMore.postValue(page.hasMore)
+            _loading.postValue(false)
+        }
+    }
+
+    fun loadMoreHomeMovie() {
+        loadMoreHomeDoubanCategory()
+    }
+
+    fun loadMoreHomeDoubanCategory() {
+        val category = currentHomeCategory
+        val type = currentHomeMovieType
+        val start = currentHomeMovieNextStart
+        Log.d(TAG, "loadMoreHomeDoubanCategory(category=$category, subType=$type, start=$start)")
+        viewModelScope.launch {
+            _loading.postValue(true)
+            val page = repository.getDoubanHomePage(category, type, start)
+            if (page.items.isNotEmpty()) {
+                currentHomeMovieItems = currentHomeMovieItems + page.items
+                currentHomeMovieNextStart = page.nextStart
+                _filterVideos.postValue(currentHomeMovieItems)
+            }
+            _homeMovieHasMore.postValue(page.hasMore)
             _loading.postValue(false)
         }
     }

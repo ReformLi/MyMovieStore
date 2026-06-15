@@ -2,13 +2,17 @@ package com.hpu.mymoviestore
 
 import android.app.Application
 import android.util.Log
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.hpu.mymoviestore.data.database.MovieDatabase
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.CrawlerVideoSource
+import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
+import okhttp3.OkHttpClient
 
 /**
  * 全局 Application
@@ -21,7 +25,7 @@ import com.hpu.mymoviestore.data.source.VideoSourceManager
  * - SearchHistoryRepository：搜索历史
  * - ApiCacheRepository：爬虫源缓存（TTL）
  */
-class MovieApplication : Application() {
+class MovieApplication : Application(), ImageLoaderFactory {
 
     private val TAG = "MovieApplication"
 
@@ -60,10 +64,13 @@ class MovieApplication : Application() {
         // - 首页/详情页播放入口：1 天
         // - 真实播放地址（m3u8/mp4）：30 分钟
         val crawlerSource = CrawlerVideoSource(cacheRepository = apiCacheRepository)
+        val doubanDiscoverySource = DoubanDiscoverySource()
 
         videoRepository = VideoRepository(
             localSource = sourceManager,
             crawlerSource = crawlerSource,
+            discoverySource = doubanDiscoverySource,
+            cacheRepository = apiCacheRepository,
             preferCrawler = true   // 暂时开启爬虫优先，上线前可改为 false 或通过配置控制
         )
 
@@ -91,8 +98,46 @@ class MovieApplication : Application() {
         @Volatile
         private var instance: MovieApplication? = null
 
+        private const val DOUBAN_IMAGE_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
         fun get(): MovieApplication {
             return instance ?: throw IllegalStateException("Application not initialized")
         }
     }
+
+    /**
+     * 全局 Coil 图片加载器。
+     *
+     * 豆瓣图片域名通常会检查 Referer / User-Agent，如果直接用默认 ImageView.load(url)
+     * 可能被防盗链拦截。这里对豆瓣图片请求补充浏览器请求头，其他图片不受影响。
+     */
+    override fun newImageLoader(): ImageLoader {
+        val imageClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val host = original.url.host
+                val builder = original.newBuilder()
+                    .header("User-Agent", DOUBAN_IMAGE_USER_AGENT)
+                    .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+
+                if (host.contains("doubanio.com") || host.contains("douban.com")) {
+                    builder
+                        .header("Referer", "https://movie.douban.com/")
+                        .header("Origin", "https://movie.douban.com")
+                    Log.d(TAG, "Coil 加载豆瓣图片，已添加防盗链请求头: ${original.url}")
+                }
+
+                chain.proceed(builder.build())
+            }
+            .build()
+
+        return ImageLoader.Builder(this)
+            .okHttpClient(imageClient)
+            .crossfade(true)
+            .build()
+    }
+
 }

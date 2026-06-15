@@ -6,9 +6,11 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.tabs.TabLayout
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentHomeBinding
@@ -31,6 +33,8 @@ class HomeFragment : Fragment() {
 
     private lateinit var viewModel: VideoViewModel
     private lateinit var adapter: VideoAdapter
+    private var currentMainCategory: String = ""
+    private var currentSubType: String = "全部"
 
     /** 分类常量 ——与 TabLayout 顺序一致 */
     private val categories = listOf(
@@ -38,9 +42,11 @@ class HomeFragment : Fragment() {
         "电影",
         "电视剧",
         "综艺",
-        "动漫",
-        "纪录片"
+        "动漫"
     )
+    private val movieSubTypes = listOf("全部", "华语", "欧美", "韩国", "日本")
+    private val tvSubTypes = listOf("综合", "国产剧", "欧美剧", "日剧", "韩剧", "纪录片")
+    private val showSubTypes = listOf("综合", "国内", "国外")
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -56,7 +62,14 @@ class HomeFragment : Fragment() {
         Log.d(TAG, "HomeFragment onViewCreated")
 
         viewModel = ViewModelProvider(this)[VideoViewModel::class.java]
-        adapter = VideoAdapter { video -> openDetail(video) }
+        adapter = VideoAdapter(
+            onItemClick = { video -> openDetail(video) },
+            onLoadMoreClick = {
+                if (isDoubanPagedCategory(currentMainCategory)) {
+                    viewModel.loadMoreHomeDoubanCategory()
+                }
+            }
+        )
 
         setupViews()
         setupTabs()
@@ -67,9 +80,63 @@ class HomeFragment : Fragment() {
     }
 
     private fun setupViews() {
-        binding.recyclerView.layoutManager = LinearLayoutManager(context)
+        val gridLayoutManager = GridLayoutManager(context, HOME_GRID_SPAN_COUNT)
+        gridLayoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int {
+                return if (adapter.isLoadMorePosition(position)) HOME_GRID_SPAN_COUNT else 1
+            }
+        }
+        binding.recyclerView.layoutManager = gridLayoutManager
         binding.recyclerView.adapter = adapter
-        Log.d(TAG, "RecyclerView + Adapter 初始化完成")
+        setupSubTabs(movieSubTypes)
+        Log.d(TAG, "RecyclerView + 九宫格 Adapter 初始化完成: span=$HOME_GRID_SPAN_COUNT")
+    }
+
+    private fun setupSubTabs(types: List<String>) {
+        binding.layoutMovieSubTabContainer.removeAllViews()
+        types.forEach { type ->
+            val chip = TextView(requireContext()).apply {
+                text = type
+                textSize = 14f
+                gravity = android.view.Gravity.CENTER
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                setOnClickListener {
+                    currentSubType = type
+                    renderSubTabs()
+                    viewModel.loadHomeDoubanCategory(currentMainCategory, type)
+                    binding.recyclerView.scrollToPosition(0)
+                }
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(10)
+            }
+            binding.layoutMovieSubTabContainer.addView(chip, params)
+        }
+        renderSubTabs()
+    }
+
+    private fun renderSubTabs() {
+        for (i in 0 until binding.layoutMovieSubTabContainer.childCount) {
+            val chip = binding.layoutMovieSubTabContainer.getChildAt(i) as TextView
+            val selected = chip.text.toString() == currentSubType
+            chip.setTextColor(
+                if (selected) {
+                    android.graphics.Color.parseColor("#FFFF6A3D")
+                } else {
+                    android.graphics.Color.parseColor("#FF4B5563")
+                }
+            )
+            chip.setBackgroundResource(
+                if (selected) {
+                    com.hpu.mymoviestore.R.drawable.bg_chip_selected
+                } else {
+                    com.hpu.mymoviestore.R.drawable.bg_episode_normal
+                }
+            )
+        }
     }
 
     private fun setupTabs() {
@@ -84,10 +151,38 @@ class HomeFragment : Fragment() {
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
                 val category = categories[tab.position]
+                currentMainCategory = category
                 Log.d(TAG, "Tab 切换: position=${tab.position}, category='$category'")
                 if (category.isEmpty()) {
+                    binding.layoutMovieSubTabs.visibility = View.GONE
+                    adapter.setShowLoadMore(false)
                     viewModel.loadAllVideos()
+                } else if (category == "电影") {
+                    currentSubType = "全部"
+                    setupSubTabs(movieSubTypes)
+                    binding.layoutMovieSubTabs.visibility = View.VISIBLE
+                    adapter.setShowLoadMore(false)
+                    viewModel.loadHomeDoubanCategory(category, currentSubType)
+                } else if (category == "电视剧") {
+                    currentSubType = "综合"
+                    setupSubTabs(tvSubTypes)
+                    binding.layoutMovieSubTabs.visibility = View.VISIBLE
+                    adapter.setShowLoadMore(false)
+                    viewModel.loadHomeDoubanCategory(category, currentSubType)
+                } else if (category == "综艺") {
+                    currentSubType = "综合"
+                    setupSubTabs(showSubTypes)
+                    binding.layoutMovieSubTabs.visibility = View.VISIBLE
+                    adapter.setShowLoadMore(false)
+                    viewModel.loadHomeDoubanCategory(category, currentSubType)
+                } else if (category == "动漫") {
+                    currentSubType = "综合"
+                    binding.layoutMovieSubTabs.visibility = View.GONE
+                    adapter.setShowLoadMore(false)
+                    viewModel.loadHomeDoubanCategory(category, currentSubType)
                 } else {
+                    binding.layoutMovieSubTabs.visibility = View.GONE
+                    adapter.setShowLoadMore(false)
                     viewModel.loadVideosByCategory(category)
                 }
             }
@@ -110,6 +205,9 @@ class HomeFragment : Fragment() {
         viewModel.filterVideos.observe(viewLifecycleOwner) { list ->
             Log.d(TAG, "filterVideos 观察到变化: ${list?.size ?: 0} 条")
             renderList(list.orEmpty())
+        }
+        viewModel.homeMovieHasMore.observe(viewLifecycleOwner) { hasMore ->
+            adapter.setShowLoadMore(isDoubanPagedCategory(currentMainCategory) && hasMore == true)
         }
     }
 
@@ -154,5 +252,14 @@ class HomeFragment : Fragment() {
 
     companion object {
         private const val TAG = "HomeFragment"
+        private const val HOME_GRID_SPAN_COUNT = 3
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    private fun isDoubanPagedCategory(category: String): Boolean {
+        return category == "电影" || category == "电视剧" || category == "动漫" || category == "综艺"
     }
 }
