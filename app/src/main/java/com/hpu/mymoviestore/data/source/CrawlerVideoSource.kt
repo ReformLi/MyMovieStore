@@ -656,14 +656,14 @@ class CrawlerVideoSource(
         firstPageCacheKey: String
     ): Long {
         if (currentPage <= 1) {
-            return ApiCacheEntity.TTL_THIRTY_MINUTES
+            return ApiCacheEntity.TTL_ONE_DAY
         }
 
         val firstPageRemainingTtl = cacheRepository
             ?.getRemainingTtlSeconds(firstPageCacheKey)
-            ?: ApiCacheEntity.TTL_THIRTY_MINUTES
+            ?: ApiCacheEntity.TTL_ONE_DAY
 
-        return firstPageRemainingTtl.coerceAtMost(ApiCacheEntity.TTL_THIRTY_MINUTES)
+        return firstPageRemainingTtl.coerceAtMost(ApiCacheEntity.TTL_ONE_DAY)
     }
 
     private fun searchCacheKey(keyword: String, page: Int): String {
@@ -700,7 +700,7 @@ class CrawlerVideoSource(
 
     companion object {
         private const val TAG = "CrawlerVideoSource"
-        private const val BASE_URL = "https://www.******.com"
+        private const val BASE_URL = "https://www.laojuji.com"
         private const val HOME_URL = "$BASE_URL/"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
