@@ -52,7 +52,8 @@ interface PlayHistoryDao {
             "playUrl = :playUrl, " +
             "detailUrl = :detailUrl, " +
             "playPageUrl = :playPageUrl, " +
-            "episodeTitle = :episodeTitle " +
+            "episodeTitle = :episodeTitle, " +
+            "sourceName = :sourceName " +
             "WHERE videoId = :videoId"
     )
     suspend fun updateHistoryByVideoId(
@@ -64,6 +65,7 @@ interface PlayHistoryDao {
         detailUrl: String,
         playPageUrl: String,
         episodeTitle: String,
+        sourceName: String,
         newTime: Long
     ): Int
 

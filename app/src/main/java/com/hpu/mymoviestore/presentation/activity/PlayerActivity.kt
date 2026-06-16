@@ -104,6 +104,7 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_DETAIL_URL = "extra_detail_url"
         const val EXTRA_PLAY_PAGE_URL = "extra_play_page_url"
         const val EXTRA_EPISODE_TITLE = "extra_episode_title"
+        const val EXTRA_SOURCE_NAME = "extra_source_name"
 
         /**
          * 构造播放器 Intent（供 DetailActivity 调用）
@@ -119,7 +120,8 @@ class PlayerActivity : AppCompatActivity() {
             url: String,
             detailUrl: String = "",
             playPageUrl: String = "",
-            episodeTitle: String = ""
+            episodeTitle: String = "",
+            sourceName: String = ""
         ): Intent {
             return Intent(context, PlayerActivity::class.java).apply {
                 putExtra(EXTRA_VIDEO_ID, videoId)
@@ -130,6 +132,7 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra(EXTRA_DETAIL_URL, detailUrl)
                 putExtra(EXTRA_PLAY_PAGE_URL, playPageUrl)
                 putExtra(EXTRA_EPISODE_TITLE, episodeTitle)
+                putExtra(EXTRA_SOURCE_NAME, sourceName)
             }
         }
     }
@@ -156,6 +159,7 @@ class PlayerActivity : AppCompatActivity() {
         detailUrl = intent.getStringExtra(EXTRA_DETAIL_URL) ?: ""
         playPageUrl = intent.getStringExtra(EXTRA_PLAY_PAGE_URL) ?: ""
         episodeTitle = intent.getStringExtra(EXTRA_EPISODE_TITLE) ?: ""
+        val sourceName = intent.getStringExtra(EXTRA_SOURCE_NAME) ?: ""
 
         Log.d(TAG, "========== PlayerActivity.onCreate ==========")
         Log.d(TAG, "收到 Intent: videoId=$videoId, title=$videoTitle, category=$videoCategory")
@@ -196,7 +200,8 @@ class PlayerActivity : AppCompatActivity() {
                 playUrl = videoUrl,
                 detailUrl = detailUrl,
                 playPageUrl = playPageUrl,
-                episodeTitle = episodeTitle
+                episodeTitle = episodeTitle,
+                sourceName = sourceName
             )
             Log.d(TAG, "ViewModel 已设置视频信息（将异步写入播放历史）")
 

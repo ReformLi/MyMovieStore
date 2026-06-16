@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.hpu.mymoviestore.data.dao.PlayHistoryDao
 import com.hpu.mymoviestore.data.dao.SearchHistoryDao
 import com.hpu.mymoviestore.data.dao.ApiCacheDao
@@ -23,6 +25,7 @@ import com.hpu.mymoviestore.data.entity.ApiCacheEntity
  *       ③ 新增 api_cache（爬虫源响应缓存，TTL 自动过期）
  * - v5: play_history 扩展 detailUrl / playPageUrl / episodeTitle，
  *       用于从历史记录回到完整详情页并定位上次播放集数
+ * - v6: play_history 扩展 sourceName，标识视频来源
  *
  * 配合 fallbackToDestructiveMigration 使用：升级时重建数据库，避免 schema hash 校验失败。
  */
@@ -32,7 +35,7 @@ import com.hpu.mymoviestore.data.entity.ApiCacheEntity
         SearchHistoryEntity::class,
         ApiCacheEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class MovieDatabase : RoomDatabase() {
@@ -45,6 +48,13 @@ abstract class MovieDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: MovieDatabase? = null
 
+        /** v5 -> v6: play_history 新增 sourceName 列 */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE play_history ADD COLUMN sourceName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): MovieDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -52,6 +62,7 @@ abstract class MovieDatabase : RoomDatabase() {
                     MovieDatabase::class.java,
                     "movie_database"
                 )
+                    .addMigrations(MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

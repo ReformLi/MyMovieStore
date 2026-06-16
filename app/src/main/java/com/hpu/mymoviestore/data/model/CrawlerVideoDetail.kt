@@ -16,7 +16,9 @@ data class CrawlerVideoDetail(
     val actors: String,
     val description: String,
     val detailUrl: String,
-    val playLines: List<PlayLine> = emptyList()
+    val playLines: List<PlayLine> = emptyList(),
+    /** 该详情来自哪个播放源 */
+    val sourceName: String = ""
 )
 
 /**

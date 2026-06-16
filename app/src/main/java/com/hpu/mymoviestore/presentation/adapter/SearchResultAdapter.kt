@@ -1,5 +1,6 @@
 package com.hpu.mymoviestore.presentation.adapter
 
+import android.view.View
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -42,6 +43,14 @@ class SearchResultAdapter(
 
         fun bind(video: VideoItem) {
             binding.tvTitle.text = video.title
+
+            if (video.sourceName.isNotBlank()) {
+                binding.tvSource.text = video.sourceName
+                binding.tvSource.visibility = View.VISIBLE
+            } else {
+                binding.tvSource.visibility = View.GONE
+            }
+
             binding.tvMeta.text = buildString {
                 append("类型：")
                 append(video.category.ifBlank { "未知" })

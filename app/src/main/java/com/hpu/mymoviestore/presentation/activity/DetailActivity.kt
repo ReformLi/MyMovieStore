@@ -50,6 +50,7 @@ class DetailActivity : AppCompatActivity() {
     private var videoCategory: String = ""
     private var videoUrl: String = ""
     private var detailUrl: String = ""
+    private var sourceName: String = ""
     private var playLines: List<PlayLine> = emptyList()
     private var selectedLineIndex: Int = 0
     private var selectedEpisode: PlayEpisode? = null
@@ -239,6 +240,7 @@ class DetailActivity : AppCompatActivity() {
         videoTitle = detail.title.ifBlank { videoTitle }
         videoCover = detail.coverUrl.ifBlank { videoCover }
         videoCategory = detail.category.ifBlank { videoCategory }
+        sourceName = detail.sourceName
         playLines = detail.playLines
         selectedLineIndex = 0
         selectedEpisode = playLines.firstOrNull()?.episodes?.firstOrNull()
@@ -396,7 +398,8 @@ class DetailActivity : AppCompatActivity() {
                 url,
                 detailUrl = detailUrl,
                 playPageUrl = episode?.playPageUrl.orEmpty(),
-                episodeTitle = if (isMultiEpisode()) episode?.title.orEmpty() else ""
+                episodeTitle = if (isMultiEpisode()) episode?.title.orEmpty() else "",
+                sourceName = sourceName
             )
         )
     }

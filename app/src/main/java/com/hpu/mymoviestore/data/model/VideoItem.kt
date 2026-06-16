@@ -1,5 +1,7 @@
 package com.hpu.mymoviestore.data.model
 
+import com.squareup.moshi.Json
+
 /**
  * 视频条目 —— 内存数据模型（不存 Room）
  *
@@ -16,6 +18,7 @@ package com.hpu.mymoviestore.data.model
  * @param actors   演员列表，逗号分隔
  * @param description 剧情简介
  * @param playUrl  视频播放地址（Media3 ExoPlayer 播放）
+ * @param sourceName 来源名称（如"剧集屋"、"樱花动漫"），不缓存
  */
 data class VideoItem(
     val id: Long,
@@ -29,7 +32,9 @@ data class VideoItem(
     val actors: String,
     val description: String,
     val playUrl: String,
-    val detailUrl: String = ""   // 新增
+    val detailUrl: String = "",   // 新增
+    @Json(ignore = true)
+    val sourceName: String = ""
 ) {
     companion object {
         /** 分类常量，与首页 TabLayout 索引保持一致 */

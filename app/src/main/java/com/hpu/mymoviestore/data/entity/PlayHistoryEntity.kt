@@ -33,5 +33,6 @@ data class PlayHistoryEntity(
     val episodeTitle: String = "",
     val playProgressSeconds: Long = 0,
     val durationSeconds: Long = 0,
-    val lastPlayTime: Long = System.currentTimeMillis()
+    val lastPlayTime: Long = System.currentTimeMillis(),
+    val sourceName: String = ""
 )

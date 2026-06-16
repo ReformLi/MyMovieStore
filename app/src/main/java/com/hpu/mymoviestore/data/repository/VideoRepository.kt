@@ -1,4 +1,4 @@
-// VideoRepository.kt (修正后)
+// VideoRepository.kt (多视频源架构)
 package com.hpu.mymoviestore.data.repository
 
 import android.util.Log
@@ -9,16 +9,20 @@ import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.DoubanMoviePageResult
 import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
-import com.hpu.mymoviestore.data.source.CrawlerVideoSource
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
+import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 class VideoRepository(
     private val localSource: VideoSourceManager,
-    private val crawlerSource: CrawlerVideoSource? = null,
+    private val videoSources: List<VideoSource> = emptyList(),
     private val discoverySource: DoubanDiscoverySource? = null,
     private val cacheRepository: ApiCacheRepository? = null,
     private val preferCrawler: Boolean = false
@@ -36,7 +40,7 @@ class VideoRepository(
         Log.d(
             TAG,
             "getAllVideos: preferCrawler=$preferCrawler, " +
-                "crawlerSource=${crawlerSource != null}, discoverySource=${discoverySource != null}"
+                "videoSources=${videoSources.size}, discoverySource=${discoverySource != null}"
         )
 
         getCachedHomeVideos(HOME_CACHE_KEY_ALL, "首页全部")?.let {
@@ -195,33 +199,25 @@ class VideoRepository(
     }
 
     suspend fun searchVideos(keyword: String): List<VideoItem> {
-        return if (preferCrawler && crawlerSource != null) {
-            crawlerSource.searchVideos(keyword, 1).getOrNull()?.items
-                ?: localSource.searchVideos(keyword)
+        return if (preferCrawler && videoSources.isNotEmpty()) {
+            val enabledSources = videoSources.filter { it.enabled }
+            if (enabledSources.isEmpty()) {
+                localSource.searchVideos(keyword)
+            } else {
+                enabledSources.firstOrNull()?.searchVideos(keyword, 1)?.getOrNull()?.items
+                    ?: localSource.searchVideos(keyword)
+            }
         } else {
             localSource.searchVideos(keyword)
         }
     }
 
+    /**
+     * 多源并行搜索 + 插空法合并结果。
+     */
     suspend fun searchVideosPage(keyword: String, page: Int): SearchPageResult {
-        return if (preferCrawler && crawlerSource != null) {
-            val fetchResult = crawlerSource.searchVideos(keyword, page)
-            val crawlError = fetchResult.exceptionOrNull()?.let { it as? CrawlError }
-            fetchResult.getOrElse {
-                SearchPageResult(
-                    keyword = keyword,
-                    page = page.coerceAtLeast(1),
-                    totalPages = 1,
-                    hasPrev = page > 1,
-                    hasNext = false,
-                    items = localSource.searchVideos(keyword),
-                    error = crawlError
-                )
-            }.let { result ->
-                if (crawlError != null && result.error == null) result.copy(error = crawlError) else result
-            }
-        } else {
-            SearchPageResult(
+        if (!preferCrawler) {
+            return SearchPageResult(
                 keyword = keyword,
                 page = 1,
                 totalPages = 1,
@@ -230,6 +226,62 @@ class VideoRepository(
                 items = localSource.searchVideos(keyword)
             )
         }
+
+        val enabledSources = videoSources.filter { it.enabled }
+        if (enabledSources.isEmpty()) {
+            return SearchPageResult(
+                keyword = keyword,
+                page = page,
+                totalPages = 1,
+                hasPrev = false,
+                hasNext = false,
+                items = localSource.searchVideos(keyword)
+            )
+        }
+
+        val results = coroutineScope {
+            enabledSources.map { source ->
+                async(Dispatchers.IO) {
+                    source.searchVideos(keyword, page).getOrNull()
+                }
+            }.awaitAll().filterNotNull()
+        }
+
+        return interleaveSearchResults(results, keyword, page)
+    }
+
+    /**
+     * 插空法合并多个源的搜索结果。
+     * 例如源 A 有 [a1, a2, a3]，源 B 有 [b1, b2]，
+     * 合并为 [a1, b1, a2, b2, a3]。
+     */
+    private fun interleaveSearchResults(
+        results: List<SearchPageResult>,
+        keyword: String,
+        page: Int
+    ): SearchPageResult {
+        if (results.isEmpty()) return SearchPageResult(keyword, page, 1, false, false, emptyList())
+        if (results.size == 1) return results[0]
+
+        val maxItems = results.maxOf { it.items.size }
+        val interleaved = mutableListOf<VideoItem>()
+        for (i in 0 until maxItems) {
+            for (result in results) {
+                if (i < result.items.size) {
+                    interleaved.add(result.items[i])
+                }
+            }
+        }
+
+        val hasMore = results.any { it.hasNext }
+        return SearchPageResult(
+            keyword = keyword,
+            page = page,
+            totalPages = if (hasMore) page + 1 else page,
+            hasPrev = page > 1,
+            hasNext = hasMore,
+            items = interleaved
+        )
     }
 
     // 根据 ID 获取视频详情（优先从本地，本地没有则尝试爬虫）
@@ -239,11 +291,7 @@ class VideoRepository(
             return localVideo
         }
 
-        // 如果本地没有有效的播放地址，且爬虫源可用
-        if (preferCrawler && crawlerSource != null) {
-            // 需要从 getAllVideos 中找到对应的详情页 URL（因为 VideoItem 没有 detailUrl 字段）
-            // 临时方案：返回 null，让 UI 提示无法播放
-            // 更好的方案：修改 VideoItem 增加 detailUrl 字段，或者在爬虫中维护一个 id -> detailUrl 的映射
+        if (preferCrawler && videoSources.isNotEmpty()) {
             return null
         }
         return null
@@ -254,13 +302,14 @@ class VideoRepository(
      * 这个方法供 DetailActivity 直接调用
      */
     suspend fun getVideoByDetailUrl(detailUrl: String): VideoItem? {
-        if (!preferCrawler || crawlerSource == null) return null
-        val playUrlResult = crawlerSource.fetchVideoUrl(detailUrl)
+        if (!preferCrawler) return null
+        val source = findSourceForDetailUrl(detailUrl) ?: return null
+        val playUrlResult = source.fetchVideoUrl(detailUrl)
         if (playUrlResult.isSuccess) {
             val playUrl = playUrlResult.getOrNull() ?: return null
             return VideoItem(
                 id = detailUrl.hashCode().toLong(),
-                title = "",  // 可以留空，或者额外解析标题
+                title = "",
                 coverUrl = "",
                 category = "",
                 rating = "",
@@ -270,22 +319,40 @@ class VideoRepository(
                 actors = "",
                 description = "",
                 playUrl = playUrl,
-                detailUrl = detailUrl
+                detailUrl = detailUrl,
+                sourceName = source.sourceName
             )
         }
         return null
     }
 
     suspend fun getCrawlerVideoDetail(detailUrl: String): CrawlerVideoDetail? {
-        if (!preferCrawler || crawlerSource == null) return null
-        return crawlerSource.fetchVideoDetail(detailUrl).getOrNull()
+        if (!preferCrawler) return null
+        val source = findSourceForDetailUrl(detailUrl) ?: return null
+        return source.fetchVideoDetail(detailUrl).getOrNull()
     }
 
     suspend fun getRealPlayUrlByPlayPageUrl(playPageUrl: String): Result<String> {
-        if (!preferCrawler || crawlerSource == null) return Result.failure(
-            CrawlError(CrawlErrorType.UNKNOWN, CrawlerVideoSource.SOURCE_TAG, "爬虫源未启用")
+        if (!preferCrawler) return Result.failure(
+            CrawlError(CrawlErrorType.UNKNOWN, "unknown", "爬虫源未启用")
         )
-        return crawlerSource.fetchVideoUrlByPlayPageUrl(playPageUrl)
+        // 尝试从所有启用的源中查找能处理该播放页 URL 的源
+        val enabledSources = videoSources.filter { it.enabled }
+        for (source in enabledSources) {
+            val result = source.fetchVideoUrlByPlayPageUrl(playPageUrl)
+            if (result.isSuccess) return result
+        }
+        return Result.failure(
+            CrawlError(CrawlErrorType.UNKNOWN, "unknown", "所有视频源均无法解析该播放地址")
+        )
+    }
+
+    /**
+     * 根据 detailUrl 查找对应的 VideoSource。
+     * 简单策略：遍历所有启用的源，返回第一个（因为当前所有源共用同一 BASE_URL）。
+     */
+    private fun findSourceForDetailUrl(detailUrl: String): VideoSource? {
+        return videoSources.filter { it.enabled }.firstOrNull()
     }
 
     private suspend fun getCachedHomeVideos(cacheKey: String, label: String): List<VideoItem>? {

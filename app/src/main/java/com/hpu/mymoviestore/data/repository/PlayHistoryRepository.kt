@@ -42,7 +42,8 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
         playUrl: String,
         detailUrl: String = "",
         playPageUrl: String = "",
-        episodeTitle: String = ""
+        episodeTitle: String = "",
+        sourceName: String = ""
     ): Long {
         val existing = historyDao.getHistoryByVideoId(videoId)
         val now = System.currentTimeMillis()
@@ -58,6 +59,7 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
                 detailUrl = detailUrl,
                 playPageUrl = playPageUrl,
                 episodeTitle = episodeTitle,
+                sourceName = sourceName,
                 newTime = now
             )
             Log.d(
@@ -80,7 +82,8 @@ class PlayHistoryRepository(private val historyDao: PlayHistoryDao) {
                     episodeTitle = episodeTitle,
                     playProgressSeconds = 0,
                     durationSeconds = 0,
-                    lastPlayTime = now
+                    lastPlayTime = now,
+                    sourceName = sourceName
                 )
             )
             Log.d(

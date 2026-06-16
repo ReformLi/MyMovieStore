@@ -9,9 +9,11 @@ import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
-import com.hpu.mymoviestore.data.source.CrawlerVideoSource
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
+import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
+import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import okhttp3.OkHttpClient
 
 /**
@@ -31,6 +33,12 @@ class MovieApplication : Application(), ImageLoaderFactory {
 
     lateinit var videoRepository: VideoRepository
         private set
+
+    /** 所有视频源列表，供 ProfileFragment 等外部模块访问 */
+    val allVideoSources: List<VideoSource>
+        get() = _allVideoSources
+
+    private lateinit var _allVideoSources: List<VideoSource>
 
     lateinit var playHistoryRepository: PlayHistoryRepository
         private set
@@ -60,15 +68,18 @@ class MovieApplication : Application(), ImageLoaderFactory {
         val sourceManager = VideoSourceManager(this, apiCacheRepository)
         Log.d(TAG, "VideoSourceManager 初始化完成（JSON 挡板 + ApiCache TTL 缓存）")
 
-        // 新增：初始化爬虫源，并接入 ApiCacheRepository 做分类型 TTL 缓存
+        // 新增：初始化多个爬虫源，并接入 ApiCacheRepository 做分类型 TTL 缓存
         // - 首页/详情页播放入口：1 天
         // - 真实播放地址（m3u8/mp4）：30 分钟
-        val crawlerSource = CrawlerVideoSource(cacheRepository = apiCacheRepository)
+        val crawlerSource = JujiwuVideoSource(cacheRepository = apiCacheRepository)
+        val yinghuaSource = YinghuaVideoSource(cacheRepository = apiCacheRepository)
         val doubanDiscoverySource = DoubanDiscoverySource()
+
+        _allVideoSources = listOf(crawlerSource, yinghuaSource)
 
         videoRepository = VideoRepository(
             localSource = sourceManager,
-            crawlerSource = crawlerSource,
+            videoSources = _allVideoSources,
             discoverySource = doubanDiscoverySource,
             cacheRepository = apiCacheRepository,
             preferCrawler = true   // 暂时开启爬虫优先，上线前可改为 false 或通过配置控制
