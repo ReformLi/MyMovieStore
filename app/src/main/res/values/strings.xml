@@ -10,6 +10,7 @@
     <string name="favorite">收藏</string>
     <string name="history">历史</string>
     <string name="settings">设置</string>
+    <string name="profile">我的</string>
     <string name="search_hint">搜索影片、演员、导演</string>
     <string name="search_history">搜索历史</string>
     <string name="no_data">暂无数据</string>

@@ -11,13 +11,13 @@ import androidx.fragment.app.Fragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.databinding.ActivityMainBinding
-import com.hpu.mymoviestore.presentation.fragment.HistoryFragment
 import com.hpu.mymoviestore.presentation.fragment.HomeFragment
+import com.hpu.mymoviestore.presentation.fragment.ProfileFragment
 import com.hpu.mymoviestore.presentation.fragment.SearchFragment
 
 /**
  * 应用主页面 —— 底部导航承载
- * Tab 列表：首页 / 搜索 / 历史 （收藏功能已移除）
+ * Tab 列表：首页 / 搜索 / 我的
  */
 class MainActivity : AppCompatActivity() {
 
@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
     private var lastBackPressedTime: Long = 0L
     private var homeFragment: HomeFragment? = null
     private var searchFragment: SearchFragment? = null
-    private var historyFragment: HistoryFragment? = null
+    private var profileFragment: ProfileFragment? = null
     private var pendingSearchKeyword: String? = null
     private var resetSearchOnNextShow: Boolean = false
 
@@ -55,9 +55,9 @@ class MainActivity : AppCompatActivity() {
                     showFragment(R.id.nav_search)
                     true
                 }
-                R.id.nav_history -> {
-                    Log.d(TAG, "切换到播放历史")
-                    showFragment(R.id.nav_history)
+                R.id.nav_profile -> {
+                    Log.d(TAG, "切换到我的")
+                    showFragment(R.id.nav_profile)
                     true
                 }
                 else -> false
@@ -108,13 +108,13 @@ class MainActivity : AppCompatActivity() {
         val target = when (itemId) {
             R.id.nav_home -> homeFragment ?: HomeFragment().also { homeFragment = it }
             R.id.nav_search -> searchFragment ?: SearchFragment().also { searchFragment = it }
-            R.id.nav_history -> historyFragment ?: HistoryFragment().also { historyFragment = it }
+            R.id.nav_profile -> profileFragment ?: ProfileFragment().also { profileFragment = it }
             else -> homeFragment ?: HomeFragment().also { homeFragment = it }
         }
         val targetTag = tagForItem(itemId)
 
         val transaction = supportFragmentManager.beginTransaction()
-        listOf(homeFragment, searchFragment, historyFragment).forEach { fragment ->
+        listOf(homeFragment, searchFragment, profileFragment).forEach { fragment ->
             if (fragment != null && fragment.isAdded) {
                 transaction.hide(fragment)
             }
@@ -142,8 +142,8 @@ class MainActivity : AppCompatActivity() {
             ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_HOME) as? HomeFragment
         searchFragment = searchFragment
             ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_SEARCH) as? SearchFragment
-        historyFragment = historyFragment
-            ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_HISTORY) as? HistoryFragment
+        profileFragment = profileFragment
+            ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_PROFILE) as? ProfileFragment
     }
 
     private fun deliverPendingSearchKeyword() {
@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
     private fun tagForItem(itemId: Int): String {
         return when (itemId) {
             R.id.nav_search -> FRAGMENT_TAG_SEARCH
-            R.id.nav_history -> FRAGMENT_TAG_HISTORY
+            R.id.nav_profile -> FRAGMENT_TAG_PROFILE
             else -> FRAGMENT_TAG_HOME
         }
     }
@@ -215,6 +215,6 @@ class MainActivity : AppCompatActivity() {
         private const val EXIT_INTERVAL_MS = 2_000L
         private const val FRAGMENT_TAG_HOME = "fragment_home"
         private const val FRAGMENT_TAG_SEARCH = "fragment_search"
-        private const val FRAGMENT_TAG_HISTORY = "fragment_history"
+        private const val FRAGMENT_TAG_PROFILE = "fragment_profile"
     }
 }

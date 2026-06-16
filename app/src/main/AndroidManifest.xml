@@ -35,5 +35,9 @@
             android:parentActivityName=".presentation.activity.DetailActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
+        <activity
+            android:name=".presentation.activity.HistoryActivity"
+            android:exported="false"
+            android:parentActivityName=".presentation.activity.MainActivity" />
     </application>
 </manifest>
