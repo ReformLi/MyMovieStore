@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.res.ResourcesCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -162,6 +163,14 @@ class SearchFragment : Fragment() {
                 binding.tvEmpty.text = "搜索中..."
                 binding.tvEmpty.visibility = View.VISIBLE
                 binding.layoutPagination.visibility = View.GONE
+            }
+        }
+
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Log.w(TAG, "搜索加载错误: ${error.userFacingMessage}")
+                Toast.makeText(requireContext(), error.userFacingMessage, Toast.LENGTH_LONG).show()
+                viewModel.clearError()
             }
         }
 

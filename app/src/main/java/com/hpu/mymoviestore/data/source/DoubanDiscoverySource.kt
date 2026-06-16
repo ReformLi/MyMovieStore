@@ -1,8 +1,11 @@
 package com.hpu.mymoviestore.data.source
 
 import android.util.Log
+import com.hpu.mymoviestore.data.model.CrawlError
+import com.hpu.mymoviestore.data.model.CrawlErrorType
 import com.hpu.mymoviestore.data.model.DoubanMoviePageResult
 import com.hpu.mymoviestore.data.model.VideoItem
+import com.hpu.mymoviestore.data.model.toCrawlError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -44,7 +47,7 @@ class DoubanDiscoverySource {
             Result.success(merged)
         } catch (t: Throwable) {
             Log.e(TAG, "豆瓣首页全部抓取失败", t)
-            Result.failure(t)
+            Result.failure(t.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -152,6 +155,22 @@ class DoubanDiscoverySource {
                     "豆瓣首页-$pageName 接口 HTTP 非成功: status=${response.statusCode()}, " +
                         "url=$url, body='${body.take(1000)}'"
                 )
+                val crawlError = CrawlError(
+                    type = when (response.statusCode()) {
+                        403 -> {
+                            if (body.contains("captcha", ignoreCase = true) ||
+                                body.contains("验证码", ignoreCase = true)
+                            ) CrawlErrorType.CAPTCHA else CrawlErrorType.FORBIDDEN
+                        }
+                        in 400..499 -> CrawlErrorType.CLIENT_ERROR
+                        in 500..599 -> CrawlErrorType.SERVER_ERROR
+                        else -> CrawlErrorType.UNKNOWN
+                    },
+                    source = SOURCE_TAG,
+                    detail = "HTTP ${response.statusCode()} for $url",
+                    cause = null
+                )
+                return Result.failure(crawlError)
             }
 
             val json = JSONObject(body)
@@ -223,7 +242,7 @@ class DoubanDiscoverySource {
                     "errorType=${t::class.java.name}, message=${t.message}",
                 t
             )
-            Result.failure(t)
+            Result.failure(t.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -384,6 +403,7 @@ class DoubanDiscoverySource {
 
     companion object {
         private const val TAG = "DoubanDiscoverySource"
+        const val SOURCE_TAG = "豆瓣"
         private const val DOUBAN_HOME_URL = "https://movie.douban.com"
         private const val DOUBAN_EXPLORE_URL = "https://movie.douban.com/explore/"
         private const val DOUBAN_TV_URL = "https://movie.douban.com/tv/"

@@ -2,11 +2,14 @@ package com.hpu.mymoviestore.data.source
 
 import android.util.Log
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
+import com.hpu.mymoviestore.data.model.CrawlError
+import com.hpu.mymoviestore.data.model.CrawlErrorType
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
+import com.hpu.mymoviestore.data.model.toCrawlError
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -93,7 +96,7 @@ class CrawlerVideoSource(
         } catch (e: Exception) {
             Log.e(TAG, "爬取首页视频列表失败", e)
             e.printStackTrace()
-            Result.failure(e)
+            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -111,7 +114,7 @@ class CrawlerVideoSource(
     suspend fun fetchVideoUrl(detailUrl: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             if (detailUrl.isBlank()) {
-                return@withContext Result.failure(IOException("详情页地址为空"))
+                return@withContext Result.failure(CrawlError(CrawlErrorType.EMPTY_RESULT, SOURCE_TAG, "详情页地址为空"))
             }
 
             Log.d(TAG, "开始解析详情页: $detailUrl")
@@ -119,7 +122,7 @@ class CrawlerVideoSource(
             fetchVideoUrlByPlayPageUrl(playPageUrl)
         } catch (e: Exception) {
             Log.e(TAG, "获取视频地址失败", e)
-            Result.failure(e)
+            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -129,7 +132,7 @@ class CrawlerVideoSource(
     suspend fun fetchVideoDetail(detailUrl: String): Result<CrawlerVideoDetail> = withContext(Dispatchers.IO) {
         try {
             if (detailUrl.isBlank()) {
-                return@withContext Result.failure(IOException("详情页地址为空"))
+                return@withContext Result.failure(CrawlError(CrawlErrorType.EMPTY_RESULT, SOURCE_TAG, "详情页地址为空"))
             }
 
             val cacheKey = cacheKey(CACHE_PREFIX_DETAIL_META, detailUrl)
@@ -151,7 +154,7 @@ class CrawlerVideoSource(
             Result.success(detail)
         } catch (e: Exception) {
             Log.e(TAG, "获取详情页元数据失败", e)
-            Result.failure(e)
+            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -161,7 +164,7 @@ class CrawlerVideoSource(
     suspend fun fetchVideoUrlByPlayPageUrl(playPageUrl: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             if (playPageUrl.isBlank()) {
-                return@withContext Result.failure(IOException("播放页地址为空"))
+                return@withContext Result.failure(CrawlError(CrawlErrorType.EMPTY_RESULT, SOURCE_TAG, "播放页地址为空"))
             }
 
             val realUrlCacheKey = cacheKey(CACHE_PREFIX_REAL_VIDEO_URL, playPageUrl)
@@ -177,7 +180,7 @@ class CrawlerVideoSource(
             val scriptElement = playDoc.select("script:containsData(player_aaaa)").first()
             if (scriptElement == null) {
                 Log.e(TAG, "未找到 player_aaaa 脚本")
-                return@withContext Result.failure(IOException("未找到播放数据"))
+                return@withContext Result.failure(CrawlError(CrawlErrorType.PARSE_ERROR, SOURCE_TAG, "未找到播放数据"))
             }
 
             val scriptContent = scriptElement.html()
@@ -194,11 +197,11 @@ class CrawlerVideoSource(
                 Result.success(videoUrl)
             } else {
                 Log.e(TAG, "未能提取视频地址")
-                Result.failure(IOException("未找到视频地址"))
+                Result.failure(CrawlError(CrawlErrorType.PARSE_ERROR, SOURCE_TAG, "未找到视频地址"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "获取播放页真实地址失败", e)
-            Result.failure(e)
+            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -287,7 +290,7 @@ class CrawlerVideoSource(
             Result.success(result)
         } catch (e: Exception) {
             Log.e(TAG, "搜索视频失败", e)
-            Result.failure(e)
+            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = SOURCE_TAG))
         }
     }
 
@@ -634,10 +637,25 @@ class CrawlerVideoSource(
 
         val response = call.execute()
         response.use { resp ->
-            if (!resp.isSuccessful) {
-                throw IOException("HTTP ${resp.code} for $url")
-            }
+            val code = resp.code
             val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                throw CrawlError(
+                    type = when (code) {
+                        403 -> {
+                            if (body.contains("captcha", ignoreCase = true) ||
+                                body.contains("验证码", ignoreCase = true)
+                            ) CrawlErrorType.CAPTCHA else CrawlErrorType.FORBIDDEN
+                        }
+                        in 400..499 -> CrawlErrorType.CLIENT_ERROR
+                        in 500..599 -> CrawlErrorType.SERVER_ERROR
+                        else -> CrawlErrorType.UNKNOWN
+                    },
+                    source = SOURCE_TAG,
+                    detail = "HTTP $code for $url",
+                    cause = null
+                )
+            }
             Jsoup.parse(body, url)
         }
     }
@@ -700,6 +718,7 @@ class CrawlerVideoSource(
 
     companion object {
         private const val TAG = "CrawlerVideoSource"
+        const val SOURCE_TAG = "剧集屋"
         private const val BASE_URL = "https://www.******.com"
         private const val HOME_URL = "$BASE_URL/"
         private const val USER_AGENT =

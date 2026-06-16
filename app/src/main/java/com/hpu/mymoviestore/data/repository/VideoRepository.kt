@@ -3,6 +3,8 @@ package com.hpu.mymoviestore.data.repository
 
 import android.util.Log
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
+import com.hpu.mymoviestore.data.model.CrawlError
+import com.hpu.mymoviestore.data.model.CrawlErrorType
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.DoubanMoviePageResult
 import com.hpu.mymoviestore.data.model.SearchPageResult
@@ -98,8 +100,12 @@ class VideoRepository(
         getCachedDoubanMoviePage(cacheKey, cleanType, safeStart)?.let { return it }
 
         val emptyResult = DoubanMoviePageResult(cleanType, safeStart, limit, 0, emptyList())
-        val result = discoverySource?.fetchExploreMoviePage(cleanType, safeStart, limit)?.getOrNull()
-            ?: emptyResult
+        val fetchResult = discoverySource?.fetchExploreMoviePage(cleanType, safeStart, limit)
+        val crawlError = fetchResult?.exceptionOrNull()?.let { it as? CrawlError }
+        val result = fetchResult?.getOrNull() ?: emptyResult
+
+        // 将错误附加到结果中，让 UI 层可以展示
+        val resultWithError = if (crawlError != null) result.copy(error = crawlError) else result
 
         if (result.items.isNotEmpty()) {
             val ttlSeconds = getDoubanMovieCacheTtlSeconds(cleanType, safeStart)
@@ -117,7 +123,7 @@ class VideoRepository(
             Log.w(TAG, "首页电影[$cleanType] 结果为空，不写缓存: start=$safeStart")
         }
 
-        return result
+        return resultWithError
     }
 
     suspend fun getDoubanHomePage(
@@ -157,7 +163,7 @@ class VideoRepository(
         getCachedDoubanMoviePage(cacheKey, "${category}/${mapping.displaySubType}", safeStart)?.let { return it }
 
         val emptyResult = DoubanMoviePageResult(mapping.displaySubType, safeStart, limit, 0, emptyList())
-        val result = discoverySource
+        val fetchResult = discoverySource
             ?.fetchExploreTvRelatedPage(
                 pageCategory = mapping.pageCategory,
                 type = mapping.apiType,
@@ -165,8 +171,9 @@ class VideoRepository(
                 start = safeStart,
                 limit = limit
             )
-            ?.getOrNull()
-            ?: emptyResult
+        val crawlError = fetchResult?.exceptionOrNull()?.let { it as? CrawlError }
+        val result = fetchResult?.getOrNull() ?: emptyResult
+        val resultWithError = if (crawlError != null) result.copy(error = crawlError) else result
 
         if (result.items.isNotEmpty()) {
             val ttlSeconds = getDoubanTvRelatedCacheTtlSeconds(category, subType, safeStart)
@@ -184,7 +191,7 @@ class VideoRepository(
             Log.w(TAG, "首页$category[${mapping.displaySubType}] 结果为空，不写缓存: start=$safeStart")
         }
 
-        return result
+        return resultWithError
     }
 
     suspend fun searchVideos(keyword: String): List<VideoItem> {
@@ -198,15 +205,20 @@ class VideoRepository(
 
     suspend fun searchVideosPage(keyword: String, page: Int): SearchPageResult {
         return if (preferCrawler && crawlerSource != null) {
-            crawlerSource.searchVideos(keyword, page).getOrElse {
+            val fetchResult = crawlerSource.searchVideos(keyword, page)
+            val crawlError = fetchResult.exceptionOrNull()?.let { it as? CrawlError }
+            fetchResult.getOrElse {
                 SearchPageResult(
                     keyword = keyword,
                     page = page.coerceAtLeast(1),
                     totalPages = 1,
                     hasPrev = page > 1,
                     hasNext = false,
-                    items = localSource.searchVideos(keyword)
+                    items = localSource.searchVideos(keyword),
+                    error = crawlError
                 )
+            }.let { result ->
+                if (crawlError != null && result.error == null) result.copy(error = crawlError) else result
             }
         } else {
             SearchPageResult(
@@ -269,9 +281,11 @@ class VideoRepository(
         return crawlerSource.fetchVideoDetail(detailUrl).getOrNull()
     }
 
-    suspend fun getRealPlayUrlByPlayPageUrl(playPageUrl: String): String? {
-        if (!preferCrawler || crawlerSource == null) return null
-        return crawlerSource.fetchVideoUrlByPlayPageUrl(playPageUrl).getOrNull()
+    suspend fun getRealPlayUrlByPlayPageUrl(playPageUrl: String): Result<String> {
+        if (!preferCrawler || crawlerSource == null) return Result.failure(
+            CrawlError(CrawlErrorType.UNKNOWN, CrawlerVideoSource.SOURCE_TAG, "爬虫源未启用")
+        )
+        return crawlerSource.fetchVideoUrlByPlayPageUrl(playPageUrl)
     }
 
     private suspend fun getCachedHomeVideos(cacheKey: String, label: String): List<VideoItem>? {

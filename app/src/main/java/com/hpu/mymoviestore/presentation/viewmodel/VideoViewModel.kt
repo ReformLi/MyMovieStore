@@ -6,6 +6,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.data.model.CrawlError
 import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
 import kotlinx.coroutines.Dispatchers
@@ -13,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 视频 ViewModel —— 负责从 VideoRepository（JSON 挡板）获取视频列表
+ * 视频 ViewModel —— 负责从 VideoRepository（JSON 挡板 + 豆瓣 + 剧集屋）获取视频列表
  *
  * 数据流程：
  * - loadAllVideos()        异步加载 → _allVideos LiveData
@@ -43,6 +44,15 @@ class VideoViewModel : ViewModel() {
     private val _homeMovieHasMore = MutableLiveData<Boolean>()
     val homeMovieHasMore: LiveData<Boolean> = _homeMovieHasMore
 
+    /** 面向用户的错误信息，UI 层观察此字段展示 Toast / Snackbar */
+    private val _error = MutableLiveData<CrawlError?>()
+    val error: LiveData<CrawlError?> = _error
+
+    /** 清除当前错误（用户已看到或切换页面时调用） */
+    fun clearError() {
+        _error.postValue(null)
+    }
+
     private var currentHomeCategory: String = "电影"
     private var currentHomeMovieType: String = "全部"
     private var currentHomeMovieItems: List<VideoItem> = emptyList()
@@ -56,6 +66,7 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "loadAllVideos()")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             val list = repository.getAllVideos()
             Log.d(TAG, "拿到全量视频列表: ${list.size} 条")
             _allVideos.postValue(list)
@@ -68,6 +79,7 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "loadVideosByCategory(category=$category)")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             val list = repository.getVideosByCategory(category)
             _filterVideos.postValue(list)
             if (category != "电影") {
@@ -87,6 +99,7 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "loadHomeDoubanCategory(category=$currentHomeCategory, subType=$currentHomeMovieType)")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             if (category == "电视剧" || category == "动漫" || category == "综艺") {
                 repository.prewarmDoubanTvBundle()
             }
@@ -95,6 +108,7 @@ class VideoViewModel : ViewModel() {
             currentHomeMovieNextStart = page.nextStart
             _filterVideos.postValue(currentHomeMovieItems)
             _homeMovieHasMore.postValue(page.hasMore)
+            page.error?.let { _error.postValue(it) }
             _loading.postValue(false)
         }
     }
@@ -110,6 +124,7 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "loadMoreHomeDoubanCategory(category=$category, subType=$type, start=$start)")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             val page = repository.getDoubanHomePage(category, type, start)
             if (page.items.isNotEmpty()) {
                 currentHomeMovieItems = currentHomeMovieItems + page.items
@@ -117,6 +132,7 @@ class VideoViewModel : ViewModel() {
                 _filterVideos.postValue(currentHomeMovieItems)
             }
             _homeMovieHasMore.postValue(page.hasMore)
+            page.error?.let { _error.postValue(it) }
             _loading.postValue(false)
         }
     }
@@ -126,6 +142,7 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "searchVideos(keyword=$keyword)")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             val list = repository.searchVideos(keyword)
             _searchVideos.postValue(list)
             _loading.postValue(false)
@@ -137,8 +154,10 @@ class VideoViewModel : ViewModel() {
         Log.d(TAG, "searchVideosPage(keyword=$keyword, page=$page)")
         viewModelScope.launch {
             _loading.postValue(true)
+            _error.postValue(null)
             val result = repository.searchVideosPage(keyword, page)
             _searchPageResult.postValue(result)
+            result.error?.let { _error.postValue(it) }
             _loading.postValue(false)
         }
     }

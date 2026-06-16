@@ -357,11 +357,18 @@ class DetailActivity : AppCompatActivity() {
             binding.btnPlay.isEnabled = false
             binding.btnPlay.text = "解析中..."
             lifecycleScope.launch {
-                val realUrl = MovieApplication.get().videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
+                val result = MovieApplication.get().videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
                 binding.btnPlay.isEnabled = true
                 updatePlayButtonText()
+                val realUrl = result.getOrNull()
                 if (realUrl.isNullOrBlank()) {
-                    Toast.makeText(this@DetailActivity, "播放地址解析失败，请稍后重试", Toast.LENGTH_SHORT).show()
+                    val errorMsg = result.exceptionOrNull()
+                    val message = if (errorMsg != null && errorMsg is com.hpu.mymoviestore.data.model.CrawlError) {
+                        errorMsg.userFacingMessage
+                    } else {
+                        "播放地址解析失败，请稍后重试"
+                    }
+                    Toast.makeText(this@DetailActivity, message, Toast.LENGTH_LONG).show()
                     return@launch
                 }
                 videoUrl = realUrl
