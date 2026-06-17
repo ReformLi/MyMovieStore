@@ -19,7 +19,7 @@ Data Source / Room DAO
 DoubanDiscoverySource / CrawlerVideoSource / VideoSourceManager / SQLite
 ```
 
-内容发现层由 `DoubanDiscoverySource` 负责，主要服务首页。内容播放层由 `CrawlerVideoSource` 负责，主要服务搜索、详情和播放。`CrawlerVideoSource` 内部通过 `RequestRateLimiter` 对所有网络请求进行统一限流。`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，作为首页兜底挡板和本地数据补充。
+内容发现层由 `DoubanDiscoverySource` 负责，主要服务首页。内容播放层由 `VideoSource` 接口及其实现类负责，主要服务搜索、详情和播放。每个播放源持有独立的 `RequestRateLimiter` 限流器。`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，作为首页兜底挡板和本地数据补充。
 
 ## 顶层目录
 
@@ -30,7 +30,8 @@ MyMovieStore/
 │   ├── proguard-rules.pro
 │   └── src/
 ├── example/
-│   └── douban/
+│   ├── douban/
+│   └── yinghua/
 ├── gradle/
 │   ├── libs.versions.toml
 │   └── wrapper/
@@ -46,7 +47,7 @@ MyMovieStore/
 | 文件或目录 | 说明 |
 |------------|------|
 | `app/` | Android 应用模块 |
-| `example/` | 页面源代码示例，用于辅助爬虫解析 |
+| `example/` | 页面源代码示例，用于辅助爬虫解析（含豆瓣和樱花动漫示例） |
 | `gradle/libs.versions.toml` | 统一管理依赖和插件版本 |
 | `README.md` | 项目功能、构建和使用说明 |
 | `project_structure.md` | 当前架构与文件职责说明 |
@@ -82,11 +83,12 @@ app/src/main/
 - 初始化 Room 数据库 `MovieDatabase`。
 - 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`。
 - 创建本地挡板源 `VideoSourceManager`。
-- 创建播放链路爬虫源 `CrawlerVideoSource`（内含 `RequestRateLimiter` 限流器）。
+- 创建多个播放链路爬虫源（`JujiwuVideoSource`、`YinghuaVideoSource`），每个源内含独立的 `RequestRateLimiter` 限流器。
 - 创建首页发现源 `DoubanDiscoverySource`。
 - 创建 `VideoRepository`，供视频相关 ViewModel 使用。
 - 启动时清理过期的 `api_cache` 记录。
 - 提供全局 Coil `ImageLoader`，为豆瓣图片自动补充 `Referer`、`Origin` 和浏览器 `User-Agent`，处理图片防盗链。
+- 提供全局 `allVideoSources` 访问器，供"我的"页面管理播放源。
 
 当前全局依赖通过 `MovieApplication.get()` 获取。
 
@@ -105,8 +107,11 @@ data/
 │   ├── PlayHistoryEntity.kt
 │   └── SearchHistoryEntity.kt
 ├── model/
+│   ├── CrawlError.kt
 │   ├── CrawlerVideoDetail.kt
 │   ├── DoubanMoviePageResult.kt
+│   ├── PlayEpisode.kt
+│   ├── PlayLine.kt
 │   ├── SearchPageResult.kt
 │   ├── VideoItem.kt
 │   └── remote/
@@ -123,7 +128,11 @@ data/
     ├── CrawlerVideoSource.kt
     ├── DoubanDiscoverySource.kt
     ├── RequestRateLimiter.kt
-    └── VideoSourceManager.kt
+    ├── VideoSource.kt
+    ├── VideoSourceManager.kt
+    └── impl/
+        ├── JujiwuVideoSource.kt
+        └── YinghuaVideoSource.kt
 ```
 
 ### 数据库
@@ -133,16 +142,16 @@ data/
 | 配置 | 当前值 |
 |------|--------|
 | 数据库名 | `movie_database` |
-| 当前版本 | `4` |
+| 当前版本 | `6` |
 | 表 | `play_history`、`search_history`、`api_cache` |
-| 迁移策略 | `fallbackToDestructiveMigration()` |
+| 迁移策略 | `addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)` |
 | Schema 导出 | `exportSchema = false` |
 
 ### Entity
 
 | Entity | 表名 | 主要用途 |
 |--------|------|----------|
-| `PlayHistoryEntity` | `play_history` | 保存播放历史、播放地址、播放进度、总时长和最后播放时间 |
+| `PlayHistoryEntity` | `play_history` | 保存播放历史、播放地址、播放进度、总时长、最后播放时间和**播放源名称** |
 | `SearchHistoryEntity` | `search_history` | 保存搜索关键词、搜索次数和最后搜索时间 |
 | `ApiCacheEntity` | `api_cache` | 保存 JSON 响应缓存，包含 TTL、创建时间和过期时间 |
 
@@ -158,8 +167,8 @@ data/
 
 | Repository | 职责 |
 |------------|------|
-| `VideoRepository` | 聚合豆瓣发现源、剧集屋播放源和本地挡板源，对上层提供首页、搜索、详情和播放相关数据 |
-| `PlayHistoryRepository` | 播放历史去重写入、进度更新、清空和按视频读取历史 |
+| `VideoRepository` | 聚合豆瓣发现源、多个播放源和本地挡板源，对上层提供首页、搜索、详情和播放相关数据；多源搜索时并行请求并插空法合并结果 |
+| `PlayHistoryRepository` | 播放历史去重写入（含 sourceName）、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、过期清理和剩余 TTL 查询 |
 
@@ -167,12 +176,79 @@ data/
 
 | Model | 说明 |
 |-------|------|
-| `VideoItem` | UI 层通用影视卡片和详情数据 |
-| `SearchPageResult` | 剧集屋搜索分页结果，包含当前页、总页数、上下页状态和列表 |
+| `VideoItem` | UI 层通用影视卡片和详情数据，含 `sourceName` 字段 |
+| `SearchPageResult` | 搜索分页结果，包含当前页、总页数、上下页状态和列表 |
 | `DoubanMoviePageResult` | 豆瓣首页分栏分页结果，包含 `start`、`limit`、`total`、`items` 和 `hasMore` |
-| `CrawlerVideoDetail` | 剧集屋详情页解析结果，包含播放线路和剧集 |
+| `CrawlerVideoDetail` | 详情页解析结果，包含播放线路、剧集和**播放源名称** |
+| `PlayLine` | 播放线路（如"高清播放"、"极速云"），包含多集 |
+| `PlayEpisode` | 单集播放入口，包含标题和播放页 URL |
+| `CrawlError` | 爬取错误信息，包含错误类型、消息和原始异常 |
 
 ## 数据源
+
+### `VideoSource`（接口）
+
+定义所有播放源对外暴露的能力：
+
+| 属性/方法 | 说明 |
+|-----------|------|
+| `sourceId` | 源的唯一标识 |
+| `sourceName` | 源的显示名称 |
+| `enabled` | 是否启用 |
+| `searchVideos(keyword, page)` | 搜索视频（分页） |
+| `fetchVideoDetail(detailUrl)` | 获取视频详情 |
+| `fetchVideoUrl(detailUrl)` | 从详情页获取首个播放页 URL |
+| `fetchVideoUrlByPlayPageUrl(playPageUrl)` | 从播放页解析真实播放地址 |
+
+### `CrawlerVideoSource`（抽象基类）
+
+实现 `VideoSource` 接口，封装所有通用逻辑：
+
+- `client` (OkHttpClient)、`cacheRepository`、`rateLimiter`、`moshi` 及 adapters
+- `fetchVideoUrl()` / `fetchVideoDetail()` / `fetchVideoUrlByPlayPageUrl()` / `searchVideos()`
+- `requestDocument()` — OkHttp + Jsoup + 限流器调度
+- `getFirstPlayPageUrl()` — 缓存首个播放页
+- `extractRealVideoUrl()` — 从 `player_aaaa` 脚本提取 m3u8
+- `buildSearchUrl()` / `getSearchCacheTtlSeconds()` / `searchCacheKey()` / `cacheKey()` / `logLong()`
+
+抽象方法和属性（子类必须实现）：
+
+| 抽象成员 | 说明 |
+|----------|------|
+| `sourceId` | 源唯一标识 |
+| `sourceName` | 源显示名称 |
+| `baseUrl` | 源基础 URL |
+| `cachePrefix` | 缓存键前缀 |
+| `rateLimiterTag` | 限流器日志标识 |
+| `logTag` | 日志 TAG |
+| `parseVideoDetail(doc, detailUrl)` | 解析详情页 HTML |
+| `parseSearchPage(doc, keyword, page)` | 解析搜索页 HTML |
+
+### `JujiwuVideoSource`
+
+剧集屋播放源，继承 `CrawlerVideoSource`：
+
+| 配置 | 值                        |
+|------|--------------------------|
+| `sourceId` | `crawler_jju`            |
+| `sourceName` | `剧集屋`                    |
+| `baseUrl` | `https://www.******.com` |
+| `cachePrefix` | `crawler`                |
+
+解析规则适配 `www.******.com` 的页面结构。
+
+### `YinghuaVideoSource`
+
+樱花动漫播放源，继承 `CrawlerVideoSource`：
+
+| 配置 | 值                        |
+|------|--------------------------|
+| `sourceId` | `crawler_yinghua`        |
+| `sourceName` | `樱花动漫`                   |
+| `baseUrl` | `https://wap.******.com` |
+| `cachePrefix` | `yinghua`                |
+
+解析规则适配 `wap.******.com` 的 MyUI / 苹果CMS 页面结构。
 
 ### `DoubanDiscoverySource`
 
@@ -198,52 +274,15 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 首页"全部"的混排只在同一滑动页内部随机。电影、电视剧、综艺使用二级分类；动漫使用豆瓣 TV 页中的动画数据，不显示二级分类。
 
-### `CrawlerVideoSource`
-
-`CrawlerVideoSource` 是内容播放层，负责搜索、详情和真实播放地址解析。所有网络请求通过内置的 `RequestRateLimiter` 统一限流。
-
-主要流程：
-
-```text
-搜索页 HTML
-        ↓
-RequestRateLimiter 排队（SEARCH 优先级）
-        ↓
-解析搜索结果和分页
-        ↓ 点击搜索结果
-详情页 HTML
-        ↓
-RequestRateLimiter 排队（DETAIL 优先级）
-        ↓
-解析播放线路和剧集
-        ↓ 点击播放
-播放页 HTML
-        ↓
-RequestRateLimiter 排队（PLAY 优先级）
-        ↓
-提取真实 .m3u8 / mp4 地址
-        ↓
-PlayerActivity
-```
-
-主要方法：
-
-| 方法 | 用途 |
-|------|------|
-| `searchVideos()` | 按关键词爬取搜索结果页并解析分页 |
-| `fetchVideoDetail()` | 解析详情页中的元信息、播放线路和剧集 |
-| `fetchVideoUrl()` | 从详情页找到首个播放页并解析真实播放地址 |
-| `fetchVideoUrlByPlayPageUrl()` | 直接从播放页解析真实播放地址 |
-
 ### `RequestRateLimiter`
 
-`RequestRateLimiter` 是内容播放层的单源限流调度器，每个播放源持有一个独立实例。
+`RequestRateLimiter` 是每个播放源独立的限流调度器。
 
 核心参数：
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `sourceTag` | `"JJU"` | 播放源标识，用于日志 |
+| `sourceTag` | 各源不同 | 播放源标识，用于日志 |
 | `minIntervalMs` | `3000` | 两次网络请求最小间隔（毫秒） |
 | `maxQueueSize` | `3` | 队列最大持有未完成任务数 |
 
@@ -275,9 +314,9 @@ PlayerActivity
 | 首页全部豆瓣内容 | `home:tab:all:v1` | 1 天 | 豆瓣发现成功后写入 |
 | 首页电影分页 | `home:tab:movie:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 同一分类分页同时过期 |
 | 首页电视剧/动漫/综艺分页 | `home:tab:tv_related:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 三个默认分栏会一起预缓存 |
-| 搜索结果页 | `crawler:search:v3` | 30 分钟 | 同一搜索词下分页一起过期 |
-| 详情页首个播放页链接 | `crawler:detail:first_play_page` | 1 天 | 复用详情页解析出的播放入口 |
-| 真实播放地址 | `crawler:play:real_url` | 30 分钟 | 短时效真实播放地址只做短缓存 |
+| 搜索结果页 | `crawler:search:v3` / `yinghua:search:v3` | 30 分钟 | 各源独立缓存 |
+| 详情页首个播放页链接 | `crawler:detail:first_play_page` / `yinghua:detail:first_play_page` | 1 天 | 各源独立缓存 |
+| 真实播放地址 | `crawler:play:real_url` / `yinghua:play:real_url` | 30 分钟 | 短时效真实播放地址只做短缓存 |
 
 `ApiCacheRepository.getRemainingTtlSeconds()` 用于让后续分页缓存跟随首页或第一页的剩余缓存时间。
 
@@ -287,6 +326,7 @@ PlayerActivity
 presentation/
 ├── activity/
 │   ├── DetailActivity.kt
+│   ├── HistoryActivity.kt
 │   ├── MainActivity.kt
 │   └── PlayerActivity.kt
 ├── adapter/
@@ -296,6 +336,7 @@ presentation/
 ├── fragment/
 │   ├── HistoryFragment.kt
 │   ├── HomeFragment.kt
+│   ├── ProfileFragment.kt
 │   └── SearchFragment.kt
 └── viewmodel/
     ├── HistoryViewModel.kt
@@ -308,9 +349,10 @@ presentation/
 
 | Activity | 说明 |
 |----------|------|
-| `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和历史；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
+| `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
 | `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，负责播放生命周期和进度保存 |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，负责播放生命周期和进度保存；接收并传递 `sourceName` 到历史记录 |
+| `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 
 ### Fragment
 
@@ -318,7 +360,8 @@ presentation/
 |----------|------|
 | `HomeFragment` | 首页内容发现，九宫格展示，支持主分类、二级分类和列表末尾加载更多 |
 | `SearchFragment` | 搜索页，支持外部传入关键词自动搜索、手动搜索、分页、历史 Chip 和清空历史；提供 `isShowingSearchResult()` 和 `resetToInitialState()` 供 MainActivity 调用 |
-| `HistoryFragment` | 播放历史页，展示 Room 中的播放记录，支持点击进入详情和一键清空 |
+| `ProfileFragment` | "我的"页面，包含视频源管理（弹框开关）、弹幕开关、历史记录入口、下载管理（占位）、清理缓存（弹框）、帮助和关于 |
+| `HistoryFragment` | 播放历史页，展示 Room 中的播放记录（含播放源名称），支持点击进入详情和一键清空 |
 
 ### ViewModel
 
@@ -326,7 +369,7 @@ presentation/
 |-----------|------|
 | `VideoViewModel` | 加载首页发现内容、豆瓣分页、搜索结果和详情相关数据 |
 | `HistoryViewModel` | 读取播放历史、写入或更新历史、清空历史 |
-| `PlayerViewModel` | 播放时写入历史、更新播放进度、查询续播记录、按 ID 回查视频 |
+| `PlayerViewModel` | 播放时写入历史（含 sourceName）、更新播放进度、查询续播记录、按 ID 回查视频 |
 | `SearchHistoryViewModel` | 读取、写入、删除和清空搜索历史 |
 
 ### Adapter
@@ -334,8 +377,8 @@ presentation/
 | Adapter | 说明 |
 |---------|------|
 | `VideoAdapter` | 首页九宫格卡片和列表末尾 `加载更多` Footer |
-| `SearchResultAdapter` | 搜索结果列表，展示封面、标题、类型、上映时间、主演和简介 |
-| `HistoryAdapter` | 播放历史列表 |
+| `SearchResultAdapter` | 搜索结果列表，展示封面、标题、类型、上映时间、主演、简介和**播放源名称** |
+| `HistoryAdapter` | 播放历史列表，展示封面、标题、分类、播放进度、播放记录和**播放源名称** |
 
 ## 资源结构
 
@@ -345,7 +388,6 @@ res/
 │   └── bottom_nav_color.xml
 ├── drawable/
 │   ├── bg_chip.xml
-│   ├── bg_chip_selected.xml
 │   ├── bg_detail_card.xml
 │   ├── bg_detail_page.xml
 │   ├── bg_episode_normal.xml
@@ -355,20 +397,31 @@ res/
 │   ├── bg_player_round_button.xml
 │   ├── bg_player_top_gradient.xml
 │   ├── bg_poster_round.xml
+│   ├── bg_progress.xml
 │   ├── bg_rating.xml
+│   ├── ic_about.xml
+│   ├── ic_arrow_right.xml
+│   ├── ic_clear_cache.xml
+│   ├── ic_danmu.xml
+│   ├── ic_download.xml
+│   ├── ic_help.xml
 │   ├── ic_history.xml
 │   ├── ic_home.xml
 │   ├── ic_launcher_background.xml
 │   ├── ic_launcher_foreground.xml
 │   ├── ic_player_back.xml
 │   ├── ic_player_rotate.xml
-│   └── ic_search.xml
+│   ├── ic_profile.xml
+│   ├── ic_search.xml
+│   └── ic_source.xml
 ├── layout/
 │   ├── activity_detail.xml
+│   ├── activity_history.xml
 │   ├── activity_main.xml
 │   ├── activity_player.xml
 │   ├── fragment_history.xml
 │   ├── fragment_home.xml
+│   ├── fragment_profile.xml
 │   ├── fragment_search.xml
 │   ├── item_history.xml
 │   ├── item_home_load_more.xml
@@ -394,8 +447,10 @@ res/
 | `activity_main.xml` | `MainActivity` |
 | `activity_detail.xml` | `DetailActivity` |
 | `activity_player.xml` | `PlayerActivity` |
+| `activity_history.xml` | `HistoryActivity` |
 | `fragment_home.xml` | `HomeFragment` |
 | `fragment_search.xml` | `SearchFragment` |
+| `fragment_profile.xml` | `ProfileFragment` |
 | `fragment_history.xml` | `HistoryFragment` |
 | `item_video.xml` | `VideoAdapter` 的影视卡片 |
 | `item_home_load_more.xml` | `VideoAdapter` 的加载更多 Footer |
@@ -409,10 +464,10 @@ res/
 ```text
 nav_home    → HomeFragment
 nav_search  → SearchFragment
-nav_history → HistoryFragment
+nav_profile → ProfileFragment
 ```
 
-`MainActivity` 保留三个 Fragment 实例，切换时隐藏其他页面并显示目标页面。这样首页滚动位置、已加载分页、主分类和二级分类不会因为进入搜索或历史而重置。
+`MainActivity` 保留三个 Fragment 实例，切换时隐藏其他页面并显示目标页面。这样首页滚动位置、已加载分页、主分类和二级分类不会因为进入搜索或"我的"而重置。
 
 首页内容发现到搜索的关联：
 
@@ -423,7 +478,20 @@ MainActivity.navigateToSearchWithKeyword(title)
         ↓
 SearchFragment.searchFromExternal(title)
         ↓
-CrawlerVideoSource.searchVideos(title)
+VideoRepository.searchVideosPage(title) ── 多源并行搜索
+```
+
+"我的"页面功能入口：
+
+```text
+ProfileFragment
+    ├── 视频源管理 ── 弹框开关各播放源
+    ├── 弹幕 ── 滑动开关（默认开启）
+    ├── 历史记录 ── 跳转 HistoryActivity
+    ├── 下载管理 ── 占位（Toast 提示即将上线）
+    ├── 清理缓存 ── 弹框选择性清理
+    ├── 帮助 ── 弹框展示使用说明
+    └── 关于 ── 弹框展示版本信息
 ```
 
 手动点击底部搜索按钮时，搜索页会调用 `resetToInitialState()`，清空搜索框和旧搜索结果，只保留搜索历史。
@@ -483,33 +551,32 @@ VideoViewModel.searchVideosPage(keyword, page)
         ↓
 VideoRepository.searchVideosPage()
         ↓
-CrawlerVideoSource.searchVideos()
+并行请求所有 enabled 源（coroutineScope + async）
         ↓
-RequestRateLimiter.submit(SEARCH, url)
+JujiwuVideoSource.searchVideos() ── RequestRateLimiter.submit(SEARCH)
+YinghuaVideoSource.searchVideos() ── RequestRateLimiter.submit(SEARCH)
         ↓
-SearchResultAdapter 渲染结果
+插空法合并结果
+        ↓
+SearchResultAdapter 渲染结果（显示 sourceName）
 ```
 
 ### 详情和播放
 
 ```text
 SearchFragment 点击搜索结果
-        ↓ detailUrl
+        ↓ detailUrl + sourceName
 DetailActivity
         ↓
 VideoRepository.getCrawlerVideoDetail()
         ↓
-CrawlerVideoSource.fetchVideoDetail()
-        ↓
-RequestRateLimiter.submit(DETAIL, url)
+对应源.fetchVideoDetail() ── RequestRateLimiter.submit(DETAIL)
         ↓
 用户选择播放
         ↓ playPageUrl
-CrawlerVideoSource.fetchVideoUrlByPlayPageUrl()
+对应源.fetchVideoUrlByPlayPageUrl() ── RequestRateLimiter.submit(PLAY)
         ↓
-RequestRateLimiter.submit(PLAY, url)
-        ↓
-PlayerActivity
+PlayerActivity（传入 sourceName 保存到历史）
 ```
 
 ### 播放历史与续播
@@ -517,13 +584,13 @@ PlayerActivity
 ```text
 PlayerActivity
         ↓
-PlayerViewModel
+PlayerViewModel.setVideoInfo(..., sourceName)
         ↓
-PlayHistoryRepository
+PlayHistoryRepository.addOrUpdateHistory(..., sourceName)
         ↓
 Room play_history
         ↓
-HistoryFragment / DetailActivity / PlayerActivity
+HistoryActivity / DetailActivity / PlayerActivity
 ```
 
 ## 构建配置
@@ -564,16 +631,16 @@ HistoryFragment / DetailActivity / PlayerActivity
 
 - 应用入口为 `MovieApplication`。
 - 启动页为 `MainActivity`。
-- 注册 `DetailActivity` 和 `PlayerActivity`。
+- 注册 `DetailActivity`、`PlayerActivity`、`HistoryActivity`。
 - `PlayerActivity` 使用无 ActionBar 主题，并处理方向和屏幕尺寸变化。
 - 声明 `INTERNET` 和 `ACCESS_NETWORK_STATE` 权限。
 
 ## 当前实现边界
 
 - 首页内容发现只适配豆瓣相关页面和接口；豆瓣失败时回退本地挡板。
-- 内容播放只适配当前剧集屋搜索、详情和播放页结构。
+- 内容播放当前支持剧集屋和樱花动漫两个播放源，通过 `VideoSource` 接口可扩展更多源。
 - 本地挡板不写入首页 `api_cache`。
-- 搜索结果、详情播放入口和真实播放地址有独立缓存周期。
-- 爬虫限流器当前只服务于剧集屋单一播放源，队列容量和间隔为固定值。
+- 搜索结果、详情播放入口和真实播放地址有独立缓存周期，各源缓存前缀不同。
+- 爬虫限流器每个播放源独立，队列容量和间隔为固定值。
 - 收藏功能未实现。
-- 数据库升级使用破坏式迁移，适合开发阶段；正式版本应增加 Migration。
+- 下载管理功能为 UI 占位，未实现具体逻辑。
