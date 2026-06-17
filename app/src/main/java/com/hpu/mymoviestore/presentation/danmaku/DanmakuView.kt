@@ -12,13 +12,11 @@ import kotlin.math.max
 /**
  * 自实现轻量级弹幕组件
  *
- * 支持：
- *  - 解析 JSON 格式弹幕（DanmakuComment 列表，p 字段格式同 B 站）
- *  - 三种布局：滚动（从右到左）、顶部固定、底部固定
- *  - 颜色、字体大小（从 p 字段解析）
- *  - 与播放器时间同步（seekTo 同步 positionMs）
- *  - 通过 enable/disable 开关显示/隐藏
- *  - 弹幕区域：占满容器高度（建议容器高度为屏幕 1/4）
+ * 时间驱动机制：
+ *  - 内部维护 videoTimeMs（视频播放位置）和 wallClockBase（对应的真实时间戳）
+ *  - onDraw 每帧通过 System.currentTimeMillis() 推算当前视频时间，无需外部每秒同步
+ *  - syncTo() 仅在播放器 seek（跳转）时调用，用来校准时间基准
+ *  - 暂停/恢复通过 pause()/resume() 控制，内部自动处理时间偏移
  *
  * p 字段格式（逗号分隔）：
  * - 0: 出现时间（秒）
@@ -48,16 +46,22 @@ class DanmakuView(context: Context) : View(context) {
         val item: DanmakuItem,
         var x: Float,           // 当前 x 坐标（滚动弹幕会变化）
         val row: Int,           // 行号（0 = 最上）
-        val startAtMs: Long,    // 开始显示时间（毫秒）
+        val startAtMs: Long,    // 开始显示时间（毫秒，视频时间）
         val textWidth: Float    // 预计算的文本宽度
     )
 
     // ================== 内部状态 ==================
 
     private var danmakuList: List<DanmakuItem> = emptyList()  // 按 timeSec 升序
-    private var currentTimeMs: Long = 0L
     private var enabled: Boolean = true
     private var prepared: Boolean = false
+    private var paused: Boolean = false
+
+    // 时间驱动：videoTimeMs + wallClockBase 配对
+    // 当前视频时间 = videoTimeMs + (System.currentTimeMillis() - wallClockBase)
+    private var videoTimeMs: Long = 0L          // 上次同步时的视频时间
+    private var wallClockBase: Long = System.currentTimeMillis()  // 上次同步时的真实时间
+    private var pausedVideoTimeMs: Long = 0L    // 暂停时冻结的视频时间
 
     // 三类活跃弹幕
     private val activeScroll: ArrayList<ActiveDanmaku> = ArrayList()
@@ -66,7 +70,6 @@ class DanmakuView(context: Context) : View(context) {
 
     // 去重：已添加过的弹幕文本哈希（避免同一时刻重复添加）
     private val addedIds: HashSet<Int> = HashSet()
-    private var lastAddedIdsCleanMs: Long = 0L
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -75,15 +78,15 @@ class DanmakuView(context: Context) : View(context) {
 
     // 行高（动态计算）
     private var rowHeightPx: Float = 40f
-    private var lastFrameMs: Long = System.currentTimeMillis()
+    private var lastDrawWallMs: Long = System.currentTimeMillis()
 
     // 滚动：10 秒内从屏幕右侧滚到左侧
     private val scrollDurationMs: Long = 10_000L
     // 固定弹幕：显示 4 秒后消失
     private val fixedDurationMs: Long = 4_000L
 
-    // 每帧最多添加的新弹幕数（防止一次性涌入太多）
-    private var addedThisFrame: Int = 0
+    // 已扫描到的弹幕索引（避免每帧都从头遍历）
+    private var scanIndex: Int = 0
 
     // ================== 对外 API ==================
 
@@ -93,7 +96,7 @@ class DanmakuView(context: Context) : View(context) {
         activeTop.clear()
         activeBottom.clear()
         addedIds.clear()
-        addedThisFrame = 0
+        scanIndex = 0
 
         if (comments.isNullOrEmpty()) {
             danmakuList = emptyList()
@@ -105,20 +108,28 @@ class DanmakuView(context: Context) : View(context) {
         val items = comments.mapNotNull { parseComment(it) }
         danmakuList = items.sortedBy { it.timeSec }
         prepared = true
-        lastFrameMs = System.currentTimeMillis()
         Log.d(TAG, "loadDanmakuComments: 解析到 ${danmakuList.size} 条（原始 ${comments.size} 条）")
         invalidate()
     }
 
-    fun seekTo(positionMs: Long) {
-        currentTimeMs = positionMs
-        lastFrameMs = System.currentTimeMillis()
-        // seek 后清空活跃弹幕，重新按时间窗口加入
-        activeScroll.clear()
-        activeTop.clear()
-        activeBottom.clear()
-        addedIds.clear()
-        addedThisFrame = 0
+    /**
+     * 同步视频时间（毫秒）
+     * - 正常播放时由 progressSyncRunnable 每秒调用，校准时间基准
+     * - 用户 seek（跳转）时也会调用，此时 reset=true 清空活跃弹幕
+     */
+    fun syncTo(positionMs: Long, reset: Boolean = false) {
+        videoTimeMs = positionMs
+        wallClockBase = System.currentTimeMillis()
+
+        if (reset) {
+            // seek 跳转：清空所有活跃弹幕，重新扫描
+            activeScroll.clear()
+            activeTop.clear()
+            activeBottom.clear()
+            addedIds.clear()
+            scanIndex = 0
+            Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
+        }
         invalidate()
     }
 
@@ -126,6 +137,22 @@ class DanmakuView(context: Context) : View(context) {
         enabled = on
         Log.d(TAG, "setDanmakuEnabled=$on")
         if (on) invalidate()
+    }
+
+    fun setPaused(isPaused: Boolean) {
+        if (isPaused) {
+            paused = true
+            // 冻结当前视频时间
+            pausedVideoTimeMs = getCurrentVideoMs()
+            Log.d(TAG, "pause at ${pausedVideoTimeMs}ms")
+        } else {
+            paused = false
+            // 恢复：以冻结的视频时间为基准，重新设置 wallClockBase
+            videoTimeMs = pausedVideoTimeMs
+            wallClockBase = System.currentTimeMillis()
+            Log.d(TAG, "resume from ${pausedVideoTimeMs}ms")
+            invalidate()
+        }
     }
 
     fun isDanmakuEnabled(): Boolean = enabled
@@ -137,6 +164,17 @@ class DanmakuView(context: Context) : View(context) {
         activeTop.clear()
         activeBottom.clear()
         addedIds.clear()
+    }
+
+    // ================== 内部时间 ==================
+
+    /** 获取当前视频时间（毫秒） */
+    private fun getCurrentVideoMs(): Long {
+        return if (paused) {
+            pausedVideoTimeMs
+        } else {
+            videoTimeMs + (System.currentTimeMillis() - wallClockBase)
+        }
     }
 
     // ================== 解析 ==================
@@ -162,19 +200,16 @@ class DanmakuView(context: Context) : View(context) {
 
     // ================== 绘制 ==================
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        Log.d(TAG, "onSizeChanged: w=$w, h=$h (screen=${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels})")
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // 临时调试：绘制半透明背景，查看实际绘制区域
-//        canvas.drawColor(Color.argb(80, 255, 0, 0))
-//        val paint = Paint().apply { color = Color.BLUE; style = Paint.Style.FILL }
-//        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         if (!enabled || !prepared || danmakuList.isEmpty()) {
             postInvalidateDelayed(50L)
             return
-        }
-        if (activeScroll.isNotEmpty()) {
-            val first = activeScroll.first()
-            Log.d("DanmakuDebug", "x=${first.x}, textWidth=${first.textWidth}, sum=${first.x + first.textWidth}")
         }
 
         val viewHeight = height.coerceAtLeast(1)
@@ -185,15 +220,17 @@ class DanmakuView(context: Context) : View(context) {
         rowHeightPx = viewHeight.toFloat() / maxRows
         val defaultTextSize = rowHeightPx * 0.7f
 
-        // 帧间隔
-        val nowMs = System.currentTimeMillis()
-        val frameMs = (nowMs - lastFrameMs).coerceIn(0L, 100L)
-        lastFrameMs = nowMs
-        val frameSec = frameMs / 1000.0f
+        // 帧间隔（真实时间）
+        val nowWallMs = System.currentTimeMillis()
+        val frameMs = (nowWallMs - lastDrawWallMs).coerceIn(0L, 100L)
+        lastDrawWallMs = nowWallMs
 
-        // 滚动速度：每秒移动 screenWidth / scrollDuration 秒
+        // 当前视频时间（自驱动，不依赖外部 syncTo）
+        val currentVideoMs = getCurrentVideoMs()
+        val nowSec = currentVideoMs / 1000.0f
+
+        // 滚动速度：每毫秒移动 viewWidth / scrollDurationMs 像素
         val scrollSpeedPxPerMs = viewWidth.toFloat() / scrollDurationMs
-        val now = currentTimeMs / 1000.0f
 
         // ========== 1. 移除已过期弹幕 ==========
         // 滚动：完全移出屏幕左侧（x + textWidth < 0）时移除
@@ -206,76 +243,80 @@ class DanmakuView(context: Context) : View(context) {
             }
         }
         // 固定弹幕：超时后移除
-        val expireBeforeMs = currentTimeMs - fixedDurationMs
+        val expireBeforeMs = currentVideoMs - fixedDurationMs
         activeTop.removeAll { it.startAtMs < expireBeforeMs }
         activeBottom.removeAll { it.startAtMs < expireBeforeMs }
 
         // ========== 2. 将新弹幕加入活跃列表 ==========
-        if (addedThisFrame > 30) addedThisFrame = 0
-
-        // 每 5 秒清空去重集合
-        if (currentTimeMs - lastAddedIdsCleanMs > 5000L) {
-            addedIds.clear()
-            lastAddedIdsCleanMs = currentTimeMs
+        // 回退 scanIndex（如果 seek 导致时间回退）
+        val windowStartSec = (currentVideoMs - scrollDurationMs) / 1000.0f
+        if (scanIndex > 0 && scanIndex < danmakuList.size && danmakuList[scanIndex].timeSec > nowSec) {
+            scanIndex = binaryFindFirst(danmakuList, windowStartSec)
         }
 
-        // 时间窗口：[currentTimeMs - scrollDuration, currentTimeMs] 内的弹幕
-        val windowStartSec = (currentTimeMs - scrollDurationMs) / 1000.0f
-        var idx = binaryFindFirst(danmakuList, windowStartSec)
-
-        while (idx < danmakuList.size && addedThisFrame < 30) {
-            val item = danmakuList[idx]
-            if (item.timeSec > now) break
+        var addedThisFrame = 0
+        while (scanIndex < danmakuList.size && addedThisFrame < 30) {
+            val item = danmakuList[scanIndex]
+            if (item.timeSec > nowSec) break
 
             val itemId = item.text.hashCode()
             if (addedIds.contains(itemId)) {
-                idx++; continue
+                scanIndex++
+                continue
             }
 
             // 预计算文本宽度
             paint.textSize = item.textSizePx.coerceIn(14f, 60f)
             val tw = paint.measureText(item.text)
             paint.textSize = defaultTextSize
-//            Log.d("DanmakuDebug", "viewWidth=$viewWidth, textWidth=$tw, initialX=${viewWidth + tw}")
+
             when (item.type) {
                 in listOf(1, 2, 3, 6) -> {
-                    // 滚动弹幕：从右侧进入，从左到右移动
                     val row = findScrollRow(tw, viewWidth, maxRows)
                     if (row >= 0) {
-                        activeScroll.add(ActiveDanmaku(item, viewWidth.toFloat() + tw, row, currentTimeMs, tw))
-                        addedIds.add(itemId)
-                        addedThisFrame++
+                        // 计算弹幕已经"飞行"了多久（当前视频时间 - 弹幕出现时间）
+                        val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                        // 初始 x = viewWidth + tw，每毫秒移动 scrollSpeedPxPerMs
+                        val initialX = viewWidth.toFloat() + tw
+                        val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                        if (x + tw > 0) {  // 还没完全移出屏幕才添加
+                            activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
+                            addedIds.add(itemId)
+                            addedThisFrame++
+                        }
                     }
                 }
                 in listOf(5, 7) -> {
-                    // 顶部固定弹幕：居中
                     val row = findFreeRow(activeTop, maxRows)
                     if (row >= 0) {
-                        activeTop.add(ActiveDanmaku(item, 0f, row, currentTimeMs, tw))
+                        activeTop.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
                         addedIds.add(itemId)
                         addedThisFrame++
                     }
                 }
                 in listOf(4, 8) -> {
-                    // 底部固定弹幕：居中
                     val row = findFreeRow(activeBottom, maxRows)
                     if (row >= 0) {
-                        activeBottom.add(ActiveDanmaku(item, 0f, row, currentTimeMs, tw))
+                        activeBottom.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
                         addedIds.add(itemId)
                         addedThisFrame++
                     }
                 }
                 else -> {
-                    // 其他类型：当作滚动处理
                     val row = findScrollRow(tw, viewWidth, maxRows)
                     if (row >= 0) {
-                        activeScroll.add(ActiveDanmaku(item, viewWidth.toFloat(), row, currentTimeMs, tw))
-                        addedIds.add(itemId)
-                        addedThisFrame++
+                        val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                        val initialX = viewWidth.toFloat()
+                        val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                        if (x + tw > 0) {
+                            activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
+                            addedIds.add(itemId)
+                            addedThisFrame++
+                        }
                     }
                 }
             }
-            idx++
+            scanIndex++
         }
 
         // ========== 3. 更新滚动弹幕位置 ==========

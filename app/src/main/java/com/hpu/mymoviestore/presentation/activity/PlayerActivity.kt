@@ -60,6 +60,7 @@ class PlayerActivity : AppCompatActivity() {
     private var episodeTitle: String = ""
     private var resumeFromMs: Long = 0L
     private var lastSavedProgressMs: Long = -1L
+    private var lastSyncPositionMs: Long = -1L  // 用于检测 seek 跳变
     private val progressSaveIntervalMs: Long = 30_000L
 
     // 弹幕相关
@@ -248,7 +249,14 @@ class PlayerActivity : AppCompatActivity() {
             val p = player
             if (p != null) {
                 val currentMs = p.currentPosition
-                danmakuManager?.syncTo(currentMs)
+                // 检测 seek：如果位置跳变超过 3 秒，视为用户拖动进度条，需要清空重建弹幕
+                val timeDiff = kotlin.math.abs(currentMs - lastSyncPositionMs)
+                if (timeDiff > 3000L && lastSyncPositionMs >= 0) {
+                    danmakuManager?.seekTo(currentMs)
+                } else {
+                    danmakuManager?.syncTo(currentMs)
+                }
+                lastSyncPositionMs = currentMs
 
                 val delta = currentMs - lastSavedProgressMs
                 if (delta >= progressSaveIntervalMs || delta < 0) {
@@ -326,10 +334,12 @@ class PlayerActivity : AppCompatActivity() {
         val danmakuHeight = (screenHeight * 0.25f).toInt()
 
         // 动态修改容器尺寸，使其只占屏幕顶部 1/4
-        container.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            danmakuHeight
-        )
+        // 重要：必须使用 ConstraintLayout.LayoutParams，保留 XML 中的约束（宽度 match_constraint）
+        // 如果用 FrameLayout.LayoutParams 会导致宽度丢失，弹幕只显示在屏幕边缘
+        val clParams = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+            ?: container.layoutParams
+        clParams.height = danmakuHeight
+        container.layoutParams = clParams
         container.setBackgroundColor(Color.TRANSPARENT)
         container.clipChildren = true          // 裁剪超出边界的子视图（弹幕不会溢出）
         container.isClickable = false          // 触摸事件穿透，让点击能传递到播放器

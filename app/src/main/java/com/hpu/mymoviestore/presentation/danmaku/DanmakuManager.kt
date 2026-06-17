@@ -9,11 +9,13 @@ import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
  * 弹幕管理器（基于自实现的 DanmakuView）
  *
  * 职责：
- *  - 动态创建 DanmakuView 并添加到指定容器（覆盖容器顶部，占容器的全部区域）
- *  - 暴露 loadDanmaku(comments)、syncTo(positionMs)、pause()、resume()、release()、enable/disable 等 API
+ *  - 动态创建 DanmakuView 并添加到指定容器
+ *  - 暴露 loadDanmaku、syncTo、pause、resume、release、enable/disable 等 API
  *  - 为 PlayerActivity 提供生命周期对齐的弹幕控制
  *
- * 弹幕显示区域：占 danmakuContainer 的全部区域（PlayerActivity 在布局中把 danmakuContainer 的高度设置为屏幕 1/4 左右）
+ * 时间同步策略：
+ *  - syncTo(positionMs)：正常播放时每秒调用，仅校准时间基准，不清空弹幕
+ *  - seekTo(positionMs)：用户拖动进度条跳转时调用，清空并重建弹幕
  */
 class DanmakuManager(private val context: Context) {
 
@@ -28,9 +30,6 @@ class DanmakuManager(private val context: Context) {
             Log.d(TAG, "DanmakuView 已存在，跳过 attach")
             return
         }
-        // 在容器上设置裁剪属性
-        container.clipChildren = false
-        container.clipToPadding = false
 
         val view = DanmakuView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -63,23 +62,36 @@ class DanmakuManager(private val context: Context) {
         Log.d(TAG, "ensureStarted")
     }
 
-    /** 同步到播放器位置（毫秒） —— 每帧调用或每 100ms 调用一次都安全 */
+    /**
+     * 同步到播放器位置（毫秒）—— 播放过程中每秒调用
+     * 仅校准时间基准，不清空活跃弹幕
+     */
     fun syncTo(positionMs: Long) {
         val view = danmakuView ?: return
         if (!prepared) return
         lastSyncTimeMs = positionMs
-        view.seekTo(positionMs)
+        view.syncTo(positionMs, reset = false)
+    }
+
+    /**
+     * 真正的 seek（用户拖动进度条跳转）
+     * 清空活跃弹幕并重建
+     */
+    fun seekTo(positionMs: Long) {
+        val view = danmakuView ?: return
+        if (!prepared) return
+        lastSyncTimeMs = positionMs
+        view.syncTo(positionMs, reset = true)
     }
 
     fun pause() {
         Log.d(TAG, "pause")
-        // 自实现的 DanmakuView 不依赖内部状态暂停，只要不再 invalidate 就会停
-        danmakuView?.setDanmakuEnabled(false)
+        danmakuView?.setPaused(true)
     }
 
     fun resume() {
         if (!enabled) return
-        danmakuView?.setDanmakuEnabled(true)
+        danmakuView?.setPaused(false)
         Log.d(TAG, "resume")
     }
 
