@@ -31,7 +31,7 @@ class YinghuaVideoSource(
 
     override val sourceId = "crawler_yinghua"
     override val sourceName = "樱花动漫"
-    override val baseUrl = "https://wap.chinakfa.com"
+    override val baseUrl = "https://wap.******.com"
     override val cachePrefix = "yinghua"
     override val rateLimiterTag = "YH"
     override val logTag = "YinghuaVideoSource"
