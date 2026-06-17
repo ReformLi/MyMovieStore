@@ -20,7 +20,7 @@ class JujiwuVideoSource(
 
     override val sourceId = "crawler_jju"
     override val sourceName = "剧集屋"
-    override val baseUrl = "https://www.******.com"
+    override val baseUrl = "https://www.laojuji.com"
     override val cachePrefix = "crawler"
     override val rateLimiterTag = "JJU"
     override val logTag = "JujiwuVideoSource"

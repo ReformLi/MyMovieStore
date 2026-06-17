@@ -328,23 +328,13 @@ class PlayerActivity : AppCompatActivity() {
         // ==================== 1. 设置弹幕容器的高度和触摸穿透 ====================
         val container = binding.danmakuContainer
 
-        // 计算屏幕高度 * 25%
-        val displayMetrics = resources.displayMetrics
-        val screenHeight = displayMetrics.heightPixels
-        val danmakuHeight = (screenHeight * 0.25f).toInt()
-
-        // 动态修改容器尺寸，使其只占屏幕顶部 1/4
-        // 重要：必须使用 ConstraintLayout.LayoutParams，保留 XML 中的约束（宽度 match_constraint）
-        // 如果用 FrameLayout.LayoutParams 会导致宽度丢失，弹幕只显示在屏幕边缘
-        val clParams = container.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-            ?: container.layoutParams
-        clParams.height = danmakuHeight
-        container.layoutParams = clParams
+        // 弹幕容器高度已在 XML 中通过 layout_constraintHeight_percent="0.25" 设置
+        // 不再在代码中动态设置高度，避免横竖屏切换时高度计算异常
         container.setBackgroundColor(Color.TRANSPARENT)
         container.clipChildren = true          // 裁剪超出边界的子视图（弹幕不会溢出）
         container.isClickable = false          // 触摸事件穿透，让点击能传递到播放器
         container.isFocusable = false
-        Log.d(TAG, "弹幕容器高度设置为 ${danmakuHeight}px (屏幕高度 $screenHeight)")
+        Log.d(TAG, "弹幕容器使用 XML 约束高度 25%")
 
         // ==================== 2. 创建并挂载 DanmakuManager ====================
         val dm = DanmakuManager(this)

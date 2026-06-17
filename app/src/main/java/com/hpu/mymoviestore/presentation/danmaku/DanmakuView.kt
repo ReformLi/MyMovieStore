@@ -214,10 +214,11 @@ class DanmakuView(context: Context) : View(context) {
 
         val viewHeight = height.coerceAtLeast(1)
         val viewWidth = width.coerceAtLeast(1)
-
+        // 根据屏幕宽度动态计算基准字体大小（分母 35 可调整，值越大字体越小）
+        val baseTextSize = (viewWidth / 35f).coerceIn(18f, 50f)
         // 动态计算最大行数和行高
-        val maxRows = max(4, (viewHeight / 40f).toInt())
-        rowHeightPx = viewHeight.toFloat() / maxRows
+        val rowHeightPx = baseTextSize * 1.5f  // 行高为字体大小的1.5倍，留出间距
+        val maxRows = (viewHeight / rowHeightPx).toInt().coerceAtLeast(2)
         val defaultTextSize = rowHeightPx * 0.7f
 
         // 帧间隔（真实时间）
@@ -266,7 +267,7 @@ class DanmakuView(context: Context) : View(context) {
             }
 
             // 预计算文本宽度
-            paint.textSize = item.textSizePx.coerceIn(14f, 60f)
+            paint.textSize = baseTextSize
             val tw = paint.measureText(item.text)
             paint.textSize = defaultTextSize
 
@@ -327,6 +328,7 @@ class DanmakuView(context: Context) : View(context) {
 
         // ========== 4. 绘制 ==========
         paint.setShadowLayer(2f, 1f, 1f, Color.argb(180, 0, 0, 0))
+        paint.textSize = baseTextSize  // 统一设置字体大小
 
         // 滚动弹幕：从右向左
         for (ad in activeScroll) {
@@ -360,16 +362,32 @@ class DanmakuView(context: Context) : View(context) {
     // ================== 辅助方法 ==================
 
     /**
-     * 查找可放置的滚动行：遍历所有行，找到该行末尾弹幕已移出 70% 屏幕的行
+     * 查找可放置的滚动行：
+     * 遍历所有行，找到一行使得：该行最后一个弹幕的尾部 + 新弹幕宽度 <= 屏幕宽度
+     * 即新弹幕飞到屏幕右边缘时，不会与该行最后一个弹幕重叠
      */
     private fun findScrollRow(textWidth: Float, screenWidth: Int, maxRows: Int): Int {
-        for (row in 0 until maxRows) {
-            val lastInRow = activeScroll.filter { it.row == row }.maxByOrNull { it.x }
-            if (lastInRow == null || lastInRow.x + lastInRow.textWidth < screenWidth * 0.65f) {
-                return row
+        val sw = screenWidth.toFloat()
+        // 计算每行最右侧弹幕的 x + textWidth
+        val rowTailX = FloatArray(maxRows) { -1f }
+        for (ad in activeScroll) {
+            if (ad.row in 0 until maxRows) {
+                val tail = ad.x + ad.textWidth
+                if (tail > rowTailX[ad.row]) rowTailX[ad.row] = tail
             }
         }
-        return 0  // 满了强制放第一行
+        // 选择尾部最靠左的行（最空闲的行）
+        var bestRow = -1
+        var bestTail = Float.MAX_VALUE
+        for (row in 0 until maxRows) {
+            if (rowTailX[row] + textWidth <= sw) {
+                if (rowTailX[row] < bestTail) {
+                    bestTail = rowTailX[row]
+                    bestRow = row
+                }
+            }
+        }
+        return bestRow
     }
 
     /** 查找空行（该行没有被固定弹幕占用） */
