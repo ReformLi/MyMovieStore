@@ -110,7 +110,7 @@ abstract class CrawlerVideoSource(
 
             val doc = requestDocument(detailUrl, RequestRateLimiter.Priority.DETAIL)
             val detail = parseVideoDetail(doc, detailUrl)
-            cacheRepository?.put(cacheKey, detailAdapter.toJson(detail), ApiCacheEntity.TTL_TEN_SECONDS)
+            cacheRepository?.put(cacheKey, detailAdapter.toJson(detail), ApiCacheEntity.TTL_THIRTY_MINUTES)
             Result.success(detail)
         } catch (e: Exception) {
             Log.e(logTag, "获取详情页元数据失败", e)
@@ -280,7 +280,7 @@ abstract class CrawlerVideoSource(
         }
 
         Log.d(logTag, "从详情页解析到首个播放页: $playPageUrl")
-        cacheRepository?.put(cacheKey, playPageUrl, ApiCacheEntity.TTL_TEN_SECONDS)
+        cacheRepository?.put(cacheKey, playPageUrl, ApiCacheEntity.TTL_THIRTY_MINUTES)
         return playPageUrl
     }
 
@@ -375,7 +375,7 @@ abstract class CrawlerVideoSource(
         firstPageCacheKey: String
     ): Long {
         // 测试用：搜索结果缓存 10 秒
-        return ApiCacheEntity.TTL_TEN_SECONDS
+        return ApiCacheEntity.TTL_THIRTY_MINUTES
     }
 
     /**

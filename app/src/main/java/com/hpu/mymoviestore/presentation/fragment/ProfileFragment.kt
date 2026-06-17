@@ -12,6 +12,7 @@ import androidx.fragment.app.Fragment
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.databinding.FragmentProfileBinding
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
+import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 
 /**
  * "我的" 页面 —— 个人中心，包含视频源管理、弹幕开关、历史记录、下载管理、
@@ -43,9 +44,16 @@ class ProfileFragment : Fragment() {
             showVideoSourceDialog()
         }
 
-        // 弹幕 —— 滑动开关，默认开启（已在 XML 中设置 checked="true"）
+        // 弹幕 —— 滑动开关，默认开启（持久化到 SharedPreferences）
+        val prefs = DanmakuPrefs(requireContext())
+        binding.switchDanmu.isChecked = prefs.isMasterEnabled()
         binding.switchDanmu.setOnCheckedChangeListener { _, isChecked ->
-            Toast.makeText(requireContext(), "弹幕${if (isChecked) "已开启" else "已关闭"}", Toast.LENGTH_SHORT).show()
+            prefs.setMasterEnabled(isChecked)
+            Toast.makeText(
+                requireContext(),
+                "弹幕${if (isChecked) "已开启" else "已关闭"}",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         // 历史记录 —— 跳转到现有历史页面
