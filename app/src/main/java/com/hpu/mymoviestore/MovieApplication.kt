@@ -77,6 +77,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
 
         _allVideoSources = listOf(crawlerSource, yinghuaSource)
 
+        // 从 SharedPreferences 恢复视频源启用状态
+        restoreSourceEnabledStates()
+
         videoRepository = VideoRepository(
             localSource = sourceManager,
             videoSources = _allVideoSources,
@@ -103,6 +106,19 @@ class MovieApplication : Application(), ImageLoaderFactory {
         }.start()
 
         Log.d(TAG, "========== MovieApplication.onCreate 结束 ==========\n")
+    }
+
+    /**
+     * 从 SharedPreferences 恢复视频源启用状态。
+     * 在 Application.onCreate 和 ProfileFragment.onViewCreated 中都会调用。
+     */
+    private fun restoreSourceEnabledStates() {
+        val prefs = getSharedPreferences("video_sources", MODE_PRIVATE)
+        _allVideoSources.forEach { source ->
+            val enabled = prefs.getBoolean("enabled_${source.sourceId}", true)
+            source.enabled = enabled
+            Log.d(TAG, "恢复视频源状态: ${source.sourceName} enabled=$enabled")
+        }
     }
 
     companion object {

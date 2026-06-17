@@ -336,7 +336,12 @@ class VideoRepository(
         if (!preferCrawler) return Result.failure(
             CrawlError(CrawlErrorType.UNKNOWN, "unknown", "爬虫源未启用")
         )
-        // 尝试从所有启用的源中查找能处理该播放页 URL 的源
+        // 优先根据 playPageUrl 匹配 baseUrl 找到正确的源
+        val matchedSource = findSourceForPlayPageUrl(playPageUrl)
+        if (matchedSource != null) {
+            return matchedSource.fetchVideoUrlByPlayPageUrl(playPageUrl)
+        }
+        // 兜底：遍历所有启用的源依次尝试
         val enabledSources = videoSources.filter { it.enabled }
         for (source in enabledSources) {
             val result = source.fetchVideoUrlByPlayPageUrl(playPageUrl)
@@ -348,11 +353,44 @@ class VideoRepository(
     }
 
     /**
+     * 根据 playPageUrl 查找对应的 VideoSource。
+     * 策略：遍历所有启用的源，返回 baseUrl 与 playPageUrl 匹配的源。
+     */
+    private fun findSourceForPlayPageUrl(playPageUrl: String): VideoSource? {
+        val enabledSources = videoSources.filter { it.enabled }
+        for (source in enabledSources) {
+            val baseUrl = try {
+                (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
+            } catch (_: Throwable) {
+                null
+            }
+            if (baseUrl != null && playPageUrl.startsWith(baseUrl)) {
+                return source
+            }
+        }
+        return null
+    }
+
+    /**
      * 根据 detailUrl 查找对应的 VideoSource。
-     * 简单策略：遍历所有启用的源，返回第一个（因为当前所有源共用同一 BASE_URL）。
+     * 策略：遍历所有启用的源，返回 baseUrl 与 detailUrl 匹配的源。
+     * 对于 CrawlerVideoSource 子类，通过反射读取 baseUrl 属性进行匹配。
      */
     private fun findSourceForDetailUrl(detailUrl: String): VideoSource? {
-        return videoSources.filter { it.enabled }.firstOrNull()
+        val enabledSources = videoSources.filter { it.enabled }
+        // 优先尝试根据 baseUrl 匹配
+        for (source in enabledSources) {
+            val baseUrl = try {
+                (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
+            } catch (_: Throwable) {
+                null
+            }
+            if (baseUrl != null && detailUrl.startsWith(baseUrl)) {
+                return source
+            }
+        }
+        // 兜底：返回第一个启用的源
+        return enabledSources.firstOrNull()
     }
 
     private suspend fun getCachedHomeVideos(cacheKey: String, label: String): List<VideoItem>? {
