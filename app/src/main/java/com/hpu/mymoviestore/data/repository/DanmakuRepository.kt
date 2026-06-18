@@ -8,7 +8,9 @@ import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuEpisode
 import com.hpu.mymoviestore.data.source.DanmakuApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * 弹幕仓库（带缓存和重试）
@@ -37,8 +39,8 @@ class DanmakuRepository(
 
     companion object {
         private const val TAG = "DanmakuRepo"
-        private const val MAX_RETRY = 5
-        private const val RETRY_INTERVAL_MS = 60_000L  // 1分钟
+        private const val MAX_RETRY = 10
+        private const val RETRY_INTERVAL_MS = 10_000L  // 1分钟
     }
 
     /** 切换 Base URL */
@@ -71,12 +73,14 @@ class DanmakuRepository(
         }
 
         // 网络请求（带重试）
-        val result = retryWithBackoff(
-            operation = { api.searchAnime(title) },
-            onRetry = { attempt, e ->
-                Log.w(TAG, "搜索失败，第 $attempt 次重试: ${e.message}")
-            }
-        )
+        val result = withContext(Dispatchers.IO) {
+            retryWithBackoff(
+                operation = { api.searchAnime(title) },
+                onRetry = { attempt, e ->
+                    Log.w(TAG, "搜索失败，第 $attempt 次重试", e)
+                }
+            )
+        }
 
         val success = result != null
         val data = result ?: emptyList()
@@ -109,12 +113,14 @@ class DanmakuRepository(
         }
 
         // 网络请求（带重试）
-        val result = retryWithBackoff(
-            operation = { api.getBangumi(animeId) },
-            onRetry = { attempt, e ->
-                Log.w(TAG, "获取 bangumi 失败，第 $attempt 次重试: ${e.message}")
-            }
-        )
+        val result = withContext(Dispatchers.IO) {
+            retryWithBackoff(
+                operation = { api.getBangumi(animeId) },
+                onRetry = { attempt, e ->
+                    Log.w(TAG, "获取 bangumi 失败，第 $attempt 次重试", e)
+                }
+            )
+        }
 
         val success = result != null
         val fromCache = false
@@ -157,12 +163,14 @@ class DanmakuRepository(
         }
 
         // 网络请求（带重试）
-        val result = retryWithBackoff(
-            operation = { api.getDanmakuComments(episode.episodeId) },
-            onRetry = { attempt, e ->
-                Log.w(TAG, "下载弹幕失败，第 $attempt 次重试: ${e.message}")
-            }
-        )
+        val result = withContext(Dispatchers.IO) {
+            retryWithBackoff(
+                operation = { api.getDanmakuComments(episode.episodeId) },
+                onRetry = { attempt, e ->
+                    Log.w(TAG, "下载弹幕失败，第 $attempt 次重试", e)
+                }
+            )
+        }
 
         val success = result != null
         val data = result ?: emptyList()
@@ -202,7 +210,7 @@ class DanmakuRepository(
                 }
             }
         }
-        Log.e(TAG, "操作失败，已重试 $MAX_RETRY 次: ${lastException?.message}")
+        Log.e(TAG, "操作失败，已重试 $MAX_RETRY 次", lastException)
         return null
     }
 

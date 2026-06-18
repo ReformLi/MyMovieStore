@@ -95,7 +95,7 @@ abstract class CrawlerVideoSource(
                 return@withContext Result.failure(CrawlError(CrawlErrorType.EMPTY_RESULT, sourceName, "详情页地址为空"))
             }
 
-            val cacheKey = cacheKey(cachePrefixDetailMeta, detailUrl)
+            val cacheKey = cacheKey("$cachePrefix$cachePrefixDetailMeta", detailUrl)
             cacheRepository?.get(cacheKey)?.let { cachedJson ->
                 try {
                     val cached = detailAdapter.fromJson(cachedJson)
@@ -127,7 +127,7 @@ abstract class CrawlerVideoSource(
                 return@withContext Result.failure(CrawlError(CrawlErrorType.EMPTY_RESULT, sourceName, "播放页地址为空"))
             }
 
-            val realUrlCacheKey = cacheKey(cachePrefixRealVideoUrl, playPageUrl)
+            val realUrlCacheKey = cacheKey("$cachePrefix$cachePrefixRealVideoUrl", playPageUrl)
             cacheRepository?.get(realUrlCacheKey)?.let { cachedUrl ->
                 if (cachedUrl.isNotBlank()) {
                     Log.d(logTag, "真实播放地址缓存命中（30分钟内）: ${cachedUrl.take(120)}")
@@ -262,7 +262,7 @@ abstract class CrawlerVideoSource(
      * 当前版本只播放第一集，因此缓存的是"详情页 → 第一集播放页"的映射。
      */
     protected open suspend fun getFirstPlayPageUrl(detailUrl: String): String {
-        val cacheKey = cacheKey(cachePrefixFirstPlayPage, detailUrl)
+        val cacheKey = cacheKey("$cachePrefix$cachePrefixFirstPlayPage", detailUrl)
         cacheRepository?.get(cacheKey)?.let { cachedPlayPageUrl ->
             if (cachedPlayPageUrl.isNotBlank()) {
                 Log.d(logTag, "首个播放页链接缓存命中: $cachedPlayPageUrl")
@@ -380,10 +380,11 @@ abstract class CrawlerVideoSource(
 
     /**
      * 搜索缓存 key。
+     * 注意：必须包含 cachePrefix（源标识），否则多源搜索结果会互相覆盖。
      */
     protected open fun searchCacheKey(keyword: String, page: Int): String {
         val safePage = page.coerceAtLeast(1)
-        return "$cachePrefixSearch:${keyword.hashCode()}:$safePage:$keyword"
+        return "$cachePrefix$cachePrefixSearch:${keyword.hashCode()}:$safePage:$keyword"
     }
 
     /**

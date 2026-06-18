@@ -31,8 +31,8 @@ import java.util.concurrent.TimeUnit
 class DanmakuApi {
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private val moshi: Moshi = Moshi.Builder()
