@@ -235,8 +235,12 @@ class PlayerActivity : AppCompatActivity() {
                     if (danmakuFile.exists()) {
                         loadDanmakuFromLocalFile(danmakuFile)
                     } else {
-                        Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath")
+                        Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath，尝试在线搜索弹幕")
+                        launchDanmakuSearch(videoTitle, episodeTitle)
                     }
+                } else {
+                    // 没有本地弹幕文件，尝试在线搜索弹幕
+                    launchDanmakuSearch(videoTitle, episodeTitle)
                 }
             } else {
                 Log.e(TAG, "本地文件不存在: $localFilePath")

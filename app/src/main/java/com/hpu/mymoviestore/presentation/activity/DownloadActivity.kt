@@ -232,18 +232,15 @@ class DownloadActivity : AppCompatActivity() {
     // ======================== 已完成操作 ========================
 
     private fun onTaskPlay(task: DownloadTaskEntity) {
-        // 跳转到播放器播放本地文件
+        // 跳转到播放器播放本地文件（使用离线播放专用 Intent）
         Log.d(TAG, "播放本地文件: ${task.localFilePath}")
         startActivity(
             PlayerActivity.newIntent(
-                this,
-                task.videoId,
-                task.title,
-                task.coverUrl,
-                "",
-                task.localFilePath,
-                episodeTitle = task.episodeTitle,
-                sourceName = task.sourceName
+                context = this,
+                localFilePath = task.localFilePath,
+                danmakuFilePath = task.danmakuFilePath.ifEmpty { null },
+                title = task.title,
+                episodeTitle = task.episodeTitle
             )
         )
     }
