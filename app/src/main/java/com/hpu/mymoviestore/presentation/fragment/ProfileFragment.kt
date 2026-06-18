@@ -2,17 +2,30 @@ package com.hpu.mymoviestore.presentation.fragment
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.data.cache.DanmakuCache
+import com.hpu.mymoviestore.databinding.DialogClearCacheBinding
 import com.hpu.mymoviestore.databinding.FragmentProfileBinding
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * "我的" 页面 —— 个人中心，包含视频源管理、弹幕开关、历史记录、下载管理、
@@ -154,34 +167,237 @@ class ProfileFragment : Fragment() {
         }
     }
 
+    // ================== 清理缓存 ==================
+
     /**
-     * 清理缓存弹框
-     * 选择性清理：网络缓存、图片缓存、播放历史、搜索历史
+     * 清理缓存弹框（美观自定义 UI）
      */
     private fun showClearCacheDialog() {
-        val items = arrayOf("网络请求缓存", "图片缓存", "播放历史", "搜索历史")
-        val checked = booleanArrayOf(true, true, false, false)
+        val dialogBinding = DialogClearCacheBinding.inflate(layoutInflater)
 
-        AlertDialog.Builder(requireContext())
-            .setTitle("清理缓存")
-            .setMultiChoiceItems(items, checked) { _, which, isChecked ->
-                checked[which] = isChecked
+        val dialog = AlertDialog.Builder(requireContext(), R.style.ClearCacheDialog)
+            .setView(dialogBinding.root)
+            .create()
+
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.6f)
+        }
+
+        // 计算并显示缓存大小
+        lifecycleScope.launch(Dispatchers.IO) {
+            val totalSize = calculateTotalCacheSize()
+            withContext(Dispatchers.Main) {
+                dialogBinding.tvCacheSize.text = "缓存大小：${formatSize(totalSize)}"
             }
-            .setPositiveButton("清理") { _, _ ->
-                val toClear = items.filterIndexed { index, _ -> checked[index] }
-                if (toClear.isEmpty()) {
-                    Toast.makeText(requireContext(), "未选择任何缓存项", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+        }
+
+        // 缓存项配置：(标题, 描述, 图标, 是否默认选中)
+        val cacheItems = listOf(
+            CacheItem("清理搜索缓存", "删除所有搜索相关的缓存记录", R.drawable.ic_player_search, true),
+            CacheItem("清理首页缓存", "删除首页列表缓存数据", R.drawable.ic_player_home, true),
+            CacheItem("清理详情页缓存", "删除所有详情页元数据", R.drawable.ic_player_detail, true),
+            CacheItem("清理播放地址缓存", "删除所有缓存的 m3u8 地址", R.drawable.ic_player_play, true),
+            CacheItem("清理弹幕缓存", "删除所有本地弹幕 JSON 文件", R.drawable.ic_player_danmaku, true),
+            CacheItem("清理全部缓存", "删除以上所有内容", R.drawable.ic_player_clear_all, false)
+        )
+
+        val selectedItems = mutableSetOf<Int>()
+        cacheItems.forEachIndexed { index, item ->
+            if (item.checkedByDefault) selectedItems.add(index)
+            val itemView = createCacheItemView(item, index in selectedItems) { isChecked ->
+                if (isChecked) selectedItems.add(index) else selectedItems.remove(index)
+                // 如果选了"全部"，自动选中其他项；如果取消"全部"，不影响其他项
+                if (index == 5 && isChecked) {
+                    (0..4).forEach { selectedItems.add(it) }
+                    refreshAllItems(dialogBinding.container, cacheItems, selectedItems)
                 }
-                Toast.makeText(
-                    requireContext(),
-                    "已清理: ${toClear.joinToString(", ")}",
-                    Toast.LENGTH_SHORT
-                ).show()
             }
-            .setNegativeButton("取消", null)
-            .show()
+            dialogBinding.container.addView(itemView)
+        }
+
+        dialogBinding.btnCancel.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnConfirm.setOnClickListener {
+            if (selectedItems.isEmpty()) {
+                Toast.makeText(requireContext(), "未选择任何缓存项", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            performClearCache(selectedItems, cacheItems) { message ->
+                Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
     }
+
+    private fun createCacheItemView(
+        item: CacheItem,
+        isChecked: Boolean,
+        onCheckedChange: (Boolean) -> Unit
+    ): View {
+        val view = LayoutInflater.from(requireContext())
+            .inflate(R.layout.item_clear_cache, null)
+
+        val ivIcon = view.findViewById<ImageView>(R.id.ivIcon)
+        val tvTitle = view.findViewById<TextView>(R.id.tvTitle)
+        val tvDesc = view.findViewById<TextView>(R.id.tvDesc)
+        val ivCheck = view.findViewById<ImageView>(R.id.ivCheck)
+
+        ivIcon.setImageResource(item.iconRes)
+        tvTitle.text = item.title
+        tvDesc.text = item.desc
+        updateCheckState(ivCheck, isChecked)
+
+        view.setOnClickListener {
+            val newChecked = ivCheck.tag != true
+            ivCheck.tag = newChecked
+            updateCheckState(ivCheck, newChecked)
+            onCheckedChange(newChecked)
+        }
+
+        return view
+    }
+
+    private fun updateCheckState(ivCheck: ImageView, checked: Boolean) {
+        ivCheck.tag = checked
+        ivCheck.setImageResource(
+            if (checked) R.drawable.ic_check_circle else R.drawable.ic_check_circle_outline
+        )
+        ivCheck.alpha = if (checked) 1.0f else 0.4f
+    }
+
+    private fun refreshAllItems(
+        container: LinearLayout,
+        items: List<CacheItem>,
+        selectedItems: MutableSet<Int>
+    ) {
+        container.removeAllViews()
+        items.forEachIndexed { index, item ->
+            val itemView = createCacheItemView(item, index in selectedItems) { isChecked ->
+                if (isChecked) selectedItems.add(index) else selectedItems.remove(index)
+                if (index == 5 && isChecked) {
+                    (0..4).forEach { selectedItems.add(it) }
+                    refreshAllItems(container, items, selectedItems)
+                }
+            }
+            container.addView(itemView)
+        }
+    }
+
+    private fun performClearCache(
+        selectedItems: Set<Int>,
+        cacheItems: List<CacheItem>,
+        onComplete: (String) -> Unit
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val app = MovieApplication.get()
+            val cacheRepo = app.apiCacheRepository
+            val results = mutableListOf<String>()
+
+            // 1. 清理搜索缓存（爬虫搜索 + 本地搜索历史）
+            if (5 in selectedItems || 0 in selectedItems) {
+                // 搜索缓存键格式: {cachePrefix}:search:v3:{hash}:{page}:{keyword}
+                // 需要清理所有源的搜索缓存
+                var rows = cacheRepo.deleteByPrefix("crawler:search:v3")
+                rows += cacheRepo.deleteByPrefix("yinghua:search:v3")
+                // 同时清理本地搜索历史
+                app.searchHistoryRepository.clearAllHistory()
+                results.add("搜索缓存 (${rows}条)")
+            }
+
+            // 2. 清理首页缓存
+            if (5 in selectedItems || 1 in selectedItems) {
+                val rows = cacheRepo.deleteByPrefix("home:tab:")
+                results.add("首页缓存 (${rows}条)")
+            }
+
+            // 3. 清理详情页缓存
+            if (5 in selectedItems || 2 in selectedItems) {
+                val rows = cacheRepo.deleteByPrefix(":detail:meta")
+                results.add("详情页缓存 (${rows}条)")
+            }
+
+            // 4. 清理播放地址缓存
+            if (5 in selectedItems || 3 in selectedItems) {
+                val rows1 = cacheRepo.deleteByPrefix(":play:real_url")
+                val rows2 = cacheRepo.deleteByPrefix(":detail:first_play_page")
+                results.add("播放地址缓存 (${rows1 + rows2}条)")
+            }
+
+            // 5. 清理弹幕缓存
+            if (5 in selectedItems || 4 in selectedItems) {
+                DanmakuCache(requireContext()).clearAll()
+                results.add("弹幕缓存")
+            }
+
+            withContext(Dispatchers.Main) {
+                val message = if (results.isEmpty()) "未清理任何缓存" else "已清理: ${results.joinToString(", ")}"
+                onComplete(message)
+            }
+        }
+    }
+
+    data class CacheItem(
+        val title: String,
+        val desc: String,
+        val iconRes: Int,
+        val checkedByDefault: Boolean
+    )
+
+    // ================== 缓存大小计算 ==================
+
+    /**
+     * 计算所有缓存的总大小（Room 数据库 + SharedPreferences + 图片缓存）
+     */
+    private suspend fun calculateTotalCacheSize(): Long {
+        var total = 0L
+        withContext(Dispatchers.IO) {
+            // 1. Room 数据库文件大小
+            val dbFile = requireContext().getDatabasePath("movie_database")
+            if (dbFile.exists()) total += dbFile.length()
+
+            // 2. SharedPreferences 文件大小（弹幕缓存等）
+            val prefsDir = java.io.File(requireContext().applicationInfo.dataDir, "shared_prefs")
+            if (prefsDir.exists() && prefsDir.isDirectory) {
+                prefsDir.listFiles()?.forEach { file ->
+                    total += file.length()
+                }
+            }
+
+            // 3. Coil 图片缓存
+            val cacheDir = requireContext().cacheDir
+            if (cacheDir.exists() && cacheDir.isDirectory) {
+                total += calculateDirSize(cacheDir)
+            }
+
+            // 4. WebView 缓存
+            val webViewCache = java.io.File(requireContext().cacheDir, "WebView")
+            if (webViewCache.exists()) {
+                total += calculateDirSize(webViewCache)
+            }
+        }
+        return total
+    }
+
+    private fun calculateDirSize(dir: java.io.File): Long {
+        var size = 0L
+        dir.listFiles()?.forEach { file ->
+            size += if (file.isDirectory) calculateDirSize(file) else file.length()
+        }
+        return size
+    }
+
+    private fun formatSize(bytes: Long): String {
+        return when {
+            bytes >= 1024 * 1024 * 1024 -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            bytes >= 1024 * 1024 -> String.format("%.2f MB", bytes / (1024.0 * 1024.0))
+            bytes >= 1024 -> String.format("%.2f KB", bytes / 1024.0)
+            else -> "$bytes B"
+        }
+    }
+
+    // ================== 帮助 & 关于 ==================
 
     /**
      * 帮助弹框

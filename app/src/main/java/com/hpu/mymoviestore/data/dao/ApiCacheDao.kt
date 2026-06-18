@@ -58,4 +58,11 @@ interface ApiCacheDao {
      */
     @Query("DELETE FROM api_cache")
     suspend fun clearAllCache()
+
+    /**
+     * 按 cacheKey 前缀删除缓存（用于分类清理）
+     * @return 被删除的行数
+     */
+    @Query("DELETE FROM api_cache WHERE cacheKey LIKE :prefix || '%'")
+    suspend fun deleteByPrefix(prefix: String): Int
 }

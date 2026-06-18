@@ -95,4 +95,14 @@ class ApiCacheRepository(private val dao: ApiCacheDao) {
         Log.d(TAG, "清空全部缓存")
         dao.clearAllCache()
     }
+
+    /**
+     * 按前缀删除缓存（用于分类清理）
+     * @return 被删除的行数
+     */
+    suspend fun deleteByPrefix(prefix: String): Int {
+        val rows = dao.deleteByPrefix(prefix)
+        Log.d(TAG, "按前缀删除缓存: prefix='$prefix', 删除 $rows 行")
+        return rows
+    }
 }
