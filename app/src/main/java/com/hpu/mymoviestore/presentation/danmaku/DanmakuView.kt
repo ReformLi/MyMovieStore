@@ -320,10 +320,12 @@ class DanmakuView(context: Context) : View(context) {
             scanIndex++
         }
 
-        // ========== 3. 更新滚动弹幕位置 ==========
-        val deltaX = scrollSpeedPxPerMs * frameMs
-        for (ad in activeScroll) {
-            ad.x -= deltaX
+        // ========== 3. 更新滚动弹幕位置（暂停时跳过） ==========
+        if (!paused) {
+            val deltaX = scrollSpeedPxPerMs * frameMs
+            for (ad in activeScroll) {
+                ad.x -= deltaX
+            }
         }
 
         // ========== 4. 绘制 ==========

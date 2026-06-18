@@ -223,6 +223,8 @@ class PlayerActivity : AppCompatActivity() {
                             Player.STATE_READY -> {
                                 Log.d(TAG, "播放状态: STATE_READY")
                                 danmakuManager?.ensureStarted()
+                                // 同步弹幕暂停状态
+                                danmakuManager?.setPaused(!exoPlayer.isPlaying)
                             }
                             Player.STATE_BUFFERING -> Log.d(TAG, "播放状态: STATE_BUFFERING")
                             Player.STATE_ENDED -> {
@@ -235,6 +237,7 @@ class PlayerActivity : AppCompatActivity() {
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         Log.d(TAG, "onIsPlayingChanged: isPlaying=$isPlaying")
+                        danmakuManager?.setPaused(!isPlaying)
                     }
                 })
             }

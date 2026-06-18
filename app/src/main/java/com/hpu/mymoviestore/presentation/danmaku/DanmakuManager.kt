@@ -84,6 +84,11 @@ class DanmakuManager(private val context: Context) {
         view.syncTo(positionMs, reset = true)
     }
 
+    fun setPaused(isPaused: Boolean) {
+        danmakuView?.setPaused(isPaused)
+        Log.d(TAG, "setPaused=$isPaused")
+    }
+
     fun pause() {
         Log.d(TAG, "pause")
         danmakuView?.setPaused(true)
