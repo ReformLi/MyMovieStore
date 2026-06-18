@@ -1,5 +1,6 @@
 package com.hpu.mymoviestore.presentation.fragment
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
@@ -8,6 +9,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -217,7 +219,15 @@ class SearchFragment : Fragment() {
         binding.layoutSearchHistory.visibility = View.GONE
         binding.tvSearchSummary.text = "正在搜索“$cleanKeyword”..."
         binding.tvSearchSummary.visibility = View.VISIBLE
+        // 隐藏输入法键盘
+        hideKeyboard()
         viewModel.searchVideosPage(cleanKeyword, currentPage)
+    }
+
+    private fun hideKeyboard() {
+        val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val view = activity?.currentFocus ?: binding.etSearch
+        imm.hideSoftInputFromWindow(view.windowToken, 0)
     }
 
     fun searchFromExternal(keyword: String) {
