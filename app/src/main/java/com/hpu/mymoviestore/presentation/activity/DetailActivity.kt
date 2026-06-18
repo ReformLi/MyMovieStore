@@ -10,17 +10,29 @@ import android.view.View
 import android.widget.GridLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.data.database.MovieDatabase
+import com.hpu.mymoviestore.data.download.DanmakuDownloadManager
+import com.hpu.mymoviestore.data.download.DownloadCallback
+import com.hpu.mymoviestore.data.download.DownloadEngine
+import com.hpu.mymoviestore.data.download.DownloadStatus
+import com.hpu.mymoviestore.data.download.DownloadService
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
+import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -42,6 +54,7 @@ import kotlinx.coroutines.launch
 class DetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDetailBinding
+    private lateinit var downloadViewModel: DownloadViewModel
 
     // 当前视频的业务字段（仅用于日志与播放跳转，不持久化收藏）
     private var videoId: Long = 0
@@ -147,6 +160,16 @@ class DetailActivity : AppCompatActivity() {
             Log.d(TAG, "封面为空，不加载封面图")
         }
         binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
+        binding.btnDownload.isEnabled = videoUrl.isNotEmpty() || playLines.isNotEmpty()
+
+        // 初始化 DownloadViewModel
+        downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
+
+        // 下载按钮
+        binding.btnDownload.setOnClickListener {
+            handleDownloadClick()
+        }
+
         // 3. 播放按钮
         binding.btnPlay.setOnClickListener {
             playSelectedEpisodeOrVideo()
@@ -232,6 +255,7 @@ class DetailActivity : AppCompatActivity() {
                 binding.ivCover.load(video.coverUrl)
             }
             binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
+            binding.btnDownload.isEnabled = videoUrl.isNotEmpty() || playLines.isNotEmpty()
         }
     }
 
@@ -272,6 +296,7 @@ class DetailActivity : AppCompatActivity() {
 
         renderPlayLines()
         binding.btnPlay.isEnabled = selectedEpisode != null || videoUrl.isNotBlank()
+        binding.btnDownload.isEnabled = selectedEpisode != null || videoUrl.isNotBlank()
         updatePlayButtonText(false)
         loadProgressFromHistory()
     }
@@ -494,6 +519,180 @@ class DetailActivity : AppCompatActivity() {
 
     private fun cleanHistoryTitle(title: String): String {
         return title.replace(Regex("\\s*第\\d+集\\s*$"), "").trim()
+    }
+
+    // ======================== 下载功能 ========================
+
+    /**
+     * 处理下载按钮点击
+     *
+     * - 如果有多集，弹出剧集选择对话框（多选模式）
+     * - 如果只有一集，直接创建下载任务
+     */
+    private fun handleDownloadClick() {
+        val currentLine = playLines.getOrNull(selectedLineIndex)
+        val episodes = currentLine?.episodes ?: emptyList()
+
+        if (episodes.isEmpty()) {
+            // 没有播放线路信息，使用 videoUrl 直接下载
+            if (videoUrl.isNotBlank()) {
+                startDownloadForEpisodes(
+                    listOf(PlayEpisode(title = videoTitle, playPageUrl = videoUrl))
+                )
+            } else {
+                Toast.makeText(this, "暂无可用的下载地址", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        if (episodes.size == 1) {
+            // 只有一集，直接下载
+            startDownloadForEpisodes(episodes)
+            return
+        }
+
+        // 多集：弹出选择对话框
+        showEpisodeSelectDialog(episodes)
+    }
+
+    /**
+     * 显示剧集选择对话框（多选模式）
+     *
+     * - 默认选中当前播放的集数
+     * - 确认后调用 startDownloadForEpisodes 创建下载任务
+     */
+    private fun showEpisodeSelectDialog(episodes: List<PlayEpisode>) {
+        val episodeTitles = episodes.map { it.title }.toTypedArray()
+        val checkedItems = BooleanArray(episodes.size) { index ->
+            episodes[index].playPageUrl == selectedEpisode?.playPageUrl
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("选择下载集数")
+            .setMultiChoiceItems(episodeTitles, checkedItems) { _, which, isChecked ->
+                checkedItems[which] = isChecked
+            }
+            .setPositiveButton("确定") { _, _ ->
+                val selectedEpisodes = episodes.filterIndexed { index, _ -> checkedItems[index] }
+                if (selectedEpisodes.isEmpty()) {
+                    Toast.makeText(this, "请至少选择一集", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                startDownloadForEpisodes(selectedEpisodes)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 为选中的集数创建下载任务
+     *
+     * 流程：
+     * 1. 调用 DownloadViewModel.createTasks() 创建下载任务到数据库
+     * 2. Toast 提示"已添加到下载列表"
+     * 3. 启动 DownloadService（前台服务）
+     * 4. 对每一集：解析真实播放地址 → 提交到 DownloadEngine → 下载弹幕
+     */
+    private fun startDownloadForEpisodes(episodes: List<PlayEpisode>) {
+        // 1. 创建下载任务到数据库
+        downloadViewModel.createTasks(
+            videoId = videoId,
+            title = videoTitle,
+            coverUrl = videoCover,
+            sourceName = sourceName,
+            episodes = episodes
+        )
+
+        // 2. Toast 提示
+        Toast.makeText(this, "已添加到下载列表", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "已创建 ${episodes.size} 个下载任务: videoId=$videoId, title=$videoTitle")
+
+        // 3. 启动前台服务
+        val serviceIntent = Intent(this, DownloadService::class.java)
+        startForegroundService(serviceIntent)
+
+        // 4. 对每一集解析真实播放地址并提交下载
+        val app = MovieApplication.get()
+        val downloadEngine = DownloadEngine.getInstance(this)
+        val danmakuManager = DanmakuDownloadManager.getInstance(this)
+
+        // 使用全局 CoroutineScope，确保离开详情页后仍能更新数据库
+        val dbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        episodes.forEachIndexed { index, episode ->
+            lifecycleScope.launch {
+                // 解析真实播放地址
+                val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
+                val m3u8Url = result.getOrNull()
+
+                if (m3u8Url.isNullOrBlank()) {
+                    val errorMsg = result.exceptionOrNull()
+                    Log.w(TAG, "下载：解析播放地址失败, episode=${episode.title}, error=${errorMsg?.message}")
+                    return@launch
+                }
+
+                // 使用数据库生成的 taskId（与 DownloadViewModel.createTasks 一致）
+                val dbTaskId = "${videoId}_$index"
+
+                // 提交到下载引擎
+                val taskId = downloadEngine.submitTask(
+                    m3u8Url = m3u8Url,
+                    videoTitle = videoTitle,
+                    episodeTitle = episode.title,
+                    taskId = dbTaskId,
+                    callback = object : DownloadCallback {
+                        override fun onProgress(taskId: String, downloadedSegments: Int, totalSegments: Int, fileSize: Long) {
+                            dbScope.launch {
+                                try {
+                                    app.downloadRepository.updateProgress(
+                                        taskId, downloadedSegments, totalSegments, fileSize
+                                    )
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "同步下载进度到数据库失败: ${e.message}")
+                                }
+                            }
+                        }
+
+                        override fun onStatusChanged(taskId: String, status: Int, errorMsg: String?) {
+                            Log.d(TAG, "下载状态变更: taskId=$taskId, status=$status, error=$errorMsg")
+                            dbScope.launch {
+                                try {
+                                    when (status) {
+                                        DownloadStatus.DOWNLOADING -> app.downloadRepository.markDownloading(taskId)
+                                        DownloadStatus.PAUSED -> app.downloadRepository.pauseTask(taskId)
+                                        DownloadStatus.FAILED -> app.downloadRepository.markFailed(taskId, errorMsg ?: "")
+                                        else -> {}
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "同步下载状态到数据库失败: ${e.message}")
+                                }
+                            }
+                        }
+
+                        override fun onCompleted(taskId: String, localFilePath: String, fileSize: Long) {
+                            Log.d(TAG, "下载完成: taskId=$taskId, path=$localFilePath, size=$fileSize")
+                            dbScope.launch {
+                                try {
+                                    app.downloadRepository.markCompleted(taskId, localFilePath, fileSize)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "同步下载完成到数据库失败: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                )
+
+                // 启动弹幕下载
+                danmakuManager.startDanmakuDownload(
+                    taskId = taskId,
+                    title = videoTitle,
+                    episodeTitle = episode.title,
+                    dao = MovieDatabase.getInstance(this@DetailActivity).downloadTaskDao()
+                )
+
+                Log.d(TAG, "已提交下载: taskId=$taskId, episode=${episode.title}, m3u8=${m3u8Url.take(60)}")
+            }
+        }
     }
 
     private fun dp(value: Int): Int {

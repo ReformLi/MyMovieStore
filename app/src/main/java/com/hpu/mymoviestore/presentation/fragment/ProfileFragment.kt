@@ -21,6 +21,7 @@ import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.cache.DanmakuCache
 import com.hpu.mymoviestore.databinding.DialogClearCacheBinding
 import com.hpu.mymoviestore.databinding.FragmentProfileBinding
+import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import kotlinx.coroutines.Dispatchers
@@ -74,9 +75,9 @@ class ProfileFragment : Fragment() {
             startActivity(Intent(requireContext(), HistoryActivity::class.java))
         }
 
-        // 下载管理 —— 占位
+        // 下载管理 —— 跳转到下载管理页面
         binding.cardDownload.setOnClickListener {
-            Toast.makeText(requireContext(), "下载管理功能即将上线", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(requireContext(), DownloadActivity::class.java))
         }
 
         // 清理缓存 —— 弹框，选择性清理

@@ -6,6 +6,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.hpu.mymoviestore.data.database.MovieDatabase
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
+import com.hpu.mymoviestore.data.repository.DownloadRepository
 import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
@@ -49,6 +50,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
     lateinit var apiCacheRepository: ApiCacheRepository
         private set
 
+    lateinit var downloadRepository: DownloadRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -62,7 +66,8 @@ class MovieApplication : Application(), ImageLoaderFactory {
         playHistoryRepository = PlayHistoryRepository(database.playHistoryDao())
         searchHistoryRepository = SearchHistoryRepository(database.searchHistoryDao())
         apiCacheRepository = ApiCacheRepository(database.apiCacheDao())
-        Log.d(TAG, "三个数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache)")
+        downloadRepository = DownloadRepository(database.downloadTaskDao(), database.downloadedVideoIndexDao())
+        Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download)")
 
         // 视频源：assets JSON 挡板 + Room 缓存(TTL=1 天)
         val sourceManager = VideoSourceManager(this, apiCacheRepository)

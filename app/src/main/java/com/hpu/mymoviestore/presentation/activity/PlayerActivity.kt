@@ -21,6 +21,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -29,16 +30,22 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
+import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
+import com.hpu.mymoviestore.data.model.danmaku.DanmakuCommentResponse
 import com.hpu.mymoviestore.data.repository.DanmakuRepository
 import com.hpu.mymoviestore.databinding.ActivityPlayerBinding
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuManager
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.viewmodel.PlayerViewModel
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -116,6 +123,8 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_PLAY_PAGE_URL = "extra_play_page_url"
         const val EXTRA_EPISODE_TITLE = "extra_episode_title"
         const val EXTRA_SOURCE_NAME = "extra_source_name"
+        const val EXTRA_LOCAL_FILE_PATH = "extra_local_file_path"
+        const val EXTRA_DANMAKU_FILE_PATH = "extra_danmaku_file_path"
 
         fun newIntent(
             context: Context,
@@ -139,6 +148,31 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra(EXTRA_PLAY_PAGE_URL, playPageUrl)
                 putExtra(EXTRA_EPISODE_TITLE, episodeTitle)
                 putExtra(EXTRA_SOURCE_NAME, sourceName)
+            }
+        }
+
+        /**
+         * 创建离线播放的 Intent
+         *
+         * @param localFilePath 本地 mp4 文件路径
+         * @param danmakuFilePath 本地弹幕 json 文件路径（可选）
+         * @param title 视频标题（用于显示）
+         * @param episodeTitle 集数标题（可选）
+         */
+        fun newIntent(
+            context: Context,
+            localFilePath: String,
+            danmakuFilePath: String? = null,
+            title: String = "",
+            episodeTitle: String = ""
+        ): Intent {
+            return Intent(context, PlayerActivity::class.java).apply {
+                putExtra(EXTRA_LOCAL_FILE_PATH, localFilePath)
+                if (danmakuFilePath != null) {
+                    putExtra(EXTRA_DANMAKU_FILE_PATH, danmakuFilePath)
+                }
+                putExtra(EXTRA_VIDEO_TITLE, title)
+                putExtra(EXTRA_EPISODE_TITLE, episodeTitle)
             }
         }
     }
@@ -165,6 +199,10 @@ class PlayerActivity : AppCompatActivity() {
         val category = intent.getStringExtra(EXTRA_VIDEO_CATEGORY) ?: ""
         val sourceName = intent.getStringExtra(EXTRA_SOURCE_NAME) ?: ""
 
+        // 离线播放相关参数
+        val localFilePath = intent.getStringExtra(EXTRA_LOCAL_FILE_PATH)
+        val danmakuFilePath = intent.getStringExtra(EXTRA_DANMAKU_FILE_PATH)
+
         screenWidth = resources.displayMetrics.widthPixels
         screenHeight = resources.displayMetrics.heightPixels
         maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -182,43 +220,69 @@ class PlayerActivity : AppCompatActivity() {
         setupGestures()
         setupLockButton()
 
-        viewModel.getHistoryByVideoId(videoId) { history ->
-            val canResume = history != null && history.playProgressSeconds > 0 &&
-                (videoUrl.isBlank() || history.playUrl == videoUrl || true)
-            resumeFromMs = if (canResume) history.playProgressSeconds * 1000 else 0L
-            if (resumeFromMs > 0) {
-                Log.d(TAG, "上次进度 ${history!!.playProgressSeconds}s → seekTo $resumeFromMs ms")
-            } else {
-                Log.d(TAG, "无历史进度或 URL 不匹配 → 从头播放")
-            }
+        if (!localFilePath.isNullOrEmpty()) {
+            // ========== 离线播放模式 ==========
+            Log.d(TAG, "离线播放模式: localFilePath=$localFilePath")
+            val localFile = File(localFilePath)
+            if (localFile.exists()) {
+                val localUri = Uri.fromFile(localFile)
+                Log.d(TAG, "本地文件存在，使用 Uri: $localUri")
+                initializePlayerWithLocalFile(localUri)
 
-            viewModel.setVideoInfo(
-                videoId = videoId,
-                title = videoTitle,
-                coverUrl = coverUrl,
-                category = category,
-                playUrl = videoUrl,
-                detailUrl = intent.getStringExtra(EXTRA_DETAIL_URL) ?: "",
-                playPageUrl = intent.getStringExtra(EXTRA_PLAY_PAGE_URL) ?: "",
-                episodeTitle = episodeTitle,
-                sourceName = sourceName
-            )
-
-            if (videoUrl.isEmpty()) {
-                viewModel.getVideoInfoById(videoId) { video ->
-                    val url = video?.playUrl.orEmpty()
-                    Log.d(TAG, "回查 videoId=$videoId → url=$url")
-                    if (url.isNotEmpty()) {
-                        videoUrl = url
-                        runOnUiThread { initializePlayer(url) }
+                // 如果有本地弹幕文件，直接加载
+                if (!danmakuFilePath.isNullOrEmpty()) {
+                    val danmakuFile = File(danmakuFilePath)
+                    if (danmakuFile.exists()) {
+                        loadDanmakuFromLocalFile(danmakuFile)
+                    } else {
+                        Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath")
                     }
                 }
             } else {
-                initializePlayer(videoUrl)
+                Log.e(TAG, "本地文件不存在: $localFilePath")
+                Toast.makeText(this, "本地文件不存在: $localFilePath", Toast.LENGTH_LONG).show()
+                finish()
             }
-        }
+        } else {
+            // ========== 在线播放模式 ==========
+            viewModel.getHistoryByVideoId(videoId) { history ->
+                val canResume = history != null && history.playProgressSeconds > 0 &&
+                    (videoUrl.isBlank() || history.playUrl == videoUrl || true)
+                resumeFromMs = if (canResume) history.playProgressSeconds * 1000 else 0L
+                if (resumeFromMs > 0) {
+                    Log.d(TAG, "上次进度 ${history!!.playProgressSeconds}s → seekTo $resumeFromMs ms")
+                } else {
+                    Log.d(TAG, "无历史进度或 URL 不匹配 → 从头播放")
+                }
 
-        launchDanmakuSearch(videoTitle, episodeTitle)
+                viewModel.setVideoInfo(
+                    videoId = videoId,
+                    title = videoTitle,
+                    coverUrl = coverUrl,
+                    category = category,
+                    playUrl = videoUrl,
+                    detailUrl = intent.getStringExtra(EXTRA_DETAIL_URL) ?: "",
+                    playPageUrl = intent.getStringExtra(EXTRA_PLAY_PAGE_URL) ?: "",
+                    episodeTitle = episodeTitle,
+                    sourceName = sourceName
+                )
+
+                if (videoUrl.isEmpty()) {
+                    viewModel.getVideoInfoById(videoId) { video ->
+                        val url = video?.playUrl.orEmpty()
+                        Log.d(TAG, "回查 videoId=$videoId → url=$url")
+                        if (url.isNotEmpty()) {
+                            videoUrl = url
+                            runOnUiThread { initializePlayer(url) }
+                        }
+                    }
+                } else {
+                    initializePlayer(videoUrl)
+                }
+            }
+
+            launchDanmakuSearch(videoTitle, episodeTitle)
+        }
     }
 
     // ================== 播放器初始化 ==================
@@ -275,6 +339,84 @@ class PlayerActivity : AppCompatActivity() {
             }
 
         startProgressSyncRunnable()
+    }
+
+    /**
+     * 使用本地文件初始化播放器（离线播放）
+     * 不使用 OkHttp DataSourceFactory，使用默认的 DefaultMediaSourceFactory
+     */
+    private fun initializePlayerWithLocalFile(uri: Uri) {
+        player = ExoPlayer.Builder(this).build()
+            .also { exoPlayer ->
+                binding.playerView.player = exoPlayer
+                val mediaItem = MediaItem.fromUri(uri)
+                exoPlayer.setMediaItem(mediaItem)
+                Log.d(TAG, "离线播放 - 设置 MediaItem: $uri")
+                exoPlayer.prepare()
+                exoPlayer.playWhenReady = true
+                Log.d(TAG, "离线播放 - 播放器 prepare() 完成，playWhenReady=true")
+
+                exoPlayer.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_READY -> {
+                                Log.d(TAG, "离线播放状态: STATE_READY")
+                                danmakuManager?.ensureStarted()
+                                danmakuManager?.setPaused(!exoPlayer.isPlaying)
+                            }
+                            Player.STATE_BUFFERING -> Log.d(TAG, "离线播放状态: STATE_BUFFERING")
+                            Player.STATE_ENDED -> {
+                                Log.d(TAG, "离线播放状态: STATE_ENDED")
+                            }
+                            Player.STATE_IDLE -> Log.d(TAG, "离线播放状态: STATE_IDLE")
+                        }
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        Log.d(TAG, "离线播放 onIsPlayingChanged: isPlaying=$isPlaying")
+                        danmakuManager?.setPaused(!isPlaying)
+                        updatePlayPauseIcon(isPlaying)
+                    }
+                })
+            }
+
+        startProgressSyncRunnable()
+    }
+
+    /**
+     * 从本地 JSON 文件加载弹幕（离线播放）
+     * JSON 格式与 DanmakuCommentResponse 一致：
+     * { "count": N, "comments": [{"cid":1, "p":"...", "m":"...", ...}, ...] }
+     */
+    private fun loadDanmakuFromLocalFile(file: File) {
+        danmakuLoadJob?.cancel()
+        danmakuLoadJob = uiScope.launch {
+            val comments = withContext(Dispatchers.IO) {
+                try {
+                    val json = file.readText(Charsets.UTF_8)
+                    val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+                    val adapter = moshi.adapter(DanmakuCommentResponse::class.java)
+                    val response = adapter.fromJson(json)
+                    Log.d(TAG, "本地弹幕文件解析成功: ${response?.comments?.size ?: 0} 条")
+                    response?.comments ?: emptyList()
+                } catch (e: Exception) {
+                    Log.e(TAG, "本地弹幕文件解析失败: ${e.message}", e)
+                    emptyList()
+                }
+            }
+
+            if (comments.isEmpty()) {
+                Log.w(TAG, "本地弹幕列表为空")
+                danmakuManager?.loadDanmaku(null)
+            } else {
+                Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
+                danmakuManager?.loadDanmaku(comments)
+                player?.let { p ->
+                    danmakuManager?.syncTo(p.currentPosition)
+                    if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
+                }
+            }
+        }
     }
 
     // ================== 进度同步 ==================
