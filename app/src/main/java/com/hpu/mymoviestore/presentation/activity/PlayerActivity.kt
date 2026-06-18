@@ -7,7 +7,11 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -22,6 +26,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.repository.DanmakuRepository
@@ -33,7 +38,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -47,6 +51,8 @@ import kotlin.math.roundToInt
  * 3. 播放启动后去重写入播放历史 + 播放进度（通过 PlayerViewModel）
  * 4. 弹幕层（DanmakuManager）：搜索弹幕源 → 选择 bangumi → 拉取 XML → 显示
  * 5. 弹幕控制：弹幕源 Spinner 切换 + 子开关（独立于"我的"页面总开关）
+ * 6. 手势控制：双击暂停/播放、长按左右滑动快进/快退、长按上下滑动亮度/音量
+ * 7. 屏幕锁定：锁定后禁用手势和按钮，仅接受返回和解锁
  */
 class PlayerActivity : AppCompatActivity() {
 
@@ -61,7 +67,7 @@ class PlayerActivity : AppCompatActivity() {
     private var episodeTitle: String = ""
     private var resumeFromMs: Long = 0L
     private var lastSavedProgressMs: Long = -1L
-    private var lastSyncPositionMs: Long = -1L  // 用于检测 seek 跳变
+    private var lastSyncPositionMs: Long = -1L
     private val progressSaveIntervalMs: Long = 30_000L
 
     // 弹幕相关
@@ -72,8 +78,34 @@ class PlayerActivity : AppCompatActivity() {
     private var danmakuLoadJob: Job? = null
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
+    // PlayerView 内部的弹幕控件引用（在自定义控制栏中）
+    private val danmakuSwitch: android.widget.Switch get() =
+        binding.playerView.findViewById(R.id.switchDanmaku)!!
+    private val danmakuSpinner: android.widget.Spinner get() =
+        binding.playerView.findViewById(R.id.spinnerDanmakuSource)!!
+
+    // 手势相关
+    private lateinit var gestureDetector: GestureDetector
+    private var isLongPressing = false
+    private var longPressStartX = 0f
+    private var longPressStartY = 0f
+    private var screenWidth = 0
+    private var screenHeight = 0
+    private val handler = Handler(Looper.getMainLooper())
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    // 亮度/音量
+    private var currentBrightness = -1f
+    private var currentVolume = -1
+    private var maxVolume = 0
+
+    // 屏幕锁定
+    private var isScreenLocked = false
+
     companion object {
         private const val TAG = "PlayerActivity"
+        private const val LONG_PRESS_THRESHOLD_MS = 300L
+        private const val SEEK_STEP_MS = 10_000L  // 10秒
 
         const val EXTRA_VIDEO_ID = "extra_video_id"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
@@ -114,16 +146,13 @@ class PlayerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. 先初始化 binding
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 2. 现在可以安全使用 binding 了
         binding.danmakuContainer.bringToFront()
-        binding.danmakuContainer.clipChildren = false
+        binding.danmakuContainer.clipChildren = true
         binding.danmakuContainer.clipToPadding = false
 
-        // 3. 其他初始化
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterImmersiveMode()
@@ -136,23 +165,26 @@ class PlayerActivity : AppCompatActivity() {
         val category = intent.getStringExtra(EXTRA_VIDEO_CATEGORY) ?: ""
         val sourceName = intent.getStringExtra(EXTRA_SOURCE_NAME) ?: ""
 
+        screenWidth = resources.displayMetrics.widthPixels
+        screenHeight = resources.displayMetrics.heightPixels
+        maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+
         Log.d(TAG, "========== PlayerActivity.onCreate ==========")
         Log.d(TAG, "收到 Intent: videoId=$videoId, title=$videoTitle, category=$category, source=$sourceName")
 
         title = videoTitle
 
         viewModel = ViewModelProvider(this)[PlayerViewModel::class.java]
-
-        // 初始化弹幕仓库（传入 Context 启用缓存）
         danmakuRepository = DanmakuRepository(context = this)
 
         setupPlayerUi()
         setupDanmakuUi()
+        setupGestures()
+        setupLockButton()
 
-        // 1) 查询播放历史 —— 决定续播位置
         viewModel.getHistoryByVideoId(videoId) { history ->
             val canResume = history != null && history.playProgressSeconds > 0 &&
-                (videoUrl.isBlank() || history.playUrl == videoUrl || true) // 只要 id 匹配就续播
+                (videoUrl.isBlank() || history.playUrl == videoUrl || true)
             resumeFromMs = if (canResume) history.playProgressSeconds * 1000 else 0L
             if (resumeFromMs > 0) {
                 Log.d(TAG, "上次进度 ${history!!.playProgressSeconds}s → seekTo $resumeFromMs ms")
@@ -160,7 +192,6 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "无历史进度或 URL 不匹配 → 从头播放")
             }
 
-            // 2) 写入历史
             viewModel.setVideoInfo(
                 videoId = videoId,
                 title = videoTitle,
@@ -173,7 +204,6 @@ class PlayerActivity : AppCompatActivity() {
                 sourceName = sourceName
             )
 
-            // 3) 启动播放器
             if (videoUrl.isEmpty()) {
                 viewModel.getVideoInfoById(videoId) { video ->
                     val url = video?.playUrl.orEmpty()
@@ -188,22 +218,19 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        // 4) 异步搜索弹幕源（即使失败也不影响播放）
         launchDanmakuSearch(videoTitle, episodeTitle)
     }
 
-    /** 播放器初始化（和之前的逻辑保持一致） */
+    // ================== 播放器初始化 ==================
+
     private fun initializePlayer(url: String) {
         if (url.isEmpty()) {
             Log.w(TAG, "播放地址为空，无法初始化播放器")
             return
         }
 
-        val dataSourceFactory = OkHttpDataSource.Factory(
-            OkHttpClient.Builder().build()
-        )
-        val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setDataSourceFactory(dataSourceFactory)
+        val dataSourceFactory = OkHttpDataSource.Factory(OkHttpClient.Builder().build())
+        val mediaSourceFactory = DefaultMediaSourceFactory(this).setDataSourceFactory(dataSourceFactory)
 
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -227,7 +254,6 @@ class PlayerActivity : AppCompatActivity() {
                             Player.STATE_READY -> {
                                 Log.d(TAG, "播放状态: STATE_READY")
                                 danmakuManager?.ensureStarted()
-                                // 同步弹幕暂停状态
                                 danmakuManager?.setPaused(!exoPlayer.isPlaying)
                             }
                             Player.STATE_BUFFERING -> Log.d(TAG, "播放状态: STATE_BUFFERING")
@@ -242,21 +268,22 @@ class PlayerActivity : AppCompatActivity() {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         Log.d(TAG, "onIsPlayingChanged: isPlaying=$isPlaying")
                         danmakuManager?.setPaused(!isPlaying)
+                        // 更新播放/暂停按钮图标
+                        updatePlayPauseIcon(isPlaying)
                     }
                 })
             }
 
-        // 开始进度轮询（每 30s 写入一次 + 同步弹幕时间）
         startProgressSyncRunnable()
     }
 
-    /** 定期（1s）同步弹幕时间 + 每 30s 写入一次播放进度 */
+    // ================== 进度同步 ==================
+
     private val progressSyncRunnable = object : Runnable {
         override fun run() {
             val p = player
             if (p != null) {
                 val currentMs = p.currentPosition
-                // 检测 seek：如果位置跳变超过 3 秒，视为用户拖动进度条，需要清空重建弹幕
                 val timeDiff = kotlin.math.abs(currentMs - lastSyncPositionMs)
                 if (timeDiff > 3000L && lastSyncPositionMs >= 0) {
                     danmakuManager?.seekTo(currentMs)
@@ -292,7 +319,8 @@ class PlayerActivity : AppCompatActivity() {
         if (force) Log.d(TAG, "强制写入进度: ${currentSec}s / ${durSec}s")
     }
 
-    /** 标题/剧集/返回/旋转等 UI */
+    // ================== UI 设置 ==================
+
     private fun setupPlayerUi() {
         binding.tvPlayerTitle.text = videoTitle.ifBlank { "正在播放" }
         val normalized = normalizeEpisodeTitle(episodeTitle)
@@ -313,62 +341,67 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        // 显式创建 androidx.media3.ui.PlayerView.ControllerVisibilityListener，
-        // 避免和 deprecated 的 PlayerControlView.VisibilityListener 发生 SAM 重载二义性
+        // 绑定自定义播放器控制按钮（快退10s、播放/暂停、快进10s）
+        binding.playerView.findViewById<android.widget.ImageButton>(R.id.btnRewind10)?.setOnClickListener {
+            player?.let { p ->
+                val newPos = (p.currentPosition - 10_000).coerceAtLeast(0)
+                p.seekTo(newPos)
+                danmakuManager?.seekTo(newPos)
+            }
+        }
+        binding.playerView.findViewById<android.widget.ImageButton>(R.id.btnForward10)?.setOnClickListener {
+            player?.let { p ->
+                val newPos = (p.currentPosition + 10_000).coerceAtMost(p.duration)
+                p.seekTo(newPos)
+                danmakuManager?.seekTo(newPos)
+            }
+        }
+        val btnPlayPause = binding.playerView.findViewById<android.widget.ImageButton>(R.id.btnPlayPause)
+        btnPlayPause?.setOnClickListener {
+            togglePlayPause()
+        }
+
+        // 弹幕控制条跟随播放器控制栏显示/隐藏
         val listener = object : androidx.media3.ui.PlayerView.ControllerVisibilityListener {
             override fun onVisibilityChanged(visibility: Int) {
                 binding.topControls.visibility = visibility
-                binding.layoutDanmakuControls.visibility = visibility
+                if (!isScreenLocked) {
+                    binding.btnLock.visibility = if (visibility == View.VISIBLE) View.VISIBLE else View.GONE
+                }
             }
         }
         binding.playerView.setControllerVisibilityListener(listener)
     }
 
-    /**
-     * 初始化弹幕 UI：
-     * - 动态设置 danmakuContainer 高度为屏幕高度的 1/4（限制弹幕显示区域）
-     * - 挂载 DanmakuManager 到容器
-     * - 设置弹幕开关（子开关，独立于全局总开关）
-     * - 配置弹幕源 Spinner（搜索完成前显示“搜索中…”，完成后展示候选列表）
-     */
-    private fun setupDanmakuUi() {
-        // ==================== 1. 设置弹幕容器的高度和触摸穿透 ====================
-        val container = binding.danmakuContainer
+    // ================== 弹幕 UI ==================
 
-        // 弹幕容器高度已在 XML 中通过 layout_constraintHeight_percent="0.25" 设置
-        // 不再在代码中动态设置高度，避免横竖屏切换时高度计算异常
+    private fun setupDanmakuUi() {
+        val container = binding.danmakuContainer
         container.setBackgroundColor(Color.TRANSPARENT)
-        container.clipChildren = true          // 裁剪超出边界的子视图（弹幕不会溢出）
-        container.isClickable = false          // 触摸事件穿透，让点击能传递到播放器
+        container.clipChildren = true
+        container.isClickable = false
         container.isFocusable = false
         Log.d(TAG, "弹幕容器使用 XML 约束高度 25%")
 
-        // ==================== 2. 创建并挂载 DanmakuManager ====================
         val dm = DanmakuManager(this)
-        dm.attachToContainer(container)        // attach 内部会创建 DanmakuView 并填满容器
+        dm.attachToContainer(container)
         this.danmakuManager = dm
 
-        // ==================== 3. 弹幕子开关 ====================
-        // 从全局配置读取总开关状态，子开关默认与总开关同步，但后续切换只影响当前播放器
         val prefs = DanmakuPrefs(this)
         val masterEnabled = prefs.isMasterEnabled()
         val subEnabled = masterEnabled
-        binding.switchDanmaku.isChecked = subEnabled
+        danmakuSwitch.isChecked = subEnabled
         dm.setDanmakuEnabled(subEnabled)
         Log.d(TAG, "弹幕子开关初始状态: $subEnabled (总开关=$masterEnabled)")
 
-        binding.switchDanmaku.setOnCheckedChangeListener { _, isChecked ->
+        danmakuSwitch.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "弹幕子开关切换: $isChecked")
             dm.setDanmakuEnabled(isChecked)
         }
 
-        // ==================== 4. 弹幕源 Spinner ====================
-        // 初始显示“搜索中…”，等搜索完成后动态替换 adapter
         val initialTitles = listOf("搜索弹幕源中…")
         val adapter = object : ArrayAdapter<String>(
-            this,
-            android.R.layout.simple_spinner_item,
-            initialTitles
+            this, android.R.layout.simple_spinner_item, initialTitles
         ) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val v = super.getView(position, convertView, parent) as TextView
@@ -376,7 +409,6 @@ class PlayerActivity : AppCompatActivity() {
                 v.textSize = 13f
                 return v
             }
-
             override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val v = super.getDropDownView(position, convertView, parent) as TextView
                 v.setTextColor(Color.WHITE)
@@ -387,27 +419,184 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.spinnerDanmakuSource.adapter = adapter
+        danmakuSpinner.adapter = adapter
 
-        // 用户选择弹幕源时触发加载对应弹幕
-        binding.spinnerDanmakuSource.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: android.widget.AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
+        danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (position < 0 || position >= candidateList.size) return
                 val anime = candidateList[position]
                 Log.d(TAG, "用户选择弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
                 loadDanmakuForAnime(anime, episodeTitle)
             }
-
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
     }
 
-    /** 异步搜索候选弹幕源 */
+    // ================== 屏幕锁定 ==================
+
+    private fun setupLockButton() {
+        binding.btnLock.setOnClickListener {
+            if (isScreenLocked) {
+                // 解锁
+                isScreenLocked = false
+                binding.btnLock.setImageResource(R.drawable.ic_player_unlock)
+                binding.playerView.useController = true
+                binding.playerView.showController()
+                Log.d(TAG, "屏幕已解锁")
+            } else {
+                // 锁定
+                isScreenLocked = true
+                binding.btnLock.setImageResource(R.drawable.ic_player_lock)
+                binding.playerView.useController = false
+                binding.playerView.hideController()
+                Log.d(TAG, "屏幕已锁定")
+            }
+        }
+    }
+
+    // ================== 手势控制 ==================
+
+    private fun setupGestures() {
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (isScreenLocked) return true
+                togglePlayPause()
+                return true
+            }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (isScreenLocked) {
+                    // 锁定状态下点击显示/隐藏锁定按钮
+                    binding.btnLock.visibility = if (binding.btnLock.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                    return true
+                }
+                return false
+            }
+        })
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (isScreenLocked) {
+            // 锁定状态：只处理单击显示锁定按钮和点击解锁按钮
+            gestureDetector.onTouchEvent(event)
+            return super.dispatchTouchEvent(event)
+        }
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                isLongPressing = false
+                longPressStartX = event.x
+                longPressStartY = event.y
+                currentBrightness = -1f
+                currentVolume = -1
+                handler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD_MS)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isLongPressing) {
+                    handleLongPressMove(event)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (isLongPressing) {
+                    isLongPressing = false
+                    hideGestureTip()
+                    return true
+                }
+            }
+        }
+
+        gestureDetector.onTouchEvent(event)
+        return super.dispatchTouchEvent(event)
+    }
+
+    private val longPressRunnable = Runnable {
+        isLongPressing = true
+        Log.d(TAG, "长按触发")
+    }
+
+    private fun handleLongPressMove(event: MotionEvent) {
+        val deltaX = event.x - longPressStartX
+        val deltaY = event.y - longPressStartY
+        val absX = abs(deltaX)
+        val absY = abs(deltaY)
+
+        if (absX > absY && absX > 20) {
+            // 水平滑动：快进/快退
+            val direction = if (deltaX > 0) 1 else -1
+            val seekMs = (absX / screenWidth * 60000).toLong().coerceIn(0, 120000)
+            val totalSeek = direction * seekMs.coerceAtLeast(SEEK_STEP_MS)
+            player?.let { p ->
+                val newPos = (p.currentPosition + totalSeek).coerceIn(0, p.duration)
+                p.seekTo(newPos)
+                showGestureTip("${if (direction > 0) "+" else ""}${totalSeek / 1000}s")
+            }
+            longPressStartX = event.x
+        } else if (absY > absX && absY > 20) {
+            // 垂直滑动：亮度/音量
+            val ratio = deltaY / screenHeight
+            if (event.x < screenWidth / 2) {
+                // 左半屏：亮度
+                adjustBrightness(ratio)
+            } else {
+                // 右半屏：音量
+                adjustVolume(ratio)
+            }
+            longPressStartY = event.y
+        }
+    }
+
+    private fun adjustBrightness(ratio: Float) {
+        val layoutParams = window.attributes
+        if (currentBrightness < 0) {
+            currentBrightness = layoutParams.screenBrightness
+            if (currentBrightness < 0) currentBrightness = 0.5f
+        }
+        currentBrightness = (currentBrightness - ratio * 2).coerceIn(0.05f, 1f)
+        layoutParams.screenBrightness = currentBrightness
+        window.attributes = layoutParams
+        showGestureTip("亮度 ${(currentBrightness * 100).roundToInt()}%")
+    }
+
+    private fun adjustVolume(ratio: Float) {
+        if (currentVolume < 0) {
+            currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }
+        val delta = (ratio * maxVolume * 2).roundToInt()
+        currentVolume = (currentVolume - delta).coerceIn(0, maxVolume)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
+        showGestureTip("音量 ${(currentVolume * 100 / maxVolume)}%")
+    }
+
+    private fun togglePlayPause() {
+        player?.let { p ->
+            if (p.isPlaying) {
+                p.pause()
+            } else {
+                p.play()
+            }
+        }
+    }
+
+    private fun updatePlayPauseIcon(isPlaying: Boolean) {
+        val playPauseBtn = binding.playerView.findViewById<android.widget.ImageButton>(R.id.btnPlayPause)
+        playPauseBtn?.setImageResource(
+            if (isPlaying) R.drawable.ic_player_pause else R.drawable.ic_player_play
+        )
+    }
+
+    private fun showGestureTip(text: String) {
+        binding.tvGestureTip.text = text
+        binding.tvGestureTip.visibility = View.VISIBLE
+    }
+
+    private fun hideGestureTip() {
+        binding.tvGestureTip.visibility = View.GONE
+    }
+
+    // ================== 弹幕搜索/加载 ==================
+
     private fun launchDanmakuSearch(title: String, episode: String) {
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
@@ -415,17 +604,15 @@ class PlayerActivity : AppCompatActivity() {
             Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
 
             if (candidates.isEmpty()) {
-                // 无匹配 → 隐藏 Spinner
-                binding.spinnerDanmakuSource.visibility = View.GONE
+                danmakuSpinner.visibility = View.GONE
                 return@launch
             }
 
             candidateList = candidates
-            val titles = candidates.map { it.animeTitle }
+            // Spinner 收起时显示 source（如 "弹幕源 tencent"）
+            val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
             val adapter = object : ArrayAdapter<String>(
-                this@PlayerActivity,
-                android.R.layout.simple_spinner_item,
-                titles
+                this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
             ) {
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getView(position, convertView, parent) as TextView
@@ -433,9 +620,10 @@ class PlayerActivity : AppCompatActivity() {
                     v.textSize = 13f
                     return v
                 }
-
+                // 下拉列表显示 animeTitle（番剧名称）
                 override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getDropDownView(position, convertView, parent) as TextView
+                    v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
                     v.setTextColor(Color.WHITE)
                     v.setBackgroundColor(Color.parseColor("#CC222222"))
                     v.setPadding(24, 20, 24, 20)
@@ -444,25 +632,18 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            binding.spinnerDanmakuSource.adapter = adapter
-
-            // 默认选第一个
-            binding.spinnerDanmakuSource.setSelection(0)
+            danmakuSpinner.adapter = adapter
+            danmakuSpinner.setSelection(0)
         }
     }
 
-    /** 加载某个弹幕源的 bangumi + 弹幕列表 */
     private fun loadDanmakuForAnime(anime: DanmakuAnime, episode: String) {
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
-            // 1. 获取 bangumi（带缓存和重试）
             val bangumi = danmakuRepository.fetchBangumi(
-                animeId = anime.animeId,
-                keyword = videoTitle
-            ) { success, data, fromCache ->
-                if (!success) {
-                    Log.w(TAG, "获取 bangumi 最终失败")
-                }
+                animeId = anime.animeId, keyword = videoTitle
+            ) { success, _, _ ->
+                if (!success) Log.w(TAG, "获取 bangumi 最终失败")
             }
             if (bangumi == null) {
                 Log.w(TAG, "bangumi 为空，无法加载弹幕")
@@ -471,23 +652,15 @@ class PlayerActivity : AppCompatActivity() {
             selectedBangumi = bangumi
             Log.d(TAG, "获取 bangumi: title=${bangumi.animeTitle}, episodes=${bangumi.episodes.size}")
 
-            // 2. 获取弹幕（带缓存、重试和 Toast）
             val comments = danmakuRepository.fetchDanmakuComments(
-                bangumi = bangumi,
-                preferredEpisodeNumber = episode,
-                keyword = videoTitle
+                bangumi = bangumi, preferredEpisodeNumber = episode, keyword = videoTitle
             ) { success, data, fromCache ->
                 when {
                     success && !fromCache -> {
-                        // 网络获取成功，显示 Toast
                         Toast.makeText(this@PlayerActivity, "弹幕已刷新", Toast.LENGTH_SHORT).show()
                     }
-                    success && fromCache -> {
-                        Log.d(TAG, "弹幕从缓存加载: ${data.size} 条")
-                    }
-                    else -> {
-                        Log.w(TAG, "弹幕获取最终失败（已重试5次）")
-                    }
+                    success && fromCache -> Log.d(TAG, "弹幕从缓存加载: ${data.size} 条")
+                    else -> Log.w(TAG, "弹幕获取最终失败")
                 }
             }
 
@@ -497,10 +670,9 @@ class PlayerActivity : AppCompatActivity() {
             } else {
                 Log.d(TAG, "加载弹幕成功: ${comments.size} 条")
                 danmakuManager?.loadDanmaku(comments)
-                // 加载完成后立即同步当前播放时间
                 player?.let { p ->
                     danmakuManager?.syncTo(p.currentPosition)
-                    if (binding.switchDanmaku.isChecked) danmakuManager?.ensureStarted()
+                    if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
                 }
             }
         }
@@ -571,11 +743,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         enterImmersiveMode()
-    }
-
-    // 手势相关保持不变
-    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-        // 简化为仅处理触摸传播（复杂手势控制可按需扩展）
-        return super.dispatchTouchEvent(event)
+        screenWidth = resources.displayMetrics.widthPixels
+        screenHeight = resources.displayMetrics.heightPixels
     }
 }

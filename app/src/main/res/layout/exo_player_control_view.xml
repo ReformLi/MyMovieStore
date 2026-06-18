@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 顶部渐变遮罩 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="88dp"
+        android:background="@drawable/bg_player_top_gradient" />
+
+    <!-- 底部渐变遮罩 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_player_top_gradient" />
+
+    <!-- 中间播放控制区（播放/暂停 + 快进快退） -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <!-- 快退10s -->
+        <ImageButton
+            android:id="@+id/btnRewind10"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_player_round_button"
+            android:contentDescription="快退10秒"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_player_rewind_10" />
+
+        <!-- 播放/暂停 -->
+        <ImageButton
+            android:id="@+id/btnPlayPause"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:background="@drawable/bg_player_round_button"
+            android:contentDescription="播放/暂停"
+            android:padding="16dp"
+            android:scaleType="fitCenter" />
+
+        <!-- 快进10s -->
+        <ImageButton
+            android:id="@+id/btnForward10"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_player_round_button"
+            android:contentDescription="快进10秒"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_player_forward_10" />
+    </LinearLayout>
+
+    <!-- 底部控制栏（进度条 + 时间 + 设置按钮） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingBottom="8dp">
+
+        <!-- 进度条行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:id="@id/exo_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:paddingEnd="8dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <!-- SeekBar 占位，ExoPlayer 会自动替换为 DefaultTimeBar -->
+            <View
+                android:id="@id/exo_progress_placeholder"
+                android:layout_width="0dp"
+                android:layout_height="26dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@id/exo_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:paddingStart="8dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 底部按钮行（弹幕控制 + 设置 + 全屏） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="4dp">
+
+            <!-- 弹幕控制：置于设置按钮左侧 -->
+            <Spinner
+                android:id="@+id/spinnerDanmakuSource"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:minHeight="24dp"
+                android:backgroundTint="#00000000" />
+
+            <TextView
+                android:id="@+id/tvDanmakuSwitchLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="弹幕"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp" />
+
+            <Switch
+                android:id="@+id/switchDanmaku"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="2dp"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:textColor="#FFFFFFFF"
+                android:textSize="11sp" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@id/exo_settings"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="设置"
+                android:padding="6dp"
+                android:src="@drawable/ic_player_settings" />
+
+            <ImageButton
+                android:id="@id/exo_fullscreen"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="全屏"
+                android:padding="6dp"
+                android:src="@drawable/ic_player_rotate" />
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>
