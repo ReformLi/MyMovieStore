@@ -96,6 +96,8 @@ app/src/main/
 
 ```text
 data/
+├── cache/
+│   └── DanmakuCache.kt
 ├── dao/
 │   ├── ApiCacheDao.kt
 │   ├── PlayHistoryDao.kt
@@ -109,23 +111,31 @@ data/
 ├── model/
 │   ├── CrawlError.kt
 │   ├── CrawlerVideoDetail.kt
+│   ├── DanmakuModels.kt
 │   ├── DoubanMoviePageResult.kt
 │   ├── PlayEpisode.kt
 │   ├── PlayLine.kt
 │   ├── SearchPageResult.kt
 │   ├── VideoItem.kt
 │   └── remote/
-│       ├── RemoteCategory.kt
-│       ├── RemoteVideo.kt
-│       ├── RemoteVideoMapper.kt
-│       └── RemoteVideoResponse.kt
+│   │   ├── RemoteCategory.kt
+│   │   ├── RemoteVideo.kt
+│   │   ├── RemoteVideoMapper.kt
+│   │   └── RemoteVideoResponse.kt
+│   └── danmaku/
+│       ├── DanmakuAnime.kt
+│       ├── DanmakuBangumi.kt
+│       ├── DanmakuComment.kt
+│       └── DanmakuSearchResponse.kt
 ├── repository/
 │   ├── ApiCacheRepository.kt
+│   ├── DanmakuRepository.kt
 │   ├── PlayHistoryRepository.kt
 │   ├── SearchHistoryRepository.kt
 │   └── VideoRepository.kt
 └── source/
     ├── CrawlerVideoSource.kt
+    ├── DanmakuApi.kt
     ├── DoubanDiscoverySource.kt
     ├── RequestRateLimiter.kt
     ├── VideoSource.kt
@@ -161,7 +171,7 @@ data/
 |-----|------|
 | `PlayHistoryDao` | 查询全部历史、按 `videoId` 查询、插入、更新历史、更新进度、删除和清空 |
 | `SearchHistoryDao` | 查询搜索历史、按关键词查询、插入或更新、删除单条和清空 |
-| `ApiCacheDao` | 按缓存键读取、写入、删除、清理过期缓存 |
+| `ApiCacheDao` | 按缓存键读取、写入、删除、按前缀删除、清理过期缓存 |
 
 ### Repository
 
@@ -170,7 +180,23 @@ data/
 | `VideoRepository` | 聚合豆瓣发现源、多个播放源和本地挡板源，对上层提供首页、搜索、详情和播放相关数据；多源搜索时并行请求并插空法合并结果 |
 | `PlayHistoryRepository` | 播放历史去重写入（含 sourceName）、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
-| `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、过期清理和剩余 TTL 查询 |
+| `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
+| `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制 |
+
+### 弹幕缓存
+
+`DanmakuCache.kt` 使用 `SharedPreferences`（`PREF_NAME = "danmaku_cache"`）存储弹幕数据：
+
+| 方法 | 用途 |
+|------|------|
+| `getSearchCache(keyword)` | 读取搜索缓存 |
+| `putSearchCache(keyword, animes, expireAt)` | 写入搜索缓存 |
+| `getBangumiCache(animeId)` | 读取分集缓存 |
+| `putBangumiCache(animeId, bangumi, expireAt)` | 写入分集缓存 |
+| `getCommentsCache(episodeId)` | 读取弹幕列表缓存 |
+| `putCommentsCache(episodeId, comments, expireAt)` | 写入弹幕列表缓存 |
+| `getUnifiedExpireAt(keyword, animeId)` | 统一过期时间策略 |
+| `clearAll()` | 清除所有弹幕缓存 |
 
 ### 模型
 
@@ -183,6 +209,9 @@ data/
 | `PlayLine` | 播放线路（如"高清播放"、"极速云"），包含多集 |
 | `PlayEpisode` | 单集播放入口，包含标题和播放页 URL |
 | `CrawlError` | 爬取错误信息，包含错误类型、消息和原始异常 |
+| `DanmakuAnime` | 弹幕搜索返回的番剧信息 |
+| `DanmakuBangumi` | 弹幕分集信息，包含 episodes 列表 |
+| `DanmakuComment` | 单条弹幕，包含时间、内容、颜色、位置、类型 |
 
 ## 数据源
 
@@ -274,6 +303,16 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 首页"全部"的混排只在同一滑动页内部随机。电影、电视剧、综艺使用二级分类；动漫使用豆瓣 TV 页中的动画数据，不显示二级分类。
 
+### `DanmakuApi`
+
+弹幕数据源，封装弹幕搜索和获取的 HTTP 请求：
+
+| 方法 | 用途 |
+|------|------|
+| `searchAnime(title)` | 根据标题搜索弹幕源 |
+| `getBangumi(animeId)` | 获取番剧分集信息 |
+| `getDanmakuComments(episodeId)` | 获取某集的弹幕列表 |
+
 ### `RequestRateLimiter`
 
 `RequestRateLimiter` 是每个播放源独立的限流调度器。
@@ -317,8 +356,14 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 | 搜索结果页 | `crawler:search:v3` / `yinghua:search:v3` | 30 分钟 | 各源独立缓存 |
 | 详情页首个播放页链接 | `crawler:detail:first_play_page` / `yinghua:detail:first_play_page` | 1 天 | 各源独立缓存 |
 | 真实播放地址 | `crawler:play:real_url` / `yinghua:play:real_url` | 30 分钟 | 短时效真实播放地址只做短缓存 |
+| 详情页元数据 | `crawler:detail:meta` / `yinghua:detail:meta` | 30 分钟 | 详情页 HTML 解析结果 |
+| 弹幕搜索 | `search_{keyword}` | 1 天 | SharedPreferences 存储 |
+| 弹幕分集 | `bangumi_{animeId}` | 1 天 | SharedPreferences 存储 |
+| 弹幕列表 | `comments_{episodeId}` | 1 天 | SharedPreferences 存储 |
 
 `ApiCacheRepository.getRemainingTtlSeconds()` 用于让后续分页缓存跟随首页或第一页的剩余缓存时间。
+
+多源缓存隔离：所有爬虫相关缓存键都包含源标识前缀（`crawler` / `yinghua`），确保不同源的缓存互不干扰。
 
 ## Presentation 层
 
@@ -333,6 +378,9 @@ presentation/
 │   ├── HistoryAdapter.kt
 │   ├── SearchResultAdapter.kt
 │   └── VideoAdapter.kt
+├── danmaku/
+│   ├── DanmakuManager.kt
+│   └── DanmakuPrefs.kt
 ├── fragment/
 │   ├── HistoryFragment.kt
 │   ├── HomeFragment.kt
@@ -351,7 +399,7 @@ presentation/
 |----------|------|
 | `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
 | `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，负责播放生命周期和进度保存；接收并传递 `sourceName` 到历史记录 |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制、屏幕锁定、播放生命周期和进度保存 |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 
 ### Fragment
@@ -359,8 +407,8 @@ presentation/
 | Fragment | 说明 |
 |----------|------|
 | `HomeFragment` | 首页内容发现，九宫格展示，支持主分类、二级分类和列表末尾加载更多 |
-| `SearchFragment` | 搜索页，支持外部传入关键词自动搜索、手动搜索、分页、历史 Chip 和清空历史；提供 `isShowingSearchResult()` 和 `resetToInitialState()` 供 MainActivity 调用 |
-| `ProfileFragment` | "我的"页面，包含视频源管理（弹框开关）、弹幕开关、历史记录入口、下载管理（占位）、清理缓存（弹框）、帮助和关于 |
+| `SearchFragment` | 搜索页，支持外部传入关键词自动搜索、手动搜索、分页、历史 Chip 和清空历史；搜索后自动收起输入法键盘 |
+| `ProfileFragment` | "我的"页面，包含视频源管理（弹框开关）、弹幕开关、历史记录入口、下载管理（占位）、**清理缓存（分类清理 + 缓存大小显示）**、帮助和关于 |
 | `HistoryFragment` | 播放历史页，展示 Room 中的播放记录（含播放源名称），支持点击进入详情和一键清空 |
 
 ### ViewModel
@@ -380,6 +428,13 @@ presentation/
 | `SearchResultAdapter` | 搜索结果列表，展示封面、标题、类型、上映时间、主演、简介和**播放源名称** |
 | `HistoryAdapter` | 播放历史列表，展示封面、标题、分类、播放进度、播放记录和**播放源名称** |
 
+### 弹幕组件
+
+| 组件 | 说明 |
+|------|------|
+| `DanmakuManager` | 弹幕渲染管理器，负责弹幕的显示、隐藏、同步、seek、暂停/恢复 |
+| `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化 |
+
 ## 资源结构
 
 ```text
@@ -390,6 +445,9 @@ res/
 │   ├── bg_chip.xml
 │   ├── bg_detail_card.xml
 │   ├── bg_detail_page.xml
+│   ├── bg_dialog_rounded.xml
+│   ├── bg_dialog_button_primary.xml
+│   ├── bg_dialog_button_secondary.xml
 │   ├── bg_episode_normal.xml
 │   ├── bg_episode_selected.xml
 │   ├── bg_play_button.xml
@@ -401,6 +459,8 @@ res/
 │   ├── bg_rating.xml
 │   ├── ic_about.xml
 │   ├── ic_arrow_right.xml
+│   ├── ic_check_circle.xml
+│   ├── ic_check_circle_outline.xml
 │   ├── ic_clear_cache.xml
 │   ├── ic_danmu.xml
 │   ├── ic_download.xml
@@ -410,7 +470,19 @@ res/
 │   ├── ic_launcher_background.xml
 │   ├── ic_launcher_foreground.xml
 │   ├── ic_player_back.xml
+│   ├── ic_player_clear_all.xml
+│   ├── ic_player_danmaku.xml
+│   ├── ic_player_detail.xml
+│   ├── ic_player_forward_10.xml
+│   ├── ic_player_home.xml
+│   ├── ic_player_lock.xml
+│   ├── ic_player_pause.xml
+│   ├── ic_player_play.xml
+│   ├── ic_player_rewind_10.xml
 │   ├── ic_player_rotate.xml
+│   ├── ic_player_search.xml
+│   ├── ic_player_settings.xml
+│   ├── ic_player_unlock.xml
 │   ├── ic_profile.xml
 │   ├── ic_search.xml
 │   └── ic_source.xml
@@ -419,10 +491,13 @@ res/
 │   ├── activity_history.xml
 │   ├── activity_main.xml
 │   ├── activity_player.xml
+│   ├── dialog_clear_cache.xml
+│   ├── exo_player_control_view.xml
 │   ├── fragment_history.xml
 │   ├── fragment_home.xml
 │   ├── fragment_profile.xml
 │   ├── fragment_search.xml
+│   ├── item_clear_cache.xml
 │   ├── item_history.xml
 │   ├── item_home_load_more.xml
 │   ├── item_search_result.xml
@@ -448,6 +523,9 @@ res/
 | `activity_detail.xml` | `DetailActivity` |
 | `activity_player.xml` | `PlayerActivity` |
 | `activity_history.xml` | `HistoryActivity` |
+| `exo_player_control_view.xml` | ExoPlayer 自定义控制栏（播放/暂停/快进/快退/进度条/弹幕控制/设置） |
+| `dialog_clear_cache.xml` | 清理缓存弹框 |
+| `item_clear_cache.xml` | 清理缓存弹框中的单个选项项 |
 | `fragment_home.xml` | `HomeFragment` |
 | `fragment_search.xml` | `SearchFragment` |
 | `fragment_profile.xml` | `ProfileFragment` |
@@ -489,7 +567,7 @@ ProfileFragment
     ├── 弹幕 ── 滑动开关（默认开启）
     ├── 历史记录 ── 跳转 HistoryActivity
     ├── 下载管理 ── 占位（Toast 提示即将上线）
-    ├── 清理缓存 ── 弹框选择性清理
+    ├── 清理缓存 ── 弹框选择性清理（显示缓存大小）
     ├── 帮助 ── 弹框展示使用说明
     └── 关于 ── 弹框展示版本信息
 ```
@@ -579,6 +657,28 @@ VideoRepository.getCrawlerVideoDetail()
 PlayerActivity（传入 sourceName 保存到历史）
 ```
 
+### 弹幕数据流
+
+```text
+PlayerActivity
+        ↓
+DanmakuRepository.searchCandidates(title)
+        ↓
+DanmakuApi.searchAnime() ── 带缓存和重试
+        ↓
+DanmakuRepository.fetchBangumi(animeId)
+        ↓
+DanmakuApi.getBangumi() ── 带缓存和重试
+        ↓
+DanmakuRepository.fetchDanmakuComments(bangumi, episode)
+        ↓
+DanmakuApi.getDanmakuComments() ── 带缓存和重试
+        ↓
+DanmakuManager.loadDanmaku(comments)
+        ↓
+弹幕容器渲染
+```
+
 ### 播放历史与续播
 
 ```text
@@ -591,6 +691,20 @@ PlayHistoryRepository.addOrUpdateHistory(..., sourceName)
 Room play_history
         ↓
 HistoryActivity / DetailActivity / PlayerActivity
+```
+
+### 清理缓存
+
+```text
+ProfileFragment.showClearCacheDialog()
+        ↓
+用户选择清理项
+        ↓
+ApiCacheRepository.deleteByPrefix(prefix) ── Room 缓存
+DanmakuCache.clearAll() ── SharedPreferences 缓存
+SearchHistoryRepository.clearAllHistory() ── 搜索历史
+        ↓
+Toast 提示清理结果
 ```
 
 ## 构建配置

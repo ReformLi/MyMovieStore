@@ -16,9 +16,11 @@
 | 首页到搜索联动 | 点击首页影视后跳转搜索页，并按影视名自动搜索 | `MainActivity.navigateToSearchWithKeyword()` |
 | 详情 | 从搜索结果进入详情，解析播放线路、剧集和简介等信息 | `DetailActivity`、`CrawlerVideoSource.fetchVideoDetail()` |
 | 播放 | 使用 Media3 ExoPlayer 播放真实视频地址，支持进度保存和续播 | `PlayerActivity`、`PlayerViewModel` |
+| **弹幕系统** | **支持弹幕搜索、源切换、开关控制，与播放器同步** | **`DanmakuManager`、`DanmakuRepository`、`DanmakuCache`** |
 | 播放历史 | 自动保存播放记录（含播放源信息），按最近播放倒序展示，支持清空 | `HistoryActivity`、`HistoryViewModel` |
 | 搜索历史 | 保存搜索关键词、搜索次数和最后搜索时间 | `SearchHistoryViewModel` |
-| 个人中心 | 视频源管理、弹幕开关、历史记录、下载管理（占位）、清理缓存、帮助、关于 | `ProfileFragment` |
+| 个人中心 | 视频源管理、弹幕开关、历史记录、下载管理（占位）、**清理缓存**、帮助、关于 | `ProfileFragment` |
+| **清理缓存** | **支持分类清理（搜索/首页/详情/播放地址/弹幕/全部），显示缓存大小** | **`ProfileFragment.showClearCacheDialog()`** |
 | 爬虫限流 | 每个播放源独立限流队列，同源请求 3 秒最小间隔，优先级抢占 | `RequestRateLimiter`、`CrawlerVideoSource` |
 | 细粒度错误提示 | 网络失败时展示具体错误原因（DNS 失败、403、验证码、空结果等） | `CrawlError`、`CrawlErrorType` |
 
@@ -94,6 +96,56 @@ YinghuaVideoSource ── 樱花动漫（wap.******.com）
 - 独立开关每个源（至少保留一个启用）
 - 开关状态持久化到 SharedPreferences
 - 禁用后的源不参与搜索
+
+## 弹幕系统
+
+播放器内置弹幕功能，支持以下能力：
+
+| 功能 | 说明 |
+|------|------|
+| 弹幕搜索 | 根据视频标题自动搜索弹幕源，支持多源返回 |
+| 弹幕源切换 | 底部控制栏显示弹幕源（如 `弹幕源 tencent`），点击下拉选择不同番剧 |
+| 弹幕开关 | 独立于"我的"页面总开关的播放器子开关 |
+| 弹幕同步 | 弹幕与播放进度实时同步，支持 seek 后重新对齐 |
+| 弹幕缓存 | 搜索、分集、弹幕列表均缓存 1 天，统一过期时间 |
+| 失败重试 | 弹幕获取失败自动重试 10 次，间隔 10 秒，超时 10 秒 |
+
+弹幕控制位于播放器底部控制栏，与进度条融为一体，跟随播放器控制栏一起显示/隐藏。
+
+## 播放器手势与锁定
+
+| 手势 | 功能 |
+|------|------|
+| 双击屏幕 | 暂停/播放 |
+| 长按 + 左右滑动 | 快进/快退（最小 10 秒，滑动距离越大 seek 越多） |
+| 长按 + 左半屏上下滑动 | 调节亮度 |
+| 长按 + 右半屏上下滑动 | 调节音量 |
+
+**屏幕锁定**：左侧中间显示锁定按钮，点击后：
+- 隐藏播放器控制栏和弹幕控制
+- 禁用所有手势（双击、长按滑动等）
+- 点击屏幕只显示/隐藏锁定按钮
+- 返回键和解锁按钮仍然可用
+
+播放器控制栏自定义：
+- 删除上一集/下一集按钮
+- 快进/快退统一为 10 秒
+- 播放/暂停、快进、快退按钮使用自定义矢量图标
+
+## 清理缓存
+
+"我的" → "清理缓存"提供美观的自定义弹框，支持选择性清理：
+
+| 选项 | 清理内容 |
+|------|----------|
+| 清理搜索缓存 | 爬虫搜索缓存 + 本地搜索历史 |
+| 清理首页缓存 | 首页列表缓存数据 |
+| 清理详情页缓存 | 详情页元数据 |
+| 清理播放地址缓存 | 真实播放地址 + 首个播放页缓存 |
+| 清理弹幕缓存 | 本地弹幕 SharedPreferences 缓存 |
+| 清理全部缓存 | 以上所有（保留下载的视频和弹幕） |
+
+弹框顶部显示当前缓存总大小（自动计算 Room 数据库 + SharedPreferences + 图片缓存）。
 
 ## 爬虫限流机制
 
@@ -207,6 +259,8 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 搜索结果展示字段包括：封面、标题、类型、上映时间、主演、剧情简介和**播放源名称**。点击搜索结果后进入详情页，详情页继续解析播放线路和剧集，播放器只处理真实播放地址。
 
+搜索时点击搜索按钮或输入法搜索键后，自动收起输入法键盘。
+
 ## 导航行为
 
 `MainActivity` 使用 `add + hide/show` 保留首页、搜索页和我的页实例。
@@ -231,8 +285,13 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 | 搜索结果页 | `crawler:search:v3` / `yinghua:search:v3` | 30 分钟 | 各源独立缓存，同一关键词下后续页跟随首页剩余时间 |
 | 详情页首个播放页链接 | `crawler:detail:first_play_page` / `yinghua:detail:first_play_page` | 1 天 | 各源独立缓存 |
 | 真实播放地址 | `crawler:play:real_url` / `yinghua:play:real_url` | 30 分钟 | `.m3u8` / `mp4` 可能带短时效 token |
+| 弹幕搜索 | `search_{keyword}` | 1 天 | SharedPreferences 存储 |
+| 弹幕分集 | `bangumi_{animeId}` | 1 天 | SharedPreferences 存储 |
+| 弹幕列表 | `comments_{episodeId}` | 1 天 | SharedPreferences 存储 |
 
 本地 `assets/sample_video_source.json` 仍作为首页和分类的兜底挡板。豆瓣失败时可以回退本地挡板，但回退结果不写入 `api_cache`。
+
+多源缓存隔离：所有爬虫相关缓存键都包含源标识前缀（`crawler` / `yinghua`），确保不同源的缓存互不干扰。
 
 ## 数据存储
 
@@ -255,16 +314,20 @@ app/src/main/
 ├── java/com/hpu/mymoviestore/
 │   ├── MovieApplication.kt
 │   ├── data/
+│   │   ├── cache/
+│   │   │   └── DanmakuCache.kt
 │   │   ├── dao/
 │   │   ├── database/
 │   │   ├── entity/
 │   │   ├── model/
+│   │   │   └── danmaku/
 │   │   ├── repository/
 │   │   └── source/
 │   │       └── impl/
 │   └── presentation/
 │       ├── activity/
 │       ├── adapter/
+│       ├── danmaku/
 │       ├── fragment/
 │       └── viewmodel/
 └── res/
