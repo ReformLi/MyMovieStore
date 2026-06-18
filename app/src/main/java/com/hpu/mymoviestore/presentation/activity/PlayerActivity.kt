@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.media3.common.MediaItem
@@ -65,7 +66,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // 弹幕相关
     private var danmakuManager: DanmakuManager? = null
-    private var danmakuRepository = DanmakuRepository()
+    private lateinit var danmakuRepository: DanmakuRepository
     private var candidateList: List<DanmakuAnime> = emptyList()
     private var selectedBangumi: DanmakuBangumi? = null
     private var danmakuLoadJob: Job? = null
@@ -141,6 +142,9 @@ class PlayerActivity : AppCompatActivity() {
         title = videoTitle
 
         viewModel = ViewModelProvider(this)[PlayerViewModel::class.java]
+
+        // 初始化弹幕仓库（传入 Context 启用缓存）
+        danmakuRepository = DanmakuRepository(context = this)
 
         setupPlayerUi()
         setupDanmakuUi()
@@ -407,9 +411,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun launchDanmakuSearch(title: String, episode: String) {
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
-            val candidates = withContext(Dispatchers.IO) {
-                danmakuRepository.searchCandidates(title)
-            }
+            val candidates = danmakuRepository.searchCandidates(title)
             Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
 
             if (candidates.isEmpty()) {
@@ -453,8 +455,14 @@ class PlayerActivity : AppCompatActivity() {
     private fun loadDanmakuForAnime(anime: DanmakuAnime, episode: String) {
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
-            val bangumi = withContext(Dispatchers.IO) {
-                danmakuRepository.fetchBangumi(anime.animeId)
+            // 1. 获取 bangumi（带缓存和重试）
+            val bangumi = danmakuRepository.fetchBangumi(
+                animeId = anime.animeId,
+                keyword = videoTitle
+            ) { success, data, fromCache ->
+                if (!success) {
+                    Log.w(TAG, "获取 bangumi 最终失败")
+                }
             }
             if (bangumi == null) {
                 Log.w(TAG, "bangumi 为空，无法加载弹幕")
@@ -463,9 +471,26 @@ class PlayerActivity : AppCompatActivity() {
             selectedBangumi = bangumi
             Log.d(TAG, "获取 bangumi: title=${bangumi.animeTitle}, episodes=${bangumi.episodes.size}")
 
-            val comments = withContext(Dispatchers.IO) {
-                danmakuRepository.fetchDanmakuComments(bangumi, episode)
+            // 2. 获取弹幕（带缓存、重试和 Toast）
+            val comments = danmakuRepository.fetchDanmakuComments(
+                bangumi = bangumi,
+                preferredEpisodeNumber = episode,
+                keyword = videoTitle
+            ) { success, data, fromCache ->
+                when {
+                    success && !fromCache -> {
+                        // 网络获取成功，显示 Toast
+                        Toast.makeText(this@PlayerActivity, "弹幕已刷新", Toast.LENGTH_SHORT).show()
+                    }
+                    success && fromCache -> {
+                        Log.d(TAG, "弹幕从缓存加载: ${data.size} 条")
+                    }
+                    else -> {
+                        Log.w(TAG, "弹幕获取最终失败（已重试5次）")
+                    }
+                }
             }
+
             if (comments.isEmpty()) {
                 Log.w(TAG, "弹幕列表为空或失败")
                 danmakuManager?.loadDanmaku(null)
