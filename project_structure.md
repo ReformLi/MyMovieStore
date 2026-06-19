@@ -4,7 +4,7 @@
 
 ## 架构概览
 
-项目采用 MVVM + Repository + Data Source 的轻量分层结构。当前实现把数据能力拆成内容发现和内容播放两条链路。
+项目采用 MVVM + Repository + Data Source 的轻量分层结构。当前实现把数据能力拆成内容发现、内容播放和下载管理三条链路。
 
 ```text
 Presentation
@@ -14,12 +14,12 @@ ViewModel
         ↓
 Repository
         ↓
-Data Source / Room DAO
+Data Source / Room DAO / DownloadEngine
         ↓
-DoubanDiscoverySource / CrawlerVideoSource / VideoSourceManager / SQLite
+DoubanDiscoverySource / CrawlerVideoSource / VideoSourceManager / DownloadEngine / SQLite
 ```
 
-内容发现层由 `DoubanDiscoverySource` 负责，主要服务首页。内容播放层由 `VideoSource` 接口及其实现类负责，主要服务搜索、详情和播放。每个播放源持有独立的 `RequestRateLimiter` 限流器。`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，作为首页兜底挡板和本地数据补充。
+内容发现层由 `DoubanDiscoverySource` 负责，主要服务首页。内容播放层由 `VideoSource` 接口及其实现类负责，主要服务搜索、详情和播放。下载管理层由 `DownloadEngine` + `DownloadRepository` 负责，提供 M3U8 分片下载、弹幕下载和离线播放。每个播放源持有独立的 `RequestRateLimiter` 限流器。`VideoSourceManager` 读取本地 `assets/sample_video_source.json`，作为首页兜底挡板和本地数据补充。
 
 ## 顶层目录
 
@@ -81,9 +81,9 @@ app/src/main/
 `MovieApplication` 是应用级初始化入口：
 
 - 初始化 Room 数据库 `MovieDatabase`。
-- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`。
+- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`。
 - 创建本地挡板源 `VideoSourceManager`。
-- 创建多个播放链路爬虫源（`JujiwuVideoSource`、`YinghuaVideoSource`），每个源内含独立的 `RequestRateLimiter` 限流器。
+- 创建多个播放链路爬虫源（`JujiwuVideoSource`、`YinghuaVideoSource`、`TiantangVideoSource`），每个源内含独立的 `RequestRateLimiter` 限流器。
 - 创建首页发现源 `DoubanDiscoverySource`。
 - 创建 `VideoRepository`，供视频相关 ViewModel 使用。
 - 启动时清理过期的 `api_cache` 记录。
@@ -100,36 +100,45 @@ data/
 │   └── DanmakuCache.kt
 ├── dao/
 │   ├── ApiCacheDao.kt
+│   ├── DownloadTaskDao.kt
+│   ├── DownloadedVideoIndexDao.kt
 │   ├── PlayHistoryDao.kt
 │   └── SearchHistoryDao.kt
 ├── database/
 │   └── MovieDatabase.kt
+├── download/
+│   ├── DanmakuDownloadManager.kt
+│   ├── DownloadEngine.kt
+│   ├── DownloadNotificationManager.kt
+│   ├── DownloadService.kt
+│   └── M3u8Parser.kt
 ├── entity/
 │   ├── ApiCacheEntity.kt
+│   ├── DownloadTaskEntity.kt
+│   ├── DownloadedVideoIndexEntity.kt
 │   ├── PlayHistoryEntity.kt
 │   └── SearchHistoryEntity.kt
 ├── model/
 │   ├── CrawlError.kt
 │   ├── CrawlerVideoDetail.kt
-│   ├── DanmakuModels.kt
 │   ├── DoubanMoviePageResult.kt
 │   ├── PlayEpisode.kt
 │   ├── PlayLine.kt
 │   ├── SearchPageResult.kt
 │   ├── VideoItem.kt
+│   ├── danmaku/
+│   │   ├── DanmakuBangumiResponse.kt
+│   │   ├── DanmakuCommentResponse.kt
+│   │   └── DanmakuSearchResponse.kt
 │   └── remote/
-│   │   ├── RemoteCategory.kt
-│   │   ├── RemoteVideo.kt
-│   │   ├── RemoteVideoMapper.kt
-│   │   └── RemoteVideoResponse.kt
-│   └── danmaku/
-│       ├── DanmakuAnime.kt
-│       ├── DanmakuBangumi.kt
-│       ├── DanmakuComment.kt
-│       └── DanmakuSearchResponse.kt
+│       ├── RemoteCategory.kt
+│       ├── RemoteVideo.kt
+│       ├── RemoteVideoMapper.kt
+│       └── RemoteVideoResponse.kt
 ├── repository/
 │   ├── ApiCacheRepository.kt
 │   ├── DanmakuRepository.kt
+│   ├── DownloadRepository.kt
 │   ├── PlayHistoryRepository.kt
 │   ├── SearchHistoryRepository.kt
 │   └── VideoRepository.kt
@@ -142,6 +151,7 @@ data/
     ├── VideoSourceManager.kt
     └── impl/
         ├── JujiwuVideoSource.kt
+        ├── TiantangVideoSource.kt
         └── YinghuaVideoSource.kt
 ```
 
@@ -152,9 +162,9 @@ data/
 | 配置 | 当前值 |
 |------|--------|
 | 数据库名 | `movie_database` |
-| 当前版本 | `6` |
-| 表 | `play_history`、`search_history`、`api_cache` |
-| 迁移策略 | `addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)` |
+| 当前版本 | `8` |
+| 表 | `play_history`、`search_history`、`api_cache`、`download_task`、`downloaded_video_index` |
+| 迁移策略 | `addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)` |
 | Schema 导出 | `exportSchema = false` |
 
 ### Entity
@@ -164,6 +174,24 @@ data/
 | `PlayHistoryEntity` | `play_history` | 保存播放历史、播放地址、播放进度、总时长、最后播放时间和**播放源名称** |
 | `SearchHistoryEntity` | `search_history` | 保存搜索关键词、搜索次数和最后搜索时间 |
 | `ApiCacheEntity` | `api_cache` | 保存 JSON 响应缓存，包含 TTL、创建时间和过期时间 |
+| `DownloadTaskEntity` | `download_task` | 下载任务状态、进度（分片/文件大小）、本地文件路径、弹幕下载状态、**离线播放进度**（百分比/位置/时长） |
+| `DownloadedVideoIndexEntity` | `downloaded_video_index` | 已下载视频索引，用于快速查找（预留） |
+
+`DownloadTaskEntity` 关键字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `taskId` | String | 主键，格式 `{videoId}_{episodeIndex}` |
+| `status` | Int | 0=等待中, 1=下载中, 2=已暂停, 3=已完成, 4=失败 |
+| `downloadedSegments` / `totalSegments` | Int | 分片下载进度 |
+| `fileSize` | Long | 文件总大小（字节） |
+| `localFilePath` | String | 本地 mp4 文件路径 |
+| `playUrl` | String | 原始 m3u8 播放地址 |
+| `danmakuStatus` | Int | 弹幕下载状态：0=未下载, 1=下载中, 2=已完成, 3=失败, 4=重试中 |
+| `danmakuFilePath` | String | 本地弹幕 JSON 文件路径 |
+| `playProgressPercent` | Int | 离线播放进度百分比（-1=未观看, 0~99=已观看N%, 100=已看完） |
+| `playPositionMs` | Long | 离线播放位置（毫秒） |
+| `playDurationMs` | Long | 离线播放总时长（毫秒） |
 
 ### DAO
 
@@ -172,6 +200,30 @@ data/
 | `PlayHistoryDao` | 查询全部历史、按 `videoId` 查询、插入、更新历史、更新进度、删除和清空 |
 | `SearchHistoryDao` | 查询搜索历史、按关键词查询、插入或更新、删除单条和清空 |
 | `ApiCacheDao` | 按缓存键读取、写入、删除、按前缀删除、清理过期缓存 |
+| `DownloadTaskDao` | 查询下载中/已完成任务、按 taskId 查询、按状态批量查询、按 videoId 查询、插入、更新状态/进度/弹幕/播放进度、删除 |
+| `DownloadedVideoIndexDao` | 已下载视频索引的增删查（预留） |
+
+### 下载引擎
+
+下载引擎位于 `data/download/`，负责 M3U8 分片下载、合并和弹幕下载：
+
+| 组件 | 职责 |
+|------|------|
+| `DownloadEngine` | 下载引擎核心，管理任务队列、解析 M3U8、并发下载分片、合并为 mp4、进度回调 |
+| `M3u8Parser` | M3U8 文件解析器，提取 `.ts` 分片 URL 列表 |
+| `DownloadService` | 前台服务，管理下载生命周期，显示通知和控制动作 |
+| `DownloadNotificationManager` | 下载通知管理，创建进度通知、更新进度、处理用户操作（暂停/恢复/取消） |
+| `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试 |
+
+**降低影响策略**（位于 `DownloadEngine` 常量配置）：
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| `MAX_CONCURRENT_TASKS` | 3 | 最大并发任务数 |
+| `MAX_CONCURRENT_SEGMENTS` | 3 | 每个任务最大并发分片数 |
+| `SEGMENT_GAP_MS` | 2000ms | 分片间延迟 |
+| `MAX_DOWNLOAD_SPEED_BPS` | 2MB/s | 单线程下载速度上限 |
+| `MAX_SEGMENT_RETRIES` | 3 | 分片下载最大重试次数 |
 
 ### Repository
 
@@ -182,6 +234,7 @@ data/
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
 | `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制 |
+| `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
 
 ### 弹幕缓存
 
@@ -257,12 +310,12 @@ data/
 
 剧集屋播放源，继承 `CrawlerVideoSource`：
 
-| 配置 | 值                        |
-|------|--------------------------|
-| `sourceId` | `crawler_jju`            |
-| `sourceName` | `剧集屋`                    |
+| 配置 | 值 |
+|------|-----|
+| `sourceId` | `crawler_jju` |
+| `sourceName` | `剧集屋` |
 | `baseUrl` | `https://www.******.com` |
-| `cachePrefix` | `crawler`                |
+| `cachePrefix` | `crawler` |
 
 解析规则适配 `www.******.com` 的页面结构。
 
@@ -270,14 +323,27 @@ data/
 
 樱花动漫播放源，继承 `CrawlerVideoSource`：
 
-| 配置 | 值                        |
-|------|--------------------------|
-| `sourceId` | `crawler_yinghua`        |
-| `sourceName` | `樱花动漫`                   |
+| 配置 | 值 |
+|------|-----|
+| `sourceId` | `crawler_yinghua` |
+| `sourceName` | `樱花动漫` |
 | `baseUrl` | `https://wap.******.com` |
-| `cachePrefix` | `yinghua`                |
+| `cachePrefix` | `yinghua` |
 
 解析规则适配 `wap.******.com` 的 MyUI / 苹果CMS 页面结构。
+
+### `TiantangVideoSource`
+
+电影天堂播放源，继承 `CrawlerVideoSource`：
+
+| 配置 | 值 |
+|------|-----|
+| `sourceId` | `crawler_tiantang` |
+| `sourceName` | `电影天堂` |
+| `baseUrl` | `https://www.******.com` |
+| `cachePrefix` | `crawler` |
+
+框架已搭建，`parseVideoDetail()` 和 `parseSearchPage()` 为 TODO 占位，待根据实际页面结构实现。
 
 ### `DoubanDiscoverySource`
 
@@ -371,22 +437,28 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 presentation/
 ├── activity/
 │   ├── DetailActivity.kt
+│   ├── DownloadActivity.kt
 │   ├── HistoryActivity.kt
 │   ├── MainActivity.kt
 │   └── PlayerActivity.kt
 ├── adapter/
+│   ├── CompletedAdapter.kt
+│   ├── DownloadPagerAdapter.kt
+│   ├── DownloadingAdapter.kt
 │   ├── HistoryAdapter.kt
 │   ├── SearchResultAdapter.kt
 │   └── VideoAdapter.kt
 ├── danmaku/
 │   ├── DanmakuManager.kt
-│   └── DanmakuPrefs.kt
+│   ├── DanmakuPrefs.kt
+│   └── DanmakuView.kt
 ├── fragment/
 │   ├── HistoryFragment.kt
 │   ├── HomeFragment.kt
 │   ├── ProfileFragment.kt
 │   └── SearchFragment.kt
 └── viewmodel/
+    ├── DownloadViewModel.kt
     ├── HistoryViewModel.kt
     ├── PlayerViewModel.kt
     ├── SearchHistoryViewModel.kt
@@ -398,9 +470,10 @@ presentation/
 | Activity | 说明 |
 |----------|------|
 | `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
-| `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制、屏幕锁定、播放生命周期和进度保存 |
+| `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示；**提供下载入口**，支持单集下载和批量下载 |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录** |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
+| `DownloadActivity` | **下载管理页面**，使用 ViewPager2 分"下载中"和"已完成"两个标签页；首次进入时若下载中列表为空自动切换到已完成；支持多选删除 |
 
 ### Fragment
 
@@ -408,7 +481,7 @@ presentation/
 |----------|------|
 | `HomeFragment` | 首页内容发现，九宫格展示，支持主分类、二级分类和列表末尾加载更多 |
 | `SearchFragment` | 搜索页，支持外部传入关键词自动搜索、手动搜索、分页、历史 Chip 和清空历史；搜索后自动收起输入法键盘 |
-| `ProfileFragment` | "我的"页面，包含视频源管理（弹框开关）、弹幕开关、历史记录入口、下载管理（占位）、**清理缓存（分类清理 + 缓存大小显示）**、帮助和关于 |
+| `ProfileFragment` | "我的"页面，包含视频源管理（弹框开关）、弹幕开关、历史记录入口、**下载管理入口**、**清理缓存（分类清理 + 缓存大小显示）**、帮助和关于 |
 | `HistoryFragment` | 播放历史页，展示 Room 中的播放记录（含播放源名称），支持点击进入详情和一键清空 |
 
 ### ViewModel
@@ -419,6 +492,7 @@ presentation/
 | `HistoryViewModel` | 读取播放历史、写入或更新历史、清空历史 |
 | `PlayerViewModel` | 播放时写入历史（含 sourceName）、更新播放进度、查询续播记录、按 ID 回查视频 |
 | `SearchHistoryViewModel` | 读取、写入、删除和清空搜索历史 |
+| `DownloadViewModel` | **下载任务管理**，创建任务、查询下载中/已完成列表、任务控制（暂停/恢复/取消/重试/全部暂停/全部恢复）、删除任务、存储空间查询 |
 
 ### Adapter
 
@@ -427,12 +501,16 @@ presentation/
 | `VideoAdapter` | 首页九宫格卡片和列表末尾 `加载更多` Footer |
 | `SearchResultAdapter` | 搜索结果列表，展示封面、标题、类型、上映时间、主演、简介和**播放源名称** |
 | `HistoryAdapter` | 播放历史列表，展示封面、标题、分类、播放进度、播放记录和**播放源名称** |
+| `DownloadPagerAdapter` | **下载管理 ViewPager2 适配器**，管理"下载中"和"已完成"两个 Fragment |
+| `DownloadingAdapter` | **下载中任务列表适配器**，展示封面、标题、集数、进度条、百分比、状态，支持暂停/恢复/取消操作 |
+| `CompletedAdapter` | **已完成任务列表适配器**，展示封面、标题、集数、文件大小、**播放进度文字**（未观看/已观看N%/已看完），支持播放和删除 |
 
 ### 弹幕组件
 
 | 组件 | 说明 |
 |------|------|
 | `DanmakuManager` | 弹幕渲染管理器，负责弹幕的显示、隐藏、同步、seek、暂停/恢复 |
+| `DanmakuView` | 弹幕绘制 View，基于 Canvas 实现弹幕滚动渲染 |
 | `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化 |
 
 ## 资源结构
@@ -443,11 +521,13 @@ res/
 │   └── bottom_nav_color.xml
 ├── drawable/
 │   ├── bg_chip.xml
+│   ├── bg_chip_selected.xml
 │   ├── bg_detail_card.xml
 │   ├── bg_detail_page.xml
-│   ├── bg_dialog_rounded.xml
 │   ├── bg_dialog_button_primary.xml
 │   ├── bg_dialog_button_secondary.xml
+│   ├── bg_dialog_rounded.xml
+│   ├── bg_download_progress.xml
 │   ├── bg_episode_normal.xml
 │   ├── bg_episode_selected.xml
 │   ├── bg_play_button.xml
@@ -488,6 +568,7 @@ res/
 │   └── ic_source.xml
 ├── layout/
 │   ├── activity_detail.xml
+│   ├── activity_download.xml
 │   ├── activity_history.xml
 │   ├── activity_main.xml
 │   ├── activity_player.xml
@@ -498,6 +579,9 @@ res/
 │   ├── fragment_profile.xml
 │   ├── fragment_search.xml
 │   ├── item_clear_cache.xml
+│   ├── item_completed.xml
+│   ├── item_download_page.xml
+│   ├── item_downloading.xml
 │   ├── item_history.xml
 │   ├── item_home_load_more.xml
 │   ├── item_search_result.xml
@@ -521,8 +605,9 @@ res/
 |----------|----------|
 | `activity_main.xml` | `MainActivity` |
 | `activity_detail.xml` | `DetailActivity` |
-| `activity_player.xml` | `PlayerActivity` |
+| `activity_player.xml` | `PlayerActivity`（含锁定进度条 `lockedProgressBar`） |
 | `activity_history.xml` | `HistoryActivity` |
+| `activity_download.xml` | `DownloadActivity`（ViewPager2 + TabLayout） |
 | `exo_player_control_view.xml` | ExoPlayer 自定义控制栏（播放/暂停/快进/快退/进度条/弹幕控制/设置） |
 | `dialog_clear_cache.xml` | 清理缓存弹框 |
 | `item_clear_cache.xml` | 清理缓存弹框中的单个选项项 |
@@ -534,6 +619,9 @@ res/
 | `item_home_load_more.xml` | `VideoAdapter` 的加载更多 Footer |
 | `item_search_result.xml` | `SearchResultAdapter` |
 | `item_history.xml` | `HistoryAdapter` |
+| `item_downloading.xml` | `DownloadingAdapter`（下载中任务卡片） |
+| `item_completed.xml` | `CompletedAdapter`（已完成任务卡片，含播放进度） |
+| `item_download_page.xml` | `DownloadPagerAdapter` 的 ViewPager2 页面容器 |
 
 ## 页面导航
 
@@ -566,7 +654,7 @@ ProfileFragment
     ├── 视频源管理 ── 弹框开关各播放源
     ├── 弹幕 ── 滑动开关（默认开启）
     ├── 历史记录 ── 跳转 HistoryActivity
-    ├── 下载管理 ── 占位（Toast 提示即将上线）
+    ├── 下载管理 ── 跳转 DownloadActivity
     ├── 清理缓存 ── 弹框选择性清理（显示缓存大小）
     ├── 帮助 ── 弹框展示使用说明
     └── 关于 ── 弹框展示版本信息
@@ -588,6 +676,18 @@ SearchFragment / HistoryFragment
 DetailActivity
         ↓
 PlayerActivity
+```
+
+下载管理页面通过"我的"跳转：
+
+```text
+ProfileFragment
+        ↓
+DownloadActivity
+    ├── 下载中标签页 ── DownloadingAdapter
+    └── 已完成标签页 ── CompletedAdapter
+            ↓ 点击播放
+        PlayerActivity（离线播放模式）
 ```
 
 ## 核心数据流
@@ -633,6 +733,7 @@ VideoRepository.searchVideosPage()
         ↓
 JujiwuVideoSource.searchVideos() ── RequestRateLimiter.submit(SEARCH)
 YinghuaVideoSource.searchVideos() ── RequestRateLimiter.submit(SEARCH)
+TiantangVideoSource.searchVideos() ── RequestRateLimiter.submit(SEARCH)
         ↓
 插空法合并结果
         ↓
@@ -676,13 +777,13 @@ DanmakuApi.getDanmakuComments() ── 带缓存和重试
         ↓
 DanmakuManager.loadDanmaku(comments)
         ↓
-弹幕容器渲染
+DanmakuView 弹幕渲染
 ```
 
 ### 播放历史与续播
 
 ```text
-PlayerActivity
+PlayerActivity（在线播放）
         ↓
 PlayerViewModel.setVideoInfo(..., sourceName)
         ↓
@@ -691,6 +792,43 @@ PlayHistoryRepository.addOrUpdateHistory(..., sourceName)
 Room play_history
         ↓
 HistoryActivity / DetailActivity / PlayerActivity
+```
+
+### 下载管理
+
+```text
+DetailActivity 选择剧集下载
+        ↓
+DownloadViewModel.createTasks() ── 写入 download_task 表
+        ↓
+DetailActivity.startDownloadForEpisodes()
+        ↓ 解析 playPageUrl → m3u8Url（剧集间延迟 3~5s）
+DownloadEngine.submitTask(taskId = dbTaskId)
+        ↓ 解析 M3U8、并发下载分片（最多 3 线程、2MB/s 限速、分片间延迟 2s）
+DownloadService（前台通知）
+        ↓ 合并分片为 mp4
+DanmakuDownloadManager（弹幕下载）
+        ↓
+数据库更新状态和进度（DownloadCallback → DownloadRepository）
+        ↓
+DownloadActivity（下载中/已完成标签页，Flow 实时更新）
+```
+
+### 离线播放
+
+```text
+DownloadActivity 点击已完成任务播放
+        ↓
+PlayerActivity.newIntent(localFilePath, danmakuFilePath, ...)
+        ↓ extra_offline_task_id = task.taskId
+PlayerActivity 离线模式
+        ↓ 读取 playPositionMs 续播（已看完则从头开始）
+initializePlayerWithLocalFile(localUri)
+        ↓
+弹幕：本地文件优先，不存在则在线搜索
+        ↓
+saveCurrentProgress() → DownloadRepository.updateOfflinePlayProgress()
+        ↓ 不写入 play_history
 ```
 
 ### 清理缓存
@@ -729,7 +867,7 @@ Toast 提示清理结果
 | AndroidX Core / AppCompat / Activity | Android 基础能力 |
 | Material Components | Material UI 组件 |
 | ConstraintLayout | 布局 |
-| RecyclerView / CardView | 列表和卡片 |
+| RecyclerView / CardView / ViewPager2 | 列表、卡片和页面切换 |
 | Lifecycle ViewModel / LiveData / Runtime | MVVM 和生命周期感知 |
 | Room Runtime / KTX / Compiler | 本地数据库 |
 | Kotlin Coroutines | 异步任务 |
@@ -745,16 +883,20 @@ Toast 提示清理结果
 
 - 应用入口为 `MovieApplication`。
 - 启动页为 `MainActivity`。
-- 注册 `DetailActivity`、`PlayerActivity`、`HistoryActivity`。
+- 注册 `DetailActivity`、`PlayerActivity`、`HistoryActivity`、`DownloadActivity`。
+- 注册 `DownloadService`（前台服务，`dataSync` 类型）。
 - `PlayerActivity` 使用无 ActionBar 主题，并处理方向和屏幕尺寸变化。
-- 声明 `INTERNET` 和 `ACCESS_NETWORK_STATE` 权限。
+- 声明 `INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS` 权限。
 
 ## 当前实现边界
 
 - 首页内容发现只适配豆瓣相关页面和接口；豆瓣失败时回退本地挡板。
-- 内容播放当前支持剧集屋和樱花动漫两个播放源，通过 `VideoSource` 接口可扩展更多源。
+- 内容播放当前支持剧集屋、樱花动漫和电影天堂（框架已搭建）三个播放源，通过 `VideoSource` 接口可扩展更多源。
 - 本地挡板不写入首页 `api_cache`。
 - 搜索结果、详情播放入口和真实播放地址有独立缓存周期，各源缓存前缀不同。
 - 爬虫限流器每个播放源独立，队列容量和间隔为固定值。
+- 下载管理功能已完整实现，支持 M3U8 分片下载、弹幕下载、前台通知、离线播放和降低影响策略。
+- 下载引擎已实现多层限流：并发限制、分片间延迟、速度限制、剧集间解析间隔。
+- 离线播放有独立进度体系，不记录到在线播放历史。
+- 电影天堂播放源解析逻辑待实现。
 - 收藏功能未实现。
-- 下载管理功能为 UI 占位，未实现具体逻辑。

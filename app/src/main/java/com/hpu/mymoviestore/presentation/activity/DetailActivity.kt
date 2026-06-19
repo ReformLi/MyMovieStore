@@ -33,6 +33,7 @@ import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -619,8 +620,15 @@ class DetailActivity : AppCompatActivity() {
         // 使用全局 CoroutineScope，确保离开详情页后仍能更新数据库
         val dbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        episodes.forEachIndexed { index, episode ->
-            lifecycleScope.launch {
+        // 使用单个协程顺序处理，剧集间添加 3~5 秒延迟以保护源站 Web 服务器
+        lifecycleScope.launch {
+            episodes.forEachIndexed { index, episode ->
+                // 从第二集开始，每集之间延迟 3~5 秒（模拟人工操作）
+                if (index > 0) {
+                    val delayMs = (3000L..5000L).random()
+                    Log.d(TAG, "下载：等待 ${delayMs}ms 后解析下一集（${index + 1}/${episodes.size}）")
+                    delay(delayMs)
+                }
                 // 解析真实播放地址
                 val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
                 val m3u8Url = result.getOrNull()

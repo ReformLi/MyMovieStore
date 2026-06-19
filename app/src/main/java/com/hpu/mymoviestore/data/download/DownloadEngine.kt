@@ -95,11 +95,17 @@ class DownloadEngine(context: Context) {
         /** 最大并发任务数 */
         private const val MAX_CONCURRENT_TASKS = 3
 
-        /** 每个任务最大并发分片数 */
-        private const val MAX_CONCURRENT_SEGMENTS = 5
+        /** 每个任务最大并发分片数（降低并发以保护 CDN） */
+        private const val MAX_CONCURRENT_SEGMENTS = 3
 
         /** 分片下载最大重试次数 */
         private const val MAX_SEGMENT_RETRIES = 3
+
+        /** 分片间延迟（毫秒），降低瞬间峰值带宽 */
+        private const val SEGMENT_GAP_MS = 2000L
+
+        /** 下载速度限制（字节/秒），约 2MB/s */
+        private const val MAX_DOWNLOAD_SPEED_BPS = 2L * 1024 * 1024
 
         /** 重试间隔（毫秒）：5s, 15s, 30s */
         private val RETRY_DELAYS = longArrayOf(5000L, 15000L, 30000L)
@@ -393,6 +399,9 @@ class DownloadEngine(context: Context) {
                 )
                 Log.d(TAG, "分片下载完成: index=$index, size=${segmentFile.length()}, " +
                         "progress=$completedCount/${task.segmentUrls.size}")
+
+                // 分片间延迟，降低瞬间峰值带宽
+                delay(SEGMENT_GAP_MS)
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -452,6 +461,9 @@ class DownloadEngine(context: Context) {
 
                 try {
                     var bytesRead: Int
+                    var bytesSinceLastThrottle: Long = 0
+                    var throttleStartMs = System.currentTimeMillis()
+
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         // 检查中断状态
                         if (task.isCancelled.get() || task.isPaused.get()) {
@@ -459,6 +471,18 @@ class DownloadEngine(context: Context) {
                         }
 
                         outputStream.write(buffer, 0, bytesRead)
+
+                        // 速度限制：每读取约 64KB 检查一次是否需要限速
+                        bytesSinceLastThrottle += bytesRead
+                        if (bytesSinceLastThrottle >= 65536) {
+                            val elapsedMs = System.currentTimeMillis() - throttleStartMs
+                            val expectedMs = bytesSinceLastThrottle * 1000 / MAX_DOWNLOAD_SPEED_BPS
+                            if (elapsedMs < expectedMs) {
+                                Thread.sleep(expectedMs - elapsedMs)
+                            }
+                            bytesSinceLastThrottle = 0
+                            throttleStartMs = System.currentTimeMillis()
+                        }
 
                         // 更新该分片的已下载字节数
                         val currentSize = segmentFile.length()

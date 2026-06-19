@@ -12,19 +12,20 @@
 | 首页综艺 | 支持综合、国内、国外二级分类 | `DoubanDiscoverySource.fetchExploreTvRelatedPage()` |
 | 首页动漫 | 使用豆瓣电视剧页中的动画数据，不展示二级分类 | `DoubanDiscoverySource.fetchExploreTvRelatedPage()` |
 | 搜索 | 多源并行搜索，结果插空法排序显示，支持分页、搜索历史和结果缓存 | `SearchFragment`、`VideoRepository.searchVideosPage()` |
-| 多源播放 | 支持剧集屋、樱花动漫等多个播放源，可独立启用/禁用 | `ProfileFragment` 视频源管理 |
+| 多源播放 | 支持剧集屋、樱花动漫、电影天堂等多个播放源，可独立启用/禁用 | `ProfileFragment` 视频源管理 |
 | 首页到搜索联动 | 点击首页影视后跳转搜索页，并按影视名自动搜索 | `MainActivity.navigateToSearchWithKeyword()` |
 | 详情 | 从搜索结果进入详情，解析播放线路、剧集和简介等信息 | `DetailActivity`、`CrawlerVideoSource.fetchVideoDetail()` |
 | 播放 | 使用 Media3 ExoPlayer 播放真实视频地址，支持进度保存和续播 | `PlayerActivity`、`PlayerViewModel` |
 | **弹幕系统** | **支持弹幕搜索、源切换、开关控制，与播放器同步** | **`DanmakuManager`、`DanmakuRepository`、`DanmakuCache`** |
 | 播放历史 | 自动保存播放记录（含播放源信息），按最近播放倒序展示，支持清空 | `HistoryActivity`、`HistoryViewModel` |
 | 搜索历史 | 保存搜索关键词、搜索次数和最后搜索时间 | `SearchHistoryViewModel` |
-| 个人中心 | 视频源管理、弹幕开关、历史记录、下载管理（占位）、**清理缓存**、帮助、关于 | `ProfileFragment` |
+| 个人中心 | 视频源管理、弹幕开关、历史记录、下载管理、**清理缓存**、帮助、关于 | `ProfileFragment` |
 | **清理缓存** | **支持分类清理（搜索/首页/详情/播放地址/弹幕/全部），显示缓存大小** | **`ProfileFragment.showClearCacheDialog()`** |
+| **下载管理** | **M3U8 分片下载、弹幕下载、前台通知、离线播放、播放进度、降低影响策略** | **`DownloadActivity`、`DownloadEngine`、`DownloadService`、`DownloadRepository`** |
 | 爬虫限流 | 每个播放源独立限流队列，同源请求 3 秒最小间隔，优先级抢占 | `RequestRateLimiter`、`CrawlerVideoSource` |
 | 细粒度错误提示 | 网络失败时展示具体错误原因（DNS 失败、403、验证码、空结果等） | `CrawlError`、`CrawlErrorType` |
 
-底部导航当前包含：首页、搜索、我的。历史记录已移至"我的"页面内。
+底部导航当前包含：首页、搜索、我的。历史记录和下载管理已移至"我的"页面内。
 
 ## 分层设计
 
@@ -41,11 +42,11 @@ DoubanDiscoverySource
 搜索页自动搜索
 
 内容播放层
-多个播放源（剧集屋、樱花动漫...）
+多个播放源（剧集屋、樱花动漫、电影天堂...）
         ↓
 VideoSource 接口 ← CrawlerVideoSource 抽象基类
         ↓
-JujiwuVideoSource / YinghuaVideoSource（具体实现）
+JujiwuVideoSource / YinghuaVideoSource / TiantangVideoSource（具体实现）
         ↓
 RequestRateLimiter（每个源独立限流）
         ↓
@@ -68,14 +69,16 @@ CrawlerVideoSource（抽象基类）
     ├── 通用方法：requestDocument()、extractRealVideoUrl()、buildSearchUrl()
     └── 抽象方法：parseVideoDetail()、parseSearchPage()
     ↓
-JujiwuVideoSource ── 剧集屋（www.******.com）
-YinghuaVideoSource ── 樱花动漫（wap.******.com）
+JujiwuVideoSource     ── 剧集屋（www.******.com）
+YinghuaVideoSource    ── 樱花动漫（wap.******.com）
+TiantangVideoSource   ── 电影天堂（框架已搭建，解析逻辑待实现）
 ```
 
 新增播放源只需：
 1. 继承 `CrawlerVideoSource`
 2. 配置 `sourceId`、`sourceName`、`baseUrl` 等属性
 3. 实现 `parseVideoDetail()` 和 `parseSearchPage()` 两个解析方法
+4. 在 `MovieApplication` 中注册实例
 
 ## 多源搜索与排序
 
@@ -84,7 +87,8 @@ YinghuaVideoSource ── 樱花动漫（wap.******.com）
 ```text
 源A结果：[A1, A2, A3, ...]
 源B结果：[B1, B2, B3, ...]
-合并后： [A1, B1, A2, B2, A3, B3, ...]
+源C结果：[C1, C2, C3, ...]
+合并后： [A1, B1, C1, A2, B2, C2, A3, B3, C3, ...]
 ```
 
 每个搜索结果和历史记录项都会显示来源播放源名称（如"剧集屋"、"樱花动漫"）。
@@ -124,13 +128,69 @@ YinghuaVideoSource ── 樱花动漫（wap.******.com）
 **屏幕锁定**：左侧中间显示锁定按钮，点击后：
 - 隐藏播放器控制栏和弹幕控制
 - 禁用所有手势（双击、长按滑动等）
-- 点击屏幕只显示/隐藏锁定按钮
+- 显示只读进度条（屏幕底部，含时间位置和总时长）
+- 点击屏幕只显示/隐藏锁定按钮和进度条
 - 返回键和解锁按钮仍然可用
+
+进度条拖动已与长按手势解耦，在进度条上操作不会触发长按快进/快退。
 
 播放器控制栏自定义：
 - 删除上一集/下一集按钮
 - 快进/快退统一为 10 秒
 - 播放/暂停、快进、快退按钮使用自定义矢量图标
+
+## 下载管理
+
+完整的离线下载功能，支持 M3U8 分片下载、弹幕下载和离线播放。
+
+### 下载流程
+
+```text
+DetailActivity 选择剧集
+        ↓
+DownloadViewModel.createTasks() ── 写入数据库
+        ↓
+DetailActivity.startDownloadForEpisodes()
+        ↓ 解析 playPageUrl → m3u8Url
+DownloadEngine.submitTask()
+        ↓ 解析 M3U8、并发下载分片
+DownloadService ── 前台通知显示进度
+        ↓ 合并分片为 mp4
+DanmakuDownloadManager ── 下载弹幕
+        ↓
+数据库更新状态和进度
+        ↓
+DownloadActivity ── 下载管理页面（下载中/已完成标签页）
+```
+
+### 下载管理页面
+
+| 标签页 | 内容 |
+|--------|------|
+| 下载中 | 待下载、下载中、暂停、失败的任务，显示进度条和百分比 |
+| 已完成 | 已下载完成的视频，显示文件大小、播放进度、可播放/删除 |
+
+### 离线播放
+
+- 点击已完成列表中的视频，使用本地 mp4 文件播放
+- 支持弹幕离线播放（本地弹幕 JSON 文件）
+- 独立播放进度（百分比显示：未观看 / 已观看 N% / 已看完）
+- 续播：退出后重新进入自动从上次进度继续
+- 已看完后点击播放从头开始
+- 离线播放不记录到历史记录页面
+
+### 降低影响下载策略
+
+为保护源站 Web 服务器和 CDN，设计了分层限流策略：
+
+| 策略 | 配置 | 说明 |
+|------|------|------|
+| 最大并发任务数 | 3 | 同时最多下载 3 个视频 |
+| 最大并发分片数 | 3 | 每个任务同时最多 3 个线程下载 .ts 分片 |
+| 分片间延迟 | 2000ms | 每个分片下载完成后等待 2 秒 |
+| 下载速度限制 | 2MB/s | 单线程下载速度上限，不影响手机正常上网 |
+| 剧集间解析间隔 | 3~5 秒随机 | 批量下载时模拟人工逐集点击 |
+| 下载全部复用缓存 | 已实现 | 使用详情页缓存的剧集列表，不重复请求 |
 
 ## 清理缓存
 
@@ -182,9 +242,9 @@ YinghuaVideoSource ── 樱花动漫（wap.******.com）
 | 构建工具 | Gradle、Android Gradle Plugin 8.5.0 |
 | 最低版本 | minSdk 24 |
 | 目标版本 | targetSdk 36 |
-| UI | XML Layout、ViewBinding、Material Components、RecyclerView、CardView |
+| UI | XML Layout、ViewBinding、Material Components、RecyclerView、CardView、ViewPager2 |
 | 架构 | MVVM + Repository + Data Source |
-| 异步 | Kotlin Coroutines、LiveData |
+| 异步 | Kotlin Coroutines、LiveData、Flow |
 | 本地存储 | Room 2.6.1 |
 | 播放器 | AndroidX Media3 ExoPlayer 1.4.0 |
 | 图片加载 | Coil 2.7.0 |
@@ -295,15 +355,17 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 ## 数据存储
 
-Room 当前持久化三张表：
+Room 当前持久化五张表：
 
 | 表名 | Entity | 用途 |
 |------|--------|------|
 | `play_history` | `PlayHistoryEntity` | 播放历史、播放地址冗余、续播进度、总时长、**播放源名称** |
 | `search_history` | `SearchHistoryEntity` | 最近搜索关键词、搜索次数、最后搜索时间 |
 | `api_cache` | `ApiCacheEntity` | 网络响应和解析结果缓存，支持 TTL 过期 |
+| `download_task` | `DownloadTaskEntity` | 下载任务状态、进度、本地文件路径、弹幕状态、离线播放进度 |
+| `downloaded_video_index` | `DownloadedVideoIndexEntity` | 已下载视频索引（预留） |
 
-数据库版本：`6`（含 `sourceName` 字段迁移）。
+数据库版本：`8`（含下载任务表和离线播放进度字段迁移）。
 
 ## 项目结构
 
@@ -318,9 +380,11 @@ app/src/main/
 │   │   │   └── DanmakuCache.kt
 │   │   ├── dao/
 │   │   ├── database/
+│   │   ├── download/
 │   │   ├── entity/
 │   │   ├── model/
-│   │   │   └── danmaku/
+│   │   │   ├── danmaku/
+│   │   │   └── remote/
 │   │   ├── repository/
 │   │   └── source/
 │   │       └── impl/
@@ -362,6 +426,9 @@ app/build/outputs/apk/debug/app-debug.apk
 |------|------|
 | `android.permission.INTERNET` | 访问豆瓣、播放源网站、封面图片和播放地址 |
 | `android.permission.ACCESS_NETWORK_STATE` | 判断网络状态，配合网络播放与远程数据源 |
+| `android.permission.FOREGROUND_SERVICE` | 下载时保持前台服务运行 |
+| `android.permission.FOREGROUND_SERVICE_DATA_SYNC` | Android 14+ 前台服务类型声明 |
+| `android.permission.POST_NOTIFICATIONS` | Android 13+ 下载通知权限 |
 
 ## 当前版本说明
 
@@ -374,9 +441,9 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## 后续可扩展方向
 
-- 增加更多播放源（只需继承 `CrawlerVideoSource` 并实现两个解析方法）。
+- 增加更多播放源（只需继承 `CrawlerVideoSource` 并实现两个解析方法，在 `MovieApplication` 注册）。
+- 完善电影天堂播放源的页面解析逻辑（框架已搭建）。
 - 增加首页下拉刷新，用于主动刷新已过期或手动清空的发现缓存。
 - 扩展 `RequestRateLimiter` 支持可配置的限流策略（间隔时间、队列容量）。
-- 实现下载管理功能（当前为 UI 占位）。
 - 增加收藏功能。
 - 替换 `fallbackToDestructiveMigration()` 为正式的 Room Migration 策略。
