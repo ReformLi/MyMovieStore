@@ -14,6 +14,7 @@ import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import okhttp3.OkHttpClient
 
@@ -78,9 +79,10 @@ class MovieApplication : Application(), ImageLoaderFactory {
         // - 真实播放地址（m3u8/mp4）：30 分钟
         val crawlerSource = JujiwuVideoSource(cacheRepository = apiCacheRepository)
         val yinghuaSource = YinghuaVideoSource(cacheRepository = apiCacheRepository)
+        val tiantangSource = TiantangVideoSource(cacheRepository = apiCacheRepository)
         val doubanDiscoverySource = DoubanDiscoverySource()
 
-        _allVideoSources = listOf(crawlerSource, yinghuaSource)
+        _allVideoSources = listOf(crawlerSource, yinghuaSource, tiantangSource)
 
         // 从 SharedPreferences 恢复视频源启用状态
         restoreSourceEnabledStates()
