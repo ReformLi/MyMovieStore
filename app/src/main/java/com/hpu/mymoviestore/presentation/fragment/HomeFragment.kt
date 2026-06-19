@@ -1,7 +1,9 @@
 package com.hpu.mymoviestore.presentation.fragment
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -81,17 +83,53 @@ class HomeFragment : Fragment() {
         viewModel.loadAllVideos()
     }
 
+    private var currentSpanCount = 3
+
     private fun setupViews() {
-        val gridLayoutManager = GridLayoutManager(context, HOME_GRID_SPAN_COUNT)
+        currentSpanCount = calculateSpanCount()
+        updateGridLayoutManager()
+        adapter.setSpanCount(currentSpanCount)
+        binding.recyclerView.adapter = adapter
+        setupSubTabs(movieSubTypes)
+        Log.d(TAG, "RecyclerView + 九宫格 Adapter 初始化完成: span=$currentSpanCount")
+    }
+
+    /**
+     * 根据屏幕宽度动态计算列数。
+     * 每个卡片最小宽度约 120dp（含 margin），保证在不同屏幕和横竖屏下都有合适的列数。
+     */
+    private fun calculateSpanCount(): Int {
+        val dm = DisplayMetrics()
+        requireActivity().windowManager.defaultDisplay.getMetrics(dm)
+        val screenWidthPx = dm.widthPixels
+        val density = dm.density
+        // 每个卡片最小宽度 120dp，margin 10dp，padding 8dp
+        val minCardWidthDp = 120f
+        val screenWidthDp = screenWidthPx / density
+        val spanCount = (screenWidthDp / minCardWidthDp).toInt().coerceAtLeast(2).coerceAtMost(8)
+        Log.d(TAG, "calculateSpanCount: screenWidthDp=$screenWidthDp, span=$spanCount")
+        return spanCount
+    }
+
+    private fun updateGridLayoutManager() {
+        val gridLayoutManager = GridLayoutManager(context, currentSpanCount)
         gridLayoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
             override fun getSpanSize(position: Int): Int {
-                return if (adapter.isLoadMorePosition(position)) HOME_GRID_SPAN_COUNT else 1
+                return if (adapter.isLoadMorePosition(position)) currentSpanCount else 1
             }
         }
         binding.recyclerView.layoutManager = gridLayoutManager
-        binding.recyclerView.adapter = adapter
-        setupSubTabs(movieSubTypes)
-        Log.d(TAG, "RecyclerView + 九宫格 Adapter 初始化完成: span=$HOME_GRID_SPAN_COUNT")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val newSpanCount = calculateSpanCount()
+        if (newSpanCount != currentSpanCount) {
+            currentSpanCount = newSpanCount
+            updateGridLayoutManager()
+            adapter.setSpanCount(currentSpanCount)
+            Log.d(TAG, "屏幕旋转，更新列数: $currentSpanCount")
+        }
     }
 
     private fun setupSubTabs(types: List<String>) {
@@ -246,7 +284,6 @@ class HomeFragment : Fragment() {
 
     companion object {
         private const val TAG = "HomeFragment"
-        private const val HOME_GRID_SPAN_COUNT = 3
     }
 
     private fun dp(value: Int): Int {

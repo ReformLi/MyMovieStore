@@ -20,6 +20,17 @@ class VideoAdapter(
 
     private var items: List<VideoItem> = emptyList()
     private var showLoadMore: Boolean = false
+    private var spanCount: Int = 3
+
+    /**
+     * 更新列数，用于动态计算封面高度。
+     * 列数越多，每个卡片越窄，封面高度按比例缩小。
+     */
+    fun setSpanCount(span: Int) {
+        if (spanCount == span) return
+        spanCount = span
+        notifyDataSetChanged()
+    }
 
     fun submitList(list: List<VideoItem>) {
         items = list
@@ -81,6 +92,10 @@ class VideoAdapter(
                 "暂无评分"
             }
 
+            // 根据列数动态调整封面高度，保持 3:4 的宽高比
+            val coverHeight = calculateCoverHeight()
+            binding.ivCover.layoutParams.height = coverHeight
+
             if (video.coverUrl.isNotEmpty()) {
                 binding.ivCover.load(video.coverUrl)
             } else {
@@ -90,6 +105,18 @@ class VideoAdapter(
             binding.root.setOnClickListener {
                 onItemClick(video)
             }
+        }
+
+        /**
+         * 根据列数计算封面高度。
+         * 基准：3列时封面 150dp，按列数反比缩放，最小 80dp，最大 200dp。
+         */
+        private fun calculateCoverHeight(): Int {
+            val density = binding.root.context.resources.displayMetrics.density
+            val baseHeightDp = 150f
+            val heightDp = (baseHeightDp * 3f / spanCount)
+                .coerceIn(80f, 200f)
+            return (heightDp * density + 0.5f).toInt()
         }
     }
 

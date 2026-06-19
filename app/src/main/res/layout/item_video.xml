@@ -15,6 +15,7 @@
         android:orientation="vertical"
         android:padding="8dp">
 
+        <!-- 封面：宽度由 GridLayoutManager 决定，高度由代码动态设置 -->
         <ImageView
             android:id="@+id/ivCover"
             android:layout_width="match_parent"
