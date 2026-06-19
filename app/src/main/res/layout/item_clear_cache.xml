@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
@@ -12,7 +13,8 @@
         android:layout_width="36dp"
         android:layout_height="36dp"
         android:padding="6dp"
-        android:src="@drawable/ic_player_search" />
+        android:src="@drawable/ic_player_search"
+        app:tint="@color/colorOnSurfaceSecondary" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -26,7 +28,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="清理搜索缓存"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="14sp" />
 
         <TextView
@@ -35,7 +37,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="删除所有搜索相关的缓存记录"
-            android:textColor="#99FFFFFF"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="12sp" />
     </LinearLayout>
 
@@ -44,6 +46,7 @@
         android:layout_width="24dp"
         android:layout_height="24dp"
         android:layout_marginStart="8dp"
-        android:src="@drawable/ic_check_circle" />
+        android:src="@drawable/ic_check_circle"
+        app:tint="@color/colorPrimary" />
 
 </LinearLayout>

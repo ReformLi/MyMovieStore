@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
@@ -93,9 +94,9 @@ class CompletedAdapter(
             // 已看完显示绿色，未观看显示灰色，其他显示蓝色
             binding.tvPlayProgress.setTextColor(
                 when {
-                    task.playProgressPercent >= 100 -> Color.parseColor("#FF4CAF50")
-                    task.playProgressPercent < 0 -> Color.parseColor("#FF8A8A8A")
-                    else -> Color.parseColor("#FF2196F3")
+                    task.playProgressPercent >= 100 -> ContextCompat.getColor(itemView.context, com.hpu.mymoviestore.R.color.colorSuccess)
+                    task.playProgressPercent < 0 -> ContextCompat.getColor(itemView.context, com.hpu.mymoviestore.R.color.colorOnSurfaceSecondary)
+                    else -> ContextCompat.getColor(itemView.context, com.hpu.mymoviestore.R.color.colorPrimary)
                 }
             )
 

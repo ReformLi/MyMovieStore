@@ -112,7 +112,7 @@ class ProfileFragment : Fragment() {
         val sourceNames = sources.map { it.sourceName }.toTypedArray()
         val checked = sources.map { it.enabled }.toBooleanArray()
 
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
             .setTitle("视频源管理")
             .setMultiChoiceItems(sourceNames, checked) { _, which, isChecked ->
                 checked[which] = isChecked
@@ -404,7 +404,7 @@ class ProfileFragment : Fragment() {
      * 帮助弹框
      */
     private fun showHelpDialog() {
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
             .setTitle("帮助")
             .setMessage(
                 "欢迎使用我的影视！\n\n" +
@@ -422,7 +422,7 @@ class ProfileFragment : Fragment() {
      * 关于弹框
      */
     private fun showAboutDialog() {
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
             .setTitle("关于")
             .setMessage(
                 "我的影视\n" +

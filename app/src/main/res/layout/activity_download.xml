@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1A2E"
+    android:background="@color/colorBackground"
     android:orientation="vertical">
 
     <!-- 顶部工具栏 -->
@@ -11,15 +11,15 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="#1A1A2E"
+        android:background="@color/colorSurface"
         android:title="下载管理"
-        android:titleTextColor="#FFFFFFFF" />
+        android:titleTextColor="@color/colorOnSurface" />
 
     <!-- 存储信息栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#16213E"
+        android:background="@color/colorSurface"
         android:orientation="horizontal"
         android:paddingHorizontal="16dp"
         android:paddingVertical="10dp">
@@ -30,7 +30,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="总占用：0 B"
-            android:textColor="#FF8A8A8A"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
 
         <TextView
@@ -38,7 +38,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="剩余：未知"
-            android:textColor="#FF8A8A8A"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
     </LinearLayout>
 
@@ -47,10 +47,10 @@
         android:id="@+id/tabLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#1A1A2E"
-        app:tabIndicatorColor="#FF6A3D"
-        app:tabSelectedTextColor="#FF6A3D"
-        app:tabTextColor="#FF8A8A8A"
+        android:background="@color/colorSurface"
+        app:tabIndicatorColor="@color/colorPrimary"
+        app:tabSelectedTextColor="@color/colorPrimary"
+        app:tabTextColor="@color/colorOnSurfaceSecondary"
         app:tabMode="fixed"
         app:tabGravity="fill" />
 

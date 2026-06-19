@@ -12,6 +12,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
@@ -322,7 +323,7 @@ class DetailActivity : AppCompatActivity() {
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setPadding(dp(14), dp(8), dp(14), dp(8))
-                setTextColor(if (index == selectedLineIndex) Color.parseColor("#FFFF6A3D") else Color.parseColor("#FF4B5563"))
+                setTextColor(if (index == selectedLineIndex) ContextCompat.getColor(this@DetailActivity, R.color.colorPrimary) else ContextCompat.getColor(this@DetailActivity, R.color.colorOnSurfaceSecondary))
                 setBackgroundResource(if (index == selectedLineIndex) R.drawable.bg_chip_selected else R.drawable.bg_episode_normal)
                 setOnClickListener {
                     selectedLineIndex = index
@@ -357,7 +358,7 @@ class DetailActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 maxLines = 1
                 setPadding(dp(6), dp(10), dp(6), dp(10))
-                setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#FF374151"))
+                setTextColor(if (isSelected) Color.WHITE else ContextCompat.getColor(this@DetailActivity, R.color.colorOnSurfaceSecondary))
                 setBackgroundResource(if (isSelected) R.drawable.bg_episode_selected else R.drawable.bg_episode_normal)
                 setOnClickListener {
                     selectedEpisode = episode
@@ -591,7 +592,7 @@ class DetailActivity : AppCompatActivity() {
 
         lateinit var dialog: AlertDialog
 
-        dialog = AlertDialog.Builder(this)
+        dialog = AlertDialog.Builder(this, R.style.RoundedDialog)
             .setTitle("选择下载集数")
             .setMultiChoiceItems(episodeTitles, checkedItems) { _, which, isChecked ->
                 // 已在下载管理中的集数不允许取消选中

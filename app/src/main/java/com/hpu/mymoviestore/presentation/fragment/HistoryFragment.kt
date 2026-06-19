@@ -10,6 +10,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
 import com.hpu.mymoviestore.databinding.FragmentHistoryBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
@@ -64,7 +65,7 @@ class HistoryFragment : Fragment() {
         // 点击「清空历史」弹出确认对话框，确认后通过 ViewModel 调用 Room 删除
         binding.tvClear.setOnClickListener {
             Log.d(TAG, "点击清空历史，弹出确认对话框")
-            AlertDialog.Builder(requireContext())
+            AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
                 .setTitle("清空历史记录")
                 .setMessage("确定要清空所有观看历史吗？")
                 .setPositiveButton("确定") { _, _ ->

@@ -110,7 +110,7 @@ class DownloadActivity : AppCompatActivity() {
                     Toast.makeText(this, "未选择任何项目", Toast.LENGTH_SHORT).show()
                     return true
                 }
-                AlertDialog.Builder(this)
+                AlertDialog.Builder(this, R.style.RoundedDialog)
                     .setTitle("批量删除")
                     .setMessage("确定要删除选中的 ${selectedIds.size} 个下载任务吗？")
                     .setPositiveButton("删除") { _, _ ->
@@ -217,7 +217,7 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun onTaskCancel(task: DownloadTaskEntity) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.RoundedDialog)
             .setTitle("删除任务")
             .setMessage("确定要删除「${task.title} - ${task.episodeTitle}」的下载任务吗？已下载的分片也会被清除。")
             .setPositiveButton("删除") { _, _ ->
@@ -258,7 +258,7 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun onTaskDelete(task: DownloadTaskEntity) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.RoundedDialog)
             .setTitle("删除任务")
             .setMessage("确定要删除「${task.title} - ${task.episodeTitle}」吗？\n下载的文件也将被删除。")
             .setPositiveButton("删除") { _, _ ->

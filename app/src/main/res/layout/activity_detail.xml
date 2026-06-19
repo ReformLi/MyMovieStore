@@ -51,7 +51,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:textColor="#DDE7ECF7"
+                    android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="14sp"
                     tools:text="类型：国产剧" />
 
@@ -60,7 +60,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:textColor="#DDE7ECF7"
+                    android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="14sp"
                     tools:text="上映时间：2026" />
 
@@ -80,7 +80,7 @@
                     android:paddingTop="5dp"
                     android:paddingEnd="12dp"
                     android:paddingBottom="5dp"
-                    android:textColor="#FFFF6A3D"
+                    android:textColor="@color/colorPrimary"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     tools:text="评分：0.0" />
@@ -135,7 +135,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:gravity="center"
-                android:textColor="#FFFF6A3D"
+                android:textColor="@color/colorPrimary"
                 android:textSize="13sp"
                 android:visibility="gone"
                 tools:ignore="HardcodedText"

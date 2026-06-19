@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- ======================== 文本样式 ======================== -->
+
+    <!-- H1 大标题 22sp -->
+    <style name="TextAppearance.MyMovieStore.H1" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- H2 中标题 18sp -->
+    <style name="TextAppearance.MyMovieStore.H2" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- H3 小标题 16sp -->
+    <style name="TextAppearance.MyMovieStore.H3" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Body 正文 14sp -->
+    <style name="TextAppearance.MyMovieStore.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/colorOnSurfaceSecondary</item>
+    </style>
+
+    <!-- Caption 辅助文字 12sp -->
+    <style name="TextAppearance.MyMovieStore.Caption" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/colorOnSurfaceSecondary</item>
+    </style>
+
+    <!-- ======================== 按钮样式 ======================== -->
+
+    <!-- 主按钮 -->
+    <style name="Widget.MyMovieStore.Button.Primary" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/colorPrimary</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">4dp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 次要按钮 -->
+    <style name="Widget.MyMovieStore.Button.Secondary" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeColor">@color/colorBorder</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="cornerRadius">4dp</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- 文本按钮 -->
+    <style name="Widget.MyMovieStore.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/colorPrimary</item>
+    </style>
+
+    <!-- ======================== Toolbar 样式 ======================== -->
+    <style name="Widget.MyMovieStore.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@color/colorSurface</item>
+        <item name="titleTextColor">@color/colorOnSurface</item>
+        <item name="navigationIconTint">@color/colorOnSurface</item>
+    </style>
+
+    <!-- ======================== 卡片样式 ======================== -->
+    <style name="Widget.MyMovieStore.CardView" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">@color/colorSurface</item>
+        <item name="cardCornerRadius">8dp</item>
+        <item name="cardElevation">2dp</item>
+    </style>
+</resources>

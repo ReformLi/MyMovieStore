@@ -11,7 +11,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
         android:text="清理缓存"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/colorOnSurface"
         android:textSize="18sp"
         android:textStyle="bold" />
 
@@ -21,7 +21,7 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="4dp"
         android:text="选择要清理的缓存内容"
-        android:textColor="#99FFFFFF"
+        android:textColor="@color/colorOnSurfaceSecondary"
         android:textSize="13sp" />
 
     <TextView
@@ -31,7 +31,7 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="8dp"
         android:text="缓存大小：计算中..."
-        android:textColor="#FF2196F3"
+        android:textColor="@color/colorPrimary"
         android:textSize="14sp"
         android:textStyle="bold" />
 
@@ -57,7 +57,7 @@
             android:background="@drawable/bg_dialog_button_secondary"
             android:gravity="center"
             android:text="取消"
-            android:textColor="#CCFFFFFF"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="15sp" />
 
         <TextView
@@ -69,7 +69,7 @@
             android:background="@drawable/bg_dialog_button_primary"
             android:gravity="center"
             android:text="清理"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="15sp"
             android:textStyle="bold" />
     </LinearLayout>

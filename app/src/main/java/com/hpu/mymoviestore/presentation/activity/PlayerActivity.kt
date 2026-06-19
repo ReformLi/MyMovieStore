@@ -21,6 +21,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
 import androidx.media3.common.MediaItem
@@ -611,7 +612,7 @@ class PlayerActivity : AppCompatActivity() {
             override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val v = super.getDropDownView(position, convertView, parent) as TextView
                 v.setTextColor(Color.WHITE)
-                v.setBackgroundColor(Color.parseColor("#CC222222"))
+                v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
                 v.setPadding(24, 20, 24, 20)
                 v.textSize = 13f
                 return v
@@ -880,7 +881,7 @@ class PlayerActivity : AppCompatActivity() {
                     val v = super.getDropDownView(position, convertView, parent) as TextView
                     v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
                     v.setTextColor(Color.WHITE)
-                    v.setBackgroundColor(Color.parseColor("#CC222222"))
+                    v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
                     v.setPadding(24, 20, 24, 20)
                     v.textSize = 13f
                     return v

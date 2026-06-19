@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ======================== 间距（8dp 网格） ======================== -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">12dp</dimen>
+    <dimen name="spacing_lg">16dp</dimen>
+    <dimen name="spacing_xl">24dp</dimen>
+    <dimen name="spacing_xxl">32dp</dimen>
+
+    <!-- ======================== 圆角 ======================== -->
+    <dimen name="radius_small">4dp</dimen>
+    <dimen name="radius_medium">8dp</dimen>
+    <dimen name="radius_large">12dp</dimen>
+
+    <!-- ======================== 组件高度 ======================== -->
+    <dimen name="height_button">44dp</dimen>
+    <dimen name="height_toolbar">56dp</dimen>
+    <dimen name="height_progress_bar">4dp</dimen>
+
+    <!-- ======================== 通用边距 ======================== -->
+    <dimen name="page_margin">16dp</dimen>
+    <dimen name="card_padding">12dp</dimen>
+</resources>

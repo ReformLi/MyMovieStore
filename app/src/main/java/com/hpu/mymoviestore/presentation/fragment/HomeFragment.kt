@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.GridLayoutManager
@@ -164,9 +165,9 @@ class HomeFragment : Fragment() {
             val selected = chip.text.toString() == currentSubType
             chip.setTextColor(
                 if (selected) {
-                    android.graphics.Color.parseColor("#FFFF6A3D")
+                    ContextCompat.getColor(requireContext(), com.hpu.mymoviestore.R.color.colorPrimary)
                 } else {
-                    android.graphics.Color.parseColor("#FF4B5563")
+                    ContextCompat.getColor(requireContext(), com.hpu.mymoviestore.R.color.colorOnSurfaceSecondary)
                 }
             )
             chip.setBackgroundResource(

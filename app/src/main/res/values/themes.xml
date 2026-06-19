@@ -1,15 +1,45 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Base.Theme.MyMovieStore" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="colorAccent">@color/accent</item>
-        <item name="android:windowBackground">@color/background</item>
+
+    <!-- 全局深色主题 -->
+    <style name="Base.Theme.MyMovieStore" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- 主色 -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryVariant">@color/colorPrimaryDark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/colorAccent</item>
+        <item name="colorOnSecondary">@color/white</item>
+
+        <!-- 背景与表面 -->
+        <item name="android:windowBackground">@color/colorBackground</item>
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="colorOnSurface">@color/colorOnSurface</item>
+
+        <!-- 文字 -->
+        <item name="android:textColorPrimary">@color/colorOnSurface</item>
+        <item name="android:textColorSecondary">@color/colorOnSurfaceSecondary</item>
+
+        <!-- 错误色 -->
+        <item name="colorError">@color/colorError</item>
+        <item name="colorOnError">@color/white</item>
+
+        <!-- 状态栏与导航栏 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/colorSurface</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <!-- 底部导航栏 -->
+        <item name="colorControlHighlight">@color/colorSurfaceHighlight</item>
     </style>
 
     <style name="Theme.MyMovieStore" parent="Base.Theme.MyMovieStore" />
 
-    <!-- 清理缓存弹框样式 -->
-    <style name="ClearCacheDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
+    <!-- 统一圆角弹框样式（12dp 圆角，深色表面背景） -->
+    <style name="RoundedDialog" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
+    </style>
+
+    <!-- 清理缓存弹框（自定义布局版，窗口背景透明由内部布局处理圆角） -->
+    <style name="ClearCacheDialog" parent="RoundedDialog">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowMinWidthMajor">75%</item>
         <item name="android:windowMinWidthMinor">75%</item>

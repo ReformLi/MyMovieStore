@@ -8,9 +8,9 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
+        android:background="@color/colorSurface"
         android:title="历史记录"
-        android:titleTextColor="@android:color/white" />
+        android:titleTextColor="@color/colorOnSurface" />
 
     <FrameLayout
         android:id="@+id/container"

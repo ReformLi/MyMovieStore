@@ -1,20 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- ======================== 基础色 ======================== -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="primary">#FF6200EE</color>
-    <color name="primary_dark">#FF3700B3</color>
-    <color name="accent">#FF03DAC5</color>
-    <color name="text_primary">#DE000000</color>
-    <color name="text_secondary">#8A000000</color>
-    <color name="divider">#1F000000</color>
-    <color name="background">#FFF5F5F5</color>
-    <color name="surface_background">#FFFFFFFF</color>
-    <color name="colorPrimary">#FF6200EE</color>
-    <color name="colorPrimaryDark">#FF3700B3</color>
-    <color name="colorAccent">#FF03DAC5</color>
-    <color name="toolbar_bg">#FF6200EE</color>
-    <color name="placeholder">#FFE0E0E0</color>
-    <color name="chip_background">#FFF0F0F0</color>
-    <color name="error_overlay">#66000000</color>
+
+    <!-- ======================== 主色与背景 ======================== -->
+    <!-- 主色调 -->
+    <color name="colorPrimary">#FF6B35</color>
+    <color name="colorPrimaryDark">#E55A20</color>
+    <color name="colorAccent">#FF6B35</color>
+    <!-- 兼容旧引用 -->
+    <color name="primary">#FF6B35</color>
+    <color name="primary_dark">#E55A20</color>
+    <color name="accent">#FF6B35</color>
+    <color name="toolbar_bg">#1A1A1A</color>
+
+    <!-- 背景层级 -->
+    <color name="colorBackground">#0D0D0D</color>
+    <color name="colorSurface">#1A1A1A</color>
+    <color name="colorSurfaceHighlight">#2A2A2A</color>
+    <!-- 兼容旧引用 -->
+    <color name="background">#0D0D0D</color>
+    <color name="surface_background">#1A1A1A</color>
+
+    <!-- ======================== 文字颜色 ======================== -->
+    <color name="colorOnSurface">#FFFFFF</color>
+    <color name="colorOnSurfaceSecondary">#B3B3B3</color>
+    <color name="colorOnSurfaceDisabled">#666666</color>
+    <color name="colorLink">#FFB340</color>
+    <!-- 兼容旧引用 -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3B3B3</color>
+
+    <!-- ======================== 分割线与边框 ======================== -->
+    <color name="colorDivider">#333333</color>
+    <color name="colorBorder">#444444</color>
+    <!-- 兼容旧引用 -->
+    <color name="divider">#333333</color>
+
+    <!-- ======================== 交互与状态 ======================== -->
+    <color name="colorSuccess">#4CAF50</color>
+    <color name="colorWarning">#FFA726</color>
+    <color name="colorError">#EF5350</color>
+
+    <!-- ======================== 遮罩与阴影 ======================== -->
+    <color name="colorOverlay">#80000000</color>
+    <color name="colorShadow">#40000000</color>
+    <color name="colorButtonShadow">#60000000</color>
+    <!-- 兼容旧引用 -->
+    <color name="error_overlay">#80000000</color>
+
+    <!-- ======================== 辅助色 ======================== -->
+    <color name="placeholder">#333333</color>
+    <color name="chip_background">#2A2A2A</color>
+    <color name="chip_background_selected">#33FF6B35</color>
+
+    <!-- ======================== 播放器专用 ======================== -->
+    <color name="player_background">#000000</color>
+    <color name="player_overlay">#CC000000</color>
+    <color name="player_round_button">#66000000</color>
+    <color name="player_gesture_tip">#CC000000</color>
 </resources>
