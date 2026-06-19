@@ -32,8 +32,12 @@ import com.hpu.mymoviestore.data.entity.DownloadedVideoIndexEntity
  * - v6: play_history 扩展 sourceName，标识视频来源
  * - v7: ① 新增 download_task（下载任务管理，支持分片下载进度与弹幕独立状态）
  *       ② 新增 downloaded_video_index（已下载视频索引，快速判断是否已下载）
+ * - v8: download_task 扩展 playProgressPercent / playPositionMs / playDurationMs（离线播放进度）
  *
- * 配合 fallbackToDestructiveMigration 使用：升级时重建数据库，避免 schema hash 校验失败。
+ * Migration 策略：
+ * - 已有 MIGRATION_5_6、MIGRATION_6_7、MIGRATION_7_8 覆盖增量升级路径
+ * - 不使用 fallbackToDestructiveMigration()，避免正式版意外清空用户数据
+ * - 后续版本升级时必须添加对应的 Migration
  */
 @Database(
     entities = [
@@ -125,7 +129,6 @@ abstract class MovieDatabase : RoomDatabase() {
                     "movie_database"
                 )
                     .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
