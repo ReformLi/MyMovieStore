@@ -9,6 +9,7 @@ import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.repository.DownloadRepository
 import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
+import com.hpu.mymoviestore.data.repository.SearchPermissionRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
@@ -57,6 +58,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
     lateinit var downloadRepository: DownloadRepository
         private set
 
+    lateinit var searchPermissionRepository: SearchPermissionRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -71,7 +75,8 @@ class MovieApplication : Application(), ImageLoaderFactory {
         searchHistoryRepository = SearchHistoryRepository(database.searchHistoryDao())
         apiCacheRepository = ApiCacheRepository(database.apiCacheDao())
         downloadRepository = DownloadRepository(database.downloadTaskDao(), database.downloadedVideoIndexDao())
-        Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download)")
+        searchPermissionRepository = SearchPermissionRepository(this, apiCacheRepository)
+        Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download/SearchPermission)")
 
         // 视频源：assets JSON 挡板 + Room 缓存(TTL=1 天)
         val sourceManager = VideoSourceManager(this, apiCacheRepository)
@@ -125,6 +130,16 @@ class MovieApplication : Application(), ImageLoaderFactory {
                 Log.d(TAG, "已将所有活跃任务重置为暂停状态（应用重启）")
             } catch (e: Exception) {
                 Log.w(TAG, "重置活跃任务状态失败: ${e.message}")
+            }
+        }
+
+        // 应用启动时异步触发搜索权限检查（后台静默执行，不阻塞）
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                searchPermissionRepository.fetchPermissionAsync()
+                Log.d(TAG, "应用启动时搜索权限后台检查已触发")
+            } catch (e: Exception) {
+                Log.w(TAG, "搜索权限后台检查触发失败: ${e.message}")
             }
         }
     }

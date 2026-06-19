@@ -19,6 +19,7 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.entity.SearchHistoryEntity
 import com.hpu.mymoviestore.data.model.VideoItem
@@ -27,6 +28,10 @@ import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.adapter.SearchResultAdapter
 import com.hpu.mymoviestore.presentation.viewmodel.SearchHistoryViewModel
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 搜索页 Fragment
@@ -36,11 +41,11 @@ import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
  *   - 搜索历史：SearchHistoryRepository（Room，持久化）
  *
  * 流程：
- * 1. 首次进入 → 展示搜索历史（若有）+ 全量视频列表（便于浏览）
- * 2. 输入关键字（自动过滤）→ 搜索标题/演员/导演/简介
- * 3. 点击历史关键词 → 填入搜索框 + 立即搜索 + 更新历史（刷新搜索次数 & 时间）
- * 4. 点击"清空历史" → 删除全部历史
- * 5. 点击视频列表项 → DetailActivity（携带完整 VideoItem 信息）
+ * 1. 首次进入 -> 展示搜索历史（若有）+ 全量视频列表（便于浏览）
+ * 2. 输入关键字（自动过滤）-> 搜索标题/演员/导演/简介
+ * 3. 点击历史关键词 -> 填入搜索框 + 立即搜索 + 更新历史（刷新搜索次数 & 时间）
+ * 4. 点击"清空历史" -> 删除全部历史
+ * 5. 点击视频列表项 -> DetailActivity（携带完整 VideoItem 信息）
  */
 class SearchFragment : Fragment() {
 
@@ -104,7 +109,7 @@ class SearchFragment : Fragment() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // 输入法的"搜索"按钮：提交搜索 → 写入搜索历史
+        // 输入法的"搜索"按钮：提交搜索 -> 写入搜索历史
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             val keyword = binding.etSearch.text?.toString()?.trim() ?: ""
             if (actionId == EditorInfo.IME_ACTION_SEARCH && keyword.isNotEmpty()) {
@@ -143,8 +148,8 @@ class SearchFragment : Fragment() {
 
     /**
      * 观察：
-     *  - 视频搜索结果：allVideos / searchVideos → 渲染列表
-     *  - 搜索历史：searchHistory → 动态生成 Chip 并展示
+     *  - 视频搜索结果：allVideos / searchVideos -> 渲染列表
+     *  - 搜索历史：searchHistory -> 动态生成 Chip 并展示
      */
     private fun observeData() {
         viewModel.searchPageResult.observe(viewLifecycleOwner) { result ->
@@ -155,7 +160,7 @@ class SearchFragment : Fragment() {
             hasNextPage = result.hasNext
             renderList(result.items)
             renderPagination(result.page, result.totalPages, result.hasPrev, result.hasNext)
-            binding.tvSearchSummary.text = "“${result.keyword}”搜索结果：第 ${result.page} 页，共 ${result.items.size} 条"
+            binding.tvSearchSummary.text = "${result.keyword}搜索结果：第 ${result.page} 页，共 ${result.items.size} 条"
             binding.tvSearchSummary.visibility = View.VISIBLE
         }
 
@@ -182,7 +187,7 @@ class SearchFragment : Fragment() {
         }
     }
 
-    /** 视频列表为空 → 显示空状态；否则显示列表 */
+    /** 视频列表为空 -> 显示空状态；否则显示列表 */
     private fun renderList(list: List<VideoItem>) {
         if (list.isEmpty()) {
             binding.recyclerView.visibility = View.GONE
@@ -215,9 +220,29 @@ class SearchFragment : Fragment() {
         if (cleanKeyword.isBlank()) return
         currentKeyword = cleanKeyword
         currentPage = page.coerceAtLeast(1)
+
+        // 检查搜索权限（非阻塞快速检查）
+        val hasPermission = MovieApplication.get().searchPermissionRepository.checkPermissionFast()
+        if (!hasPermission) {
+            Log.w(TAG, "搜索权限检查未通过，禁止搜索")
+            binding.tvSearchSummary.visibility = View.GONE
+            binding.tvEmpty.text = "搜索功能暂不可用"
+            binding.tvEmpty.visibility = View.VISIBLE
+            binding.recyclerView.visibility = View.GONE
+            binding.layoutPagination.visibility = View.GONE
+            Toast.makeText(requireContext(), "搜索功能暂不可用", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 如果无缓存（首次），后台异步触发权限检查，下次搜索时生效
+        CoroutineScope(Dispatchers.IO).launch {
+            MovieApplication.get().searchPermissionRepository.fetchPermissionAsync()
+        }
+
+        // 权限通过，继续搜索
         historyViewModel.addKeyword(cleanKeyword)
         binding.layoutSearchHistory.visibility = View.GONE
-        binding.tvSearchSummary.text = "正在搜索“$cleanKeyword”..."
+        binding.tvSearchSummary.text = "正在搜索\"$cleanKeyword\"..."
         binding.tvSearchSummary.visibility = View.VISIBLE
         // 隐藏输入法键盘
         hideKeyboard()
@@ -282,7 +307,7 @@ class SearchFragment : Fragment() {
         container.removeAllViews()
 
         if (list.isEmpty()) {
-            // 没有历史 → 整个 layoutSearchHistory 隐藏
+            // 没有历史 -> 整个 layoutSearchHistory 隐藏
             binding.layoutSearchHistory.visibility = View.GONE
             return
         }
@@ -353,7 +378,7 @@ class SearchFragment : Fragment() {
         }
     }
 
-    /** 点击列表项 → DetailActivity（携带完整信息） */
+    /** 点击列表项 -> DetailActivity（携带完整信息） */
     private fun openDetail(video: VideoItem) {
         val intent = Intent(requireContext(), DetailActivity::class.java).apply {
             putExtra(DetailActivity.EXTRA_VIDEO_ID, video.id)
