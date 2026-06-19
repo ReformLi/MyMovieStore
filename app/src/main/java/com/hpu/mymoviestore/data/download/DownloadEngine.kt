@@ -68,7 +68,9 @@ data class DownloadTask(
     /** 每个分片是否已完成 */
     val segmentCompleted: ConcurrentHashMap<Int, Boolean> = ConcurrentHashMap(),
     /** 该任务的协程 Job */
-    var job: Job? = null
+    var job: Job? = null,
+    /** 当前活跃的 OkHttp Call（用于暂停/取消时中断网络请求） */
+    val activeCalls: ConcurrentHashMap<Int, okhttp3.Call> = ConcurrentHashMap()
 )
 
 /**
@@ -93,7 +95,7 @@ class DownloadEngine(context: Context) {
         private const val TAG = "DownloadEngine"
 
         /** 最大并发任务数 */
-        private const val MAX_CONCURRENT_TASKS = 3
+        private const val MAX_CONCURRENT_TASKS = 1
 
         /** 每个任务最大并发分片数（降低并发以保护 CDN） */
         private const val MAX_CONCURRENT_SEGMENTS = 3
@@ -203,6 +205,15 @@ class DownloadEngine(context: Context) {
         }
         task.isPaused.set(true)
         task.status = DownloadStatus.PAUSED
+        // 取消所有活跃的 OkHttp Call，立即中断网络 I/O
+        task.activeCalls.values.forEach { call ->
+            try { call.cancel() } catch (_: Exception) {}
+        }
+        task.activeCalls.clear()
+        // 释放信号量，让等待中的任务可以开始
+        try {
+            taskSemaphore.release()
+        } catch (_: Exception) {}
         task.callback?.onStatusChanged(taskId, DownloadStatus.PAUSED, null)
         Log.d(TAG, "任务已暂停: taskId=$taskId")
     }
@@ -225,7 +236,20 @@ class DownloadEngine(context: Context) {
         Log.d(TAG, "任务恢复: taskId=$taskId")
 
         task.job = scope.launch {
-            executeTask(task)
+            // 恢复时重新获取信号量
+            taskSemaphore.acquire()
+            try {
+                executeTaskBody(task)
+            } catch (e: CancellationException) {
+                Log.d(TAG, "任务被取消: taskId=${task.taskId}")
+            } catch (e: Exception) {
+                Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
+                updateStatus(task, DownloadStatus.FAILED, e.message)
+            } finally {
+                if (!task.isPaused.get() && !task.isCancelled.get()) {
+                    taskSemaphore.release()
+                }
+            }
         }
     }
 
@@ -241,6 +265,15 @@ class DownloadEngine(context: Context) {
         task.isPaused.set(false)
         task.job?.cancel()
         task.status = DownloadStatus.CANCELLED
+        // 取消所有活跃的 OkHttp Call
+        task.activeCalls.values.forEach { call ->
+            try { call.cancel() } catch (_: Exception) {}
+        }
+        task.activeCalls.clear()
+        // 释放信号量（如果任务正在执行中）
+        try {
+            taskSemaphore.release()
+        } catch (_: Exception) {}
         task.callback?.onStatusChanged(taskId, DownloadStatus.CANCELLED, null)
         cleanupTempFiles(taskId)
         tasks.remove(taskId)
@@ -260,75 +293,91 @@ class DownloadEngine(context: Context) {
     // ======================== 任务执行 ========================
 
     /**
-     * 执行下载任务的主流程。
+     * 执行下载任务的主流程（获取信号量后调用）。
      */
     private suspend fun executeTask(task: DownloadTask) {
-        // 获取信号量许可（排队等待）
-        taskSemaphore.withPermit {
-            try {
-                // 检查暂停/取消状态
-                if (checkInterrupted(task)) return@withPermit
-
-                // 更新状态为下载中
-                updateStatus(task, DownloadStatus.DOWNLOADING)
-
-                // 1. 解析 m3u8
-                if (task.segmentUrls.isEmpty()) {
-                    Log.d(TAG, "开始解析 m3u8: ${task.m3u8Url}")
-                    val segments = m3u8Parser.parse(task.m3u8Url)
-                    if (segments.isNullOrEmpty()) {
-                        updateStatus(task, DownloadStatus.FAILED, "m3u8 解析失败，未找到有效分片")
-                        return@withPermit
-                    }
-                    task.segmentUrls = segments
-                    Log.d(TAG, "m3u8 解析完成，共 ${segments.size} 个分片")
-                }
-
-                // 2. 检查存储空间
-                if (!checkStorageSpace(task)) {
-                    updateStatus(task, DownloadStatus.FAILED, "存储空间不足")
-                    return@withPermit
-                }
-
-                // 3. 创建任务临时目录
-                val taskTempDir = File(tempDir, task.taskId)
-                taskTempDir.mkdirs()
-
-                // 4. 并发下载所有分片
-                downloadSegments(task, taskTempDir)
-
-                // 5. 检查是否全部完成
-                if (task.isCancelled.get() || task.isPaused.get()) return@withPermit
-
-                if (task.downloadedCount.get() < task.segmentUrls.size) {
-                    updateStatus(task, DownloadStatus.FAILED, "部分分片下载失败")
-                    return@withPermit
-                }
-
-                // 6. 合并分片
-                updateStatus(task, DownloadStatus.MERGING)
-                val outputFile = mergeSegments(task, taskTempDir)
-
-                // 7. 完成
-                val fileSize = outputFile.length()
-                task.status = DownloadStatus.COMPLETED
-                task.callback?.onCompleted(task.taskId, outputFile.absolutePath, fileSize)
-                Log.d(TAG, "下载完成: taskId=${task.taskId}, file=${outputFile.absolutePath}, size=$fileSize")
-
-                // 8. 清理临时文件
-                cleanupTempFiles(task.taskId)
-                tasks.remove(task.taskId)
-
-            } catch (e: CancellationException) {
-                Log.d(TAG, "任务被取消: taskId=${task.taskId}")
-                if (!task.isCancelled.get()) {
-                    task.status = DownloadStatus.CANCELLED
-                    task.callback?.onStatusChanged(task.taskId, DownloadStatus.CANCELLED, null)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
-                updateStatus(task, DownloadStatus.FAILED, e.message)
+        taskSemaphore.acquire()
+        try {
+            executeTaskBody(task)
+        } catch (e: CancellationException) {
+            Log.d(TAG, "任务被取消: taskId=${task.taskId}")
+        } catch (e: Exception) {
+            Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
+            updateStatus(task, DownloadStatus.FAILED, e.message)
+        } finally {
+            if (!task.isPaused.get() && !task.isCancelled.get()) {
+                taskSemaphore.release()
             }
+        }
+    }
+
+    /**
+     * 下载任务主体逻辑（不含信号量管理）。
+     */
+    private suspend fun executeTaskBody(task: DownloadTask) {
+        // 检查暂停/取消状态
+        if (checkInterrupted(task)) return
+
+        // 更新状态为下载中
+        updateStatus(task, DownloadStatus.DOWNLOADING)
+
+        try {
+            // 1. 解析 m3u8
+            if (task.segmentUrls.isEmpty()) {
+                Log.d(TAG, "开始解析 m3u8: ${task.m3u8Url}")
+                val segments = m3u8Parser.parse(task.m3u8Url)
+                if (segments.isNullOrEmpty()) {
+                    updateStatus(task, DownloadStatus.FAILED, "m3u8 解析失败，未找到有效分片")
+                    return
+                }
+                task.segmentUrls = segments
+                Log.d(TAG, "m3u8 解析完成，共 ${segments.size} 个分片")
+            }
+
+            // 2. 检查存储空间
+            if (!checkStorageSpace(task)) {
+                updateStatus(task, DownloadStatus.FAILED, "存储空间不足")
+                return
+            }
+
+            // 3. 创建任务临时目录
+            val taskTempDir = File(tempDir, task.taskId)
+            taskTempDir.mkdirs()
+
+            // 4. 并发下载所有分片
+            downloadSegments(task, taskTempDir)
+
+            // 5. 检查是否全部完成
+            if (task.isCancelled.get() || task.isPaused.get()) return
+
+            if (task.downloadedCount.get() < task.segmentUrls.size) {
+                updateStatus(task, DownloadStatus.FAILED, "部分分片下载失败")
+                return
+            }
+
+            // 6. 合并分片
+            updateStatus(task, DownloadStatus.MERGING)
+            val outputFile = mergeSegments(task, taskTempDir)
+
+            // 7. 完成
+            val fileSize = outputFile.length()
+            task.status = DownloadStatus.COMPLETED
+            task.callback?.onCompleted(task.taskId, outputFile.absolutePath, fileSize)
+            Log.d(TAG, "下载完成: taskId=${task.taskId}, file=${outputFile.absolutePath}, size=$fileSize")
+
+            // 8. 清理临时文件
+            cleanupTempFiles(task.taskId)
+            tasks.remove(task.taskId)
+
+        } catch (e: CancellationException) {
+            Log.d(TAG, "任务被取消: taskId=${task.taskId}")
+            if (!task.isCancelled.get()) {
+                task.status = DownloadStatus.CANCELLED
+                task.callback?.onStatusChanged(task.taskId, DownloadStatus.CANCELLED, null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
+            updateStatus(task, DownloadStatus.FAILED, e.message)
         }
     }
 
@@ -405,7 +454,12 @@ class DownloadEngine(context: Context) {
                 return
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: IOException) {
+                // OkHttp Call 被 cancel() 后会抛 IOException("Canceled")，不重试
+                if (task.isPaused.get() || task.isCancelled.get()) {
+                    Log.d(TAG, "分片 $index 下载被中断（暂停/取消）")
+                    return
+                }
                 lastRetry = retry
                 Log.w(TAG, "分片下载失败 (index=$index, retry=$retry/${MAX_SEGMENT_RETRIES}): ${e.message}")
 
@@ -445,7 +499,10 @@ class DownloadEngine(context: Context) {
             }
 
             val request = requestBuilder.build()
-            val response = okHttpClient.newCall(request).execute()
+            val call = okHttpClient.newCall(request)
+            task.activeCalls[index] = call
+            val response = call.execute()
+            task.activeCalls.remove(index)
 
             try {
                 if (!response.isSuccessful && response.code != 206) {

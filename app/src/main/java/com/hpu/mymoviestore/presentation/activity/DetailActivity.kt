@@ -33,8 +33,11 @@ import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * 视频详情页 Activity
@@ -560,29 +563,72 @@ class DetailActivity : AppCompatActivity() {
      * 显示剧集选择对话框（多选模式）
      *
      * - 默认选中当前播放的集数
+     * - 已在下载管理中的集数默认选中且置灰（不可取消）
      * - 确认后调用 startDownloadForEpisodes 创建下载任务
      */
     private fun showEpisodeSelectDialog(episodes: List<PlayEpisode>) {
-        val episodeTitles = episodes.map { it.title }.toTypedArray()
+        // 查询该视频已有的下载任务
+        val existingTasks = runBlocking {
+            try {
+                MovieApplication.get().downloadRepository.getTasksByVideoId(videoId)
+            } catch (e: Exception) {
+                Log.w(TAG, "查询已有下载任务失败: ${e.message}")
+                emptyList()
+            }
+        }
+        // 用 playPageUrl 匹配已有任务（避免索引不一致问题）
+        val existingUrls = existingTasks.map { it.playUrl }.toSet()
+
+        val episodeTitles = episodes.map { episode ->
+            val suffix = if (episode.playPageUrl in existingUrls) "（已添加）" else ""
+            "${episode.title}$suffix"
+        }.toTypedArray()
+
         val checkedItems = BooleanArray(episodes.size) { index ->
             episodes[index].playPageUrl == selectedEpisode?.playPageUrl
+                    || episodes[index].playPageUrl in existingUrls
         }
 
-        AlertDialog.Builder(this)
+        lateinit var dialog: AlertDialog
+
+        dialog = AlertDialog.Builder(this)
             .setTitle("选择下载集数")
             .setMultiChoiceItems(episodeTitles, checkedItems) { _, which, isChecked ->
-                checkedItems[which] = isChecked
+                // 已在下载管理中的集数不允许取消选中
+                if (episodes[which].playPageUrl in existingUrls) {
+                    checkedItems[which] = true
+                    dialog.listView.setItemChecked(which, true)
+                } else {
+                    checkedItems[which] = isChecked
+                }
             }
             .setPositiveButton("确定") { _, _ ->
-                val selectedEpisodes = episodes.filterIndexed { index, _ -> checkedItems[index] }
+                // 只取非已有任务的集数
+                val selectedEpisodes = episodes.filterIndexed { index, _ ->
+                    checkedItems[index] && episodes[index].playPageUrl !in existingUrls
+                }
                 if (selectedEpisodes.isEmpty()) {
-                    Toast.makeText(this, "请至少选择一集", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "没有新集需要下载", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 startDownloadForEpisodes(selectedEpisodes)
             }
             .setNegativeButton("取消", null)
-            .show()
+            .create()
+
+        dialog.show()
+
+        // 初始化时置灰已有任务的选项
+        dialog.listView.post {
+            episodes.forEachIndexed { index, episode ->
+                if (episode.playPageUrl in existingUrls) {
+                    dialog.listView.setItemChecked(index, true)
+                    val view = dialog.listView.getChildAt(index)
+                    view?.isEnabled = false
+                    view?.alpha = 0.5f
+                }
+            }
+        }
     }
 
     /**
@@ -617,30 +663,39 @@ class DetailActivity : AppCompatActivity() {
         val downloadEngine = DownloadEngine.getInstance(this)
         val danmakuManager = DanmakuDownloadManager.getInstance(this)
 
-        // 使用全局 CoroutineScope，确保离开详情页后仍能更新数据库
-        val dbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // 使用全局 CoroutineScope，确保离开详情页后仍能继续解析和下载
+        val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        // 使用单个协程顺序处理，剧集间添加 3~5 秒延迟以保护源站 Web 服务器
-        lifecycleScope.launch {
-            episodes.forEachIndexed { index, episode ->
-                // 从第二集开始，每集之间延迟 3~5 秒（模拟人工操作）
-                if (index > 0) {
-                    val delayMs = (3000L..5000L).random()
-                    Log.d(TAG, "下载：等待 ${delayMs}ms 后解析下一集（${index + 1}/${episodes.size}）")
-                    delay(delayMs)
+        downloadScope.launch {
+            // 第一步：并行解析所有集的 m3u8 地址（每集之间仍保持 3~5 秒间隔以保护源站）
+            val m3u8Results = coroutineScope {
+                episodes.mapIndexed { index, episode ->
+                    async(Dispatchers.IO) {
+                        // 从第二集开始，每集之间延迟 3~5 秒（模拟人工操作）
+                        if (index > 0) {
+                            val delayMs = (3000L..5000L).random()
+                            Log.d(TAG, "下载：等待 ${delayMs}ms 后解析下一集（${index + 1}/${episodes.size}）")
+                            delay(delayMs)
+                        }
+                        val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
+                        episode to result.getOrNull()
+                    }
                 }
-                // 解析真实播放地址
-                val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
-                val m3u8Url = result.getOrNull()
+            }
+
+            // 第二步：按顺序收集结果并提交到 DownloadEngine
+            m3u8Results.forEach { deferred ->
+                val (episode, m3u8Url) = deferred.await()
 
                 if (m3u8Url.isNullOrBlank()) {
-                    val errorMsg = result.exceptionOrNull()
-                    Log.w(TAG, "下载：解析播放地址失败, episode=${episode.title}, error=${errorMsg?.message}")
-                    return@launch
+                    Log.w(TAG, "下载：解析播放地址失败, episode=${episode.title}")
+                    return@forEach
                 }
 
                 // 使用数据库生成的 taskId（与 DownloadViewModel.createTasks 一致）
-                val dbTaskId = "${videoId}_$index"
+                // 使用 playPageUrl 的 hashCode 作为稳定的 episodeIndex
+                val stableIndex = episode.playPageUrl.hashCode()
+                val dbTaskId = "${videoId}_$stableIndex"
 
                 // 提交到下载引擎
                 val taskId = downloadEngine.submitTask(
@@ -650,7 +705,7 @@ class DetailActivity : AppCompatActivity() {
                     taskId = dbTaskId,
                     callback = object : DownloadCallback {
                         override fun onProgress(taskId: String, downloadedSegments: Int, totalSegments: Int, fileSize: Long) {
-                            dbScope.launch {
+                            downloadScope.launch {
                                 try {
                                     app.downloadRepository.updateProgress(
                                         taskId, downloadedSegments, totalSegments, fileSize
@@ -663,7 +718,7 @@ class DetailActivity : AppCompatActivity() {
 
                         override fun onStatusChanged(taskId: String, status: Int, errorMsg: String?) {
                             Log.d(TAG, "下载状态变更: taskId=$taskId, status=$status, error=$errorMsg")
-                            dbScope.launch {
+                            downloadScope.launch {
                                 try {
                                     when (status) {
                                         DownloadStatus.DOWNLOADING -> app.downloadRepository.markDownloading(taskId)
@@ -679,7 +734,7 @@ class DetailActivity : AppCompatActivity() {
 
                         override fun onCompleted(taskId: String, localFilePath: String, fileSize: Long) {
                             Log.d(TAG, "下载完成: taskId=$taskId, path=$localFilePath, size=$fileSize")
-                            dbScope.launch {
+                            downloadScope.launch {
                                 try {
                                     app.downloadRepository.markCompleted(taskId, localFilePath, fileSize)
                                 } catch (e: Exception) {

@@ -6,6 +6,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.data.download.DownloadEngine
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ class DownloadViewModel : ViewModel() {
     }
 
     private val repository = MovieApplication.get().downloadRepository
+    private val app = MovieApplication.get()
 
     // ======================== LiveData ========================
 
@@ -71,19 +73,22 @@ class DownloadViewModel : ViewModel() {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val saveDir = getSaveDir()
-            episodes.forEachIndexed { index, episode ->
+            episodes.forEach { episode ->
+                // 使用 playPageUrl 的 hashCode 作为稳定的 episodeIndex，
+                // 避免过滤后的子列表索引与原始索引不一致导致 taskId 冲突
+                val stableIndex = episode.playPageUrl.hashCode()
                 try {
                     repository.createTask(
                         videoId = videoId,
                         title = title,
                         coverUrl = coverUrl,
                         sourceName = sourceName,
-                        episodeIndex = index,
+                        episodeIndex = stableIndex,
                         episodeTitle = episode.title,
                         playUrl = episode.playPageUrl
                     )
                 } catch (t: Throwable) {
-                    Log.w(TAG, "创建下载任务失败: index=$index, error=${t.message}")
+                    Log.w(TAG, "创建下载任务失败: episode=${episode.title}, error=${t.message}")
                 }
             }
             Log.d(TAG, "批量创建下载任务完成: videoId=$videoId, count=${episodes.size}")
@@ -95,6 +100,8 @@ class DownloadViewModel : ViewModel() {
 
     /** 暂停任务 */
     fun pauseTask(taskId: String) {
+        // 同时中断 DownloadEngine 中的实际下载
+        DownloadEngine.getInstance(app).pauseTask(taskId)
         viewModelScope.launch(Dispatchers.IO) {
             repository.pauseTask(taskId)
         }
@@ -105,12 +112,17 @@ class DownloadViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.resumeTask(taskId)
         }
+        // 恢复后重新提交到 DownloadEngine
+        DownloadEngine.getInstance(app).resumeTask(taskId)
     }
 
-    /** 取消任务 */
+    /** 取消任务（中断下载并删除任务） */
     fun cancelTask(taskId: String) {
+        // 同时中断 DownloadEngine 中的实际下载
+        DownloadEngine.getInstance(app).cancelTask(taskId)
         viewModelScope.launch(Dispatchers.IO) {
-            repository.cancelTask(taskId)
+            repository.deleteTask(taskId)
+            refreshStorageInfo()
         }
     }
 
@@ -118,6 +130,20 @@ class DownloadViewModel : ViewModel() {
     fun retryTask(taskId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.retryTask(taskId)
+            // 重新提交到 DownloadEngine 执行
+            val entity = repository.getTaskById(taskId)
+            if (entity != null) {
+                DownloadEngine.getInstance(app).submitTask(
+                    m3u8Url = entity.playUrl,
+                    videoTitle = entity.title,
+                    episodeTitle = entity.episodeTitle,
+                    taskId = entity.taskId,
+                    callback = null
+                )
+                Log.d(TAG, "重试任务已重新提交到 DownloadEngine: $taskId")
+            } else {
+                Log.w(TAG, "重试失败：找不到任务 $taskId")
+            }
         }
     }
 
@@ -143,6 +169,10 @@ class DownloadViewModel : ViewModel() {
 
     /** 暂停所有下载中/等待中的任务 */
     fun pauseAll() {
+        // 中断 DownloadEngine 中所有活跃任务
+        DownloadEngine.getInstance(app).getAllTasks().forEach {
+            DownloadEngine.getInstance(app).pauseTask(it.taskId)
+        }
         viewModelScope.launch(Dispatchers.IO) {
             repository.pauseAll()
         }
@@ -152,6 +182,10 @@ class DownloadViewModel : ViewModel() {
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.resumeAll()
+        }
+        // 恢复 DownloadEngine 中的任务
+        DownloadEngine.getInstance(app).getAllTasks().forEach {
+            DownloadEngine.getInstance(app).resumeTask(it.taskId)
         }
     }
 

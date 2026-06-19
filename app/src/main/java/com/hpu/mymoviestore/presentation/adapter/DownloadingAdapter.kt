@@ -17,7 +17,8 @@ class DownloadingAdapter(
     private val onPauseResume: (DownloadTaskEntity) -> Unit,
     private val onCancel: (DownloadTaskEntity) -> Unit,
     private val onRetry: (DownloadTaskEntity) -> Unit,
-    private val onDanmakuRetry: (DownloadTaskEntity) -> Unit
+    private val onDanmakuRetry: (DownloadTaskEntity) -> Unit,
+    private val onDeleteFailed: (DownloadTaskEntity) -> Unit
 ) : RecyclerView.Adapter<DownloadingAdapter.DownloadingViewHolder>() {
 
     private var items: List<DownloadTaskEntity> = emptyList()
@@ -94,15 +95,17 @@ class DownloadingAdapter(
                     binding.btnRetry.visibility = android.view.View.GONE
                 }
                 DownloadTaskEntity.STATUS_FAILED -> {
-                    // 失败 -> 显示重试
+                    // 失败 -> 显示重试、删除
                     binding.btnPauseResume.visibility = android.view.View.GONE
                     binding.btnCancel.visibility = android.view.View.GONE
                     binding.btnRetry.visibility = android.view.View.VISIBLE
+                    binding.btnDeleteFailed.visibility = android.view.View.VISIBLE
                 }
                 else -> {
                     binding.btnPauseResume.visibility = android.view.View.GONE
                     binding.btnCancel.visibility = android.view.View.GONE
                     binding.btnRetry.visibility = android.view.View.GONE
+                    binding.btnDeleteFailed.visibility = android.view.View.GONE
                 }
             }
 
@@ -115,6 +118,9 @@ class DownloadingAdapter(
             }
             binding.btnRetry.setOnClickListener {
                 onRetry(task)
+            }
+            binding.btnDeleteFailed.setOnClickListener {
+                onDeleteFailed(task)
             }
 
             // 弹幕状态

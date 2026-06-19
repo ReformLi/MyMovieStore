@@ -43,7 +43,8 @@ class DownloadActivity : AppCompatActivity() {
             onPauseResume = { task -> onTaskPauseResume(task) },
             onCancel = { task -> onTaskCancel(task) },
             onRetry = { task -> onTaskRetry(task) },
-            onDanmakuRetry = { task -> onDanmakuRetry(task) }
+            onDanmakuRetry = { task -> onDanmakuRetry(task) },
+            onDeleteFailed = { task -> onTaskDelete(task) }
         )
     }
 
@@ -216,11 +217,11 @@ class DownloadActivity : AppCompatActivity() {
 
     private fun onTaskCancel(task: DownloadTaskEntity) {
         AlertDialog.Builder(this)
-            .setTitle("取消下载")
-            .setMessage("确定要取消「${task.title} - ${task.episodeTitle}」的下载吗？")
-            .setPositiveButton("取消下载") { _, _ ->
+            .setTitle("删除任务")
+            .setMessage("确定要删除「${task.title} - ${task.episodeTitle}」的下载任务吗？已下载的分片也会被清除。")
+            .setPositiveButton("删除") { _, _ ->
                 viewModel.cancelTask(task.taskId)
-                Log.d(TAG, "取消任务: ${task.taskId}")
+                Log.d(TAG, "取消并删除任务: ${task.taskId}")
             }
             .setNegativeButton("返回", null)
             .show()

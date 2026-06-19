@@ -56,6 +56,10 @@ class DownloadRepository(
     suspend fun getDownloadedEpisodes(videoId: Long): List<DownloadTaskEntity> =
         taskDao.getByVideoIdAndStatus(videoId, DownloadTaskEntity.STATUS_COMPLETED)
 
+    /** 获取某视频的所有下载任务（任意状态） */
+    suspend fun getTasksByVideoId(videoId: Long): List<DownloadTaskEntity> =
+        taskDao.getByVideoId(videoId)
+
     // ======================== 创建任务 ========================
 
     /**
