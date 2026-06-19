@@ -7,41 +7,43 @@
     android:orientation="vertical">
 
     <!-- 顶部标题栏 -->
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@color/colorSurface"
-        app:title="我的"
-        app:titleTextColor="@color/colorOnSurface" />
+<!--    <androidx.appcompat.widget.Toolbar-->
+<!--        android:id="@+id/toolbar"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="?attr/actionBarSize"-->
+<!--        android:background="@color/colorSurface"-->
+<!--        app:title="我的"-->
+<!--        app:titleTextColor="@color/colorOnSurface" />-->
 
     <!-- 用户头像区域 -->
-    <LinearLayout
+    <!-- 头部卡片（带边距和圆角，与下方菜单风格一致） -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/colorSurface"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="16dp">
-
-        <ImageView
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:background="@drawable/bg_poster_round"
-            android:contentDescription="用户头像"
-            android:padding="12dp"
-            android:src="@drawable/ic_profile"
-            app:tint="@android:color/white" />
+        android:layout_margin="8dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp">
 
         <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:orientation="vertical">
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:background="@drawable/movie_background"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/bg_poster_round"
+                android:contentDescription="用户头像"
+                android:padding="0dp"
+                android:src="@mipmap/ic_launcher" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:text="我的影视"
                 android:textColor="@android:color/white"
                 android:textSize="18sp"
@@ -50,12 +52,11 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
                 android:text="享受精彩影视时光"
                 android:textColor="@android:color/white"
                 android:textSize="14sp" />
         </LinearLayout>
-    </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- 功能菜单列表 -->
     <androidx.core.widget.NestedScrollView
@@ -143,6 +144,9 @@
                         android:id="@+id/switchDanmu"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_gravity="center_vertical"
+                        android:minHeight="0dp"
+                        android:minWidth="0dp"
                         android:checked="true" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
