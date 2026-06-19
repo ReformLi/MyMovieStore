@@ -15,8 +15,7 @@
 <!--        app:title="我的"-->
 <!--        app:titleTextColor="@color/colorOnSurface" />-->
 
-    <!-- 用户头像区域 -->
-    <!-- 头部卡片（带边距和圆角，与下方菜单风格一致） -->
+    <!-- 头部卡片 -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -24,38 +23,57 @@
         app:cardCornerRadius="12dp"
         app:cardElevation="2dp">
 
-        <LinearLayout
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:background="@drawable/movie_background"
-            android:gravity="center_vertical"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:layout_height="150dp">   <!-- 高度可自行调整，如120dp、160dp -->
 
+            <!-- 背景图片，始终保持比例，居中裁剪 -->
             <ImageView
-                android:layout_width="64dp"
-                android:layout_height="64dp"
-                android:background="@drawable/bg_poster_round"
-                android:contentDescription="用户头像"
-                android:padding="0dp"
-                android:src="@mipmap/ic_launcher" />
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/movie_background" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="我的影视"
-                android:textColor="@android:color/white"
-                android:textSize="18sp"
-                android:textStyle="bold" />
+            <!-- 内容层（透明背景） -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="享受精彩影视时光"
-                android:textColor="@android:color/white"
-                android:textSize="14sp" />
-        </LinearLayout>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    app:cardCornerRadius="15dp"
+                    app:cardElevation="0dp"
+                    android:background="@android:color/transparent"
+                    android:clipToOutline="true">
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:src="@mipmap/ic_launcher"
+                        android:scaleType="centerCrop"
+                        android:contentDescription="用户头像" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="我的影视"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="享受精彩影视时光"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 
     <!-- 功能菜单列表 -->
