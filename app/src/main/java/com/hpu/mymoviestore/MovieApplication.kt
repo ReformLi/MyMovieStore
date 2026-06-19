@@ -14,6 +14,7 @@ import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
+import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
@@ -88,9 +89,10 @@ class MovieApplication : Application(), ImageLoaderFactory {
         val crawlerSource = JujiwuVideoSource(cacheRepository = apiCacheRepository)
         val yinghuaSource = YinghuaVideoSource(cacheRepository = apiCacheRepository)
         val tiantangSource = TiantangVideoSource(cacheRepository = apiCacheRepository)
+        val hantvVideoSource = HantvVideoSource(cacheRepository = apiCacheRepository)
         val doubanDiscoverySource = DoubanDiscoverySource()
 
-        _allVideoSources = listOf(crawlerSource, yinghuaSource, tiantangSource)
+        _allVideoSources = listOf(hantvVideoSource, tiantangSource)//crawlerSource, yinghuaSource,
 
         // 从 SharedPreferences 恢复视频源启用状态
         restoreSourceEnabledStates()
