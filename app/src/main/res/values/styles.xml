@@ -74,4 +74,9 @@
         <item name="cardCornerRadius">8dp</item>
         <item name="cardElevation">2dp</item>
     </style>
+
+    <!-- ======================== 底部导航样式 ======================== -->
+    <style name="BottomNavText" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">10sp</item>
+    </style>
 </resources>
