@@ -72,6 +72,7 @@ class DownloadActivity : AppCompatActivity() {
         setupViewPager()
         setupObservers()
         refreshStorage()
+
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {

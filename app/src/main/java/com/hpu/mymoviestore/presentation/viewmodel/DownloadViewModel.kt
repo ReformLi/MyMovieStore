@@ -1,15 +1,23 @@
 package com.hpu.mymoviestore.presentation.viewmodel
 
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hpu.mymoviestore.MovieApplication
+import com.hpu.mymoviestore.data.database.MovieDatabase
+import com.hpu.mymoviestore.data.download.DanmakuDownloadManager
+import com.hpu.mymoviestore.data.download.DownloadCallback
 import com.hpu.mymoviestore.data.download.DownloadEngine
+import com.hpu.mymoviestore.data.download.DownloadService
+import com.hpu.mymoviestore.data.download.DownloadStatus
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.PlayEpisode
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -111,9 +119,54 @@ class DownloadViewModel : ViewModel() {
     fun resumeTask(taskId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.resumeTask(taskId)
+            // 如果 DownloadEngine 中没有该任务（应用重启后），需要重新提交
+            if (DownloadEngine.getInstance(app).getTask(taskId) == null) {
+                val entity = repository.getTaskById(taskId)
+                if (entity != null) {
+                    // playUrl 可能是播放页 URL（非 m3u8），需要重新解析
+                    val m3u8Url = resolveM3u8Url(entity)
+                    if (m3u8Url.isNullOrBlank()) {
+                        Log.w(TAG, "恢复失败：无法解析 m3u8 URL, taskId=$taskId")
+                        repository.markFailed(taskId, "无法解析播放地址")
+                        return@launch
+                    }
+                    // 确保前台服务已启动（重启后服务可能已停止）
+                    ensureDownloadServiceRunning()
+                    // 重新提交到 DownloadEngine，并绑定完整回调以更新数据库进度和状态
+                    DownloadEngine.getInstance(app).submitTask(
+                        m3u8Url = m3u8Url,
+                        videoTitle = entity.title,
+                        episodeTitle = entity.episodeTitle,
+                        taskId = entity.taskId,
+                        callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
+                    )
+                    Log.d(TAG, "恢复任务：重新提交到 DownloadEngine: $taskId")
+                } else {
+                    Log.w(TAG, "恢复失败：找不到任务 $taskId")
+                }
+            } else {
+                DownloadEngine.getInstance(app).resumeTask(taskId)
+            }
         }
-        // 恢复后重新提交到 DownloadEngine
-        DownloadEngine.getInstance(app).resumeTask(taskId)
+    }
+
+    /**
+     * 解析真实 m3u8 URL。
+     * 如果 playUrl 已经是 m3u8 格式则直接返回，否则通过 VideoSource 重新解析。
+     */
+    private suspend fun resolveM3u8Url(entity: DownloadTaskEntity): String? {
+        val playUrl = entity.playUrl
+        // 如果已经是 m3u8 地址，直接返回
+        if (playUrl.contains(".m3u8")) {
+            return playUrl
+        }
+        // 否则通过 VideoSource 重新解析
+        val source = app.allVideoSources.find { it.sourceName == entity.sourceName }
+        if (source == null) {
+            Log.w(TAG, "找不到视频源: ${entity.sourceName}")
+            return null
+        }
+        return source.fetchVideoUrlByPlayPageUrl(playUrl).getOrNull()
     }
 
     /** 取消任务（中断下载并删除任务） */
@@ -133,12 +186,20 @@ class DownloadViewModel : ViewModel() {
             // 重新提交到 DownloadEngine 执行
             val entity = repository.getTaskById(taskId)
             if (entity != null) {
+                val m3u8Url = resolveM3u8Url(entity)
+                if (m3u8Url.isNullOrBlank()) {
+                    Log.w(TAG, "重试失败：无法解析 m3u8 URL, taskId=$taskId")
+                    repository.markFailed(taskId, "无法解析播放地址")
+                    return@launch
+                }
+                // 确保前台服务已启动
+                ensureDownloadServiceRunning()
                 DownloadEngine.getInstance(app).submitTask(
-                    m3u8Url = entity.playUrl,
+                    m3u8Url = m3u8Url,
                     videoTitle = entity.title,
                     episodeTitle = entity.episodeTitle,
                     taskId = entity.taskId,
-                    callback = null
+                    callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
                 )
                 Log.d(TAG, "重试任务已重新提交到 DownloadEngine: $taskId")
             } else {
@@ -148,6 +209,17 @@ class DownloadViewModel : ViewModel() {
     }
 
     // ======================== 删除 ========================
+
+    /**
+     * 应用重启后，将数据库中"下载中/等待中"的任务重置为"暂停"。
+     * 因为 DownloadEngine 是内存态的，重启后任务已丢失，需要让用户手动恢复。
+     */
+    fun resetActiveTasksOnRestart() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.pauseAll()
+            Log.d(TAG, "已将所有活跃任务重置为暂停状态")
+        }
+    }
 
     /** 删除单个任务 */
     fun deleteTask(taskId: String) {
@@ -182,10 +254,35 @@ class DownloadViewModel : ViewModel() {
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.resumeAll()
-        }
-        // 恢复 DownloadEngine 中的任务
-        DownloadEngine.getInstance(app).getAllTasks().forEach {
-            DownloadEngine.getInstance(app).resumeTask(it.taskId)
+            val engine = DownloadEngine.getInstance(app)
+            // 从数据库查询所有活跃任务（状态已被 resumeAll 更新为 PENDING）
+            val activeTasks = repository.getActiveTasks()
+            if (activeTasks.isNotEmpty()) {
+                ensureDownloadServiceRunning()
+            }
+            // 优先恢复引擎中已有的任务，无法找到的则重新提交
+            engine.getAllTasks().forEach {
+                engine.resumeTask(it.taskId)
+            }
+            // 处理引擎中不存在的任务（应用重启后）
+            activeTasks.forEach { entity ->
+                if (engine.getTask(entity.taskId) == null) {
+                    val m3u8Url = resolveM3u8Url(entity)
+                    if (!m3u8Url.isNullOrBlank()) {
+                        engine.submitTask(
+                            m3u8Url = m3u8Url,
+                            videoTitle = entity.title,
+                            episodeTitle = entity.episodeTitle,
+                            taskId = entity.taskId,
+                            callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
+                        )
+                        Log.d(TAG, "resumeAll：重新提交任务到 DownloadEngine: ${entity.taskId}")
+                    } else {
+                        repository.markFailed(entity.taskId, "无法解析播放地址")
+                        Log.w(TAG, "resumeAll：无法解析 m3u8 URL, taskId=${entity.taskId}")
+                    }
+                }
+            }
         }
     }
 
@@ -221,5 +318,73 @@ class DownloadViewModel : ViewModel() {
         val app = MovieApplication.get()
         val dir = app.getExternalFilesDir(DEFAULT_SAVE_DIR)
         return dir?.absolutePath ?: app.filesDir.resolve(DEFAULT_SAVE_DIR).absolutePath
+    }
+
+    /**
+     * 构建标准的 DownloadCallback，用于恢复/重试任务时将进度和状态同步到数据库。
+     *
+     * 这与 DetailActivity.startDownloadForEpisodes 中的回调保持一致。
+     */
+    private fun buildDownloadCallback(taskId: String, videoTitle: String, episodeTitle: String): DownloadCallback {
+        val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        return object : DownloadCallback {
+            override fun onProgress(taskId: String, downloadedSegments: Int, totalSegments: Int, fileSize: Long) {
+                callbackScope.launch {
+                    try {
+                        repository.updateProgress(taskId, downloadedSegments, totalSegments, fileSize)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "同步下载进度到数据库失败: ${e.message}")
+                    }
+                }
+            }
+
+            override fun onStatusChanged(taskId: String, status: Int, errorMsg: String?) {
+                Log.d(TAG, "下载状态变更(恢复): taskId=$taskId, status=$status, error=$errorMsg")
+                callbackScope.launch {
+                    try {
+                        when (status) {
+                            DownloadStatus.DOWNLOADING -> repository.markDownloading(taskId)
+                            DownloadStatus.PAUSED -> repository.pauseTask(taskId)
+                            DownloadStatus.FAILED -> repository.markFailed(taskId, errorMsg ?: "")
+                            else -> {}
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "同步下载状态到数据库失败: ${e.message}")
+                    }
+                }
+            }
+
+            override fun onCompleted(taskId: String, localFilePath: String, fileSize: Long) {
+                Log.d(TAG, "下载完成(恢复): taskId=$taskId, path=$localFilePath, size=$fileSize")
+                callbackScope.launch {
+                    try {
+                        repository.markCompleted(taskId, localFilePath, fileSize)
+                        // 下载完成后触发弹幕下载
+                        DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                            taskId = taskId,
+                            title = videoTitle,
+                            episodeTitle = episodeTitle,
+                            dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "同步下载完成到数据库失败: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 确保下载前台服务已启动。
+     * 应用重启后服务会停止，在恢复/重试下载时需要重新启动。
+     */
+    private fun ensureDownloadServiceRunning() {
+        try {
+            val intent = Intent(app, DownloadService::class.java)
+            app.startForegroundService(intent)
+            Log.d(TAG, "已启动 DownloadService")
+        } catch (e: Exception) {
+            Log.w(TAG, "启动 DownloadService 失败: ${e.message}")
+        }
     }
 }

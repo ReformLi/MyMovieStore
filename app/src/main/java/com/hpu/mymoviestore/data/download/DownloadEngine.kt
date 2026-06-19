@@ -95,7 +95,7 @@ class DownloadEngine(context: Context) {
         private const val TAG = "DownloadEngine"
 
         /** 最大并发任务数 */
-        private const val MAX_CONCURRENT_TASKS = 1
+        private const val MAX_CONCURRENT_TASKS = 3
 
         /** 每个任务最大并发分片数（降低并发以保护 CDN） */
         private const val MAX_CONCURRENT_SEGMENTS = 3

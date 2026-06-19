@@ -16,6 +16,9 @@ import com.hpu.mymoviestore.data.source.VideoSourceManager
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
 /**
@@ -113,6 +116,17 @@ class MovieApplication : Application(), ImageLoaderFactory {
         }.start()
 
         Log.d(TAG, "========== MovieApplication.onCreate 结束 ==========\n")
+
+        // 应用重启后，将数据库中"下载中/等待中"的任务重置为"暂停"
+        // 因为 DownloadEngine 是内存态的，重启后任务已丢失，需要让用户手动恢复
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                downloadRepository.pauseAll()
+                Log.d(TAG, "已将所有活跃任务重置为暂停状态（应用重启）")
+            } catch (e: Exception) {
+                Log.w(TAG, "重置活跃任务状态失败: ${e.message}")
+            }
+        }
     }
 
     /**

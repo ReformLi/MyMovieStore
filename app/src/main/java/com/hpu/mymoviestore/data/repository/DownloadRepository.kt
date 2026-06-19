@@ -117,7 +117,8 @@ class DownloadRepository(
     }
 
     suspend fun resumeTask(taskId: String) {
-        taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_DOWNLOADING)
+        // 恢复后任务进入排队状态，等引擎真正开始执行时再通过回调改为 DOWNLOADING
+        taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_PENDING)
     }
 
     suspend fun cancelTask(taskId: String) {
@@ -138,9 +139,10 @@ class DownloadRepository(
     }
 
     suspend fun resumeAll() {
+        // 恢复所有暂停任务：先进入排队状态，引擎会逐个执行
         taskDao.updateStatuses(
             listOf(DownloadTaskEntity.STATUS_PAUSED),
-            DownloadTaskEntity.STATUS_DOWNLOADING
+            DownloadTaskEntity.STATUS_PENDING
         )
     }
 

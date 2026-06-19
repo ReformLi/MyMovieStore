@@ -282,7 +282,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
 
         Log.d(TAG, "[$taskId] 弹幕已保存: ${danmakuFile.absolutePath}, size=${danmakuFile.length()}")
 
-        return DownloadResult(filePath = danmakuFile.absolutePath)
+        return DownloadResult(isSuccess = true, filePath = danmakuFile.absolutePath)
     }
 
     /**
