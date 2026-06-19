@@ -65,4 +65,12 @@ interface ApiCacheDao {
      */
     @Query("DELETE FROM api_cache WHERE cacheKey LIKE :prefix || '%'")
     suspend fun deleteByPrefix(prefix: String): Int
+
+    /**
+     * 按 cacheKey 通配符模式删除缓存（LIKE 语法）
+     * @param pattern 通配符模式，如 "%:search:v3:%"
+     * @return 被删除的行数
+     */
+    @Query("DELETE FROM api_cache WHERE cacheKey LIKE :pattern")
+    suspend fun deleteByPattern(pattern: String): Int
 }

@@ -105,4 +105,15 @@ class ApiCacheRepository(private val dao: ApiCacheDao) {
         Log.d(TAG, "按前缀删除缓存: prefix='$prefix', 删除 $rows 行")
         return rows
     }
+
+    /**
+     * 按通配符模式删除缓存（LIKE 语法，新增源无需修改）
+     * 例：deleteByPattern("%:search:v3:%") 删除所有源的搜索缓存
+     * @return 被删除的行数
+     */
+    suspend fun deleteByPattern(pattern: String): Int {
+        val rows = dao.deleteByPattern(pattern)
+        Log.d(TAG, "按模式删除缓存: pattern='$pattern', 删除 $rows 行")
+        return rows
+    }
 }

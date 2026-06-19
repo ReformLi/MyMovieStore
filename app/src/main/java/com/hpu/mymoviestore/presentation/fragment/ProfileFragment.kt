@@ -296,12 +296,10 @@ class ProfileFragment : Fragment() {
             val cacheRepo = app.apiCacheRepository
             val results = mutableListOf<String>()
 
-            // 1. 清理搜索缓存（爬虫搜索 + 本地搜索历史）
+            // 1. 清理搜索缓存（所有源的爬虫搜索 + 本地搜索历史）
+            // 通配符模式匹配所有源的搜索缓存键，新增源无需修改此处
             if (5 in selectedItems || 0 in selectedItems) {
-                // 搜索缓存键格式: {cachePrefix}:search:v3:{hash}:{page}:{keyword}
-                // 需要清理所有源的搜索缓存
-                var rows = cacheRepo.deleteByPrefix("crawler:search:v3")
-                rows += cacheRepo.deleteByPrefix("yinghua:search:v3")
+                val rows = cacheRepo.deleteByPattern("%:search:v3:%")
                 // 同时清理本地搜索历史
                 app.searchHistoryRepository.clearAllHistory()
                 results.add("搜索缓存 (${rows}条)")
