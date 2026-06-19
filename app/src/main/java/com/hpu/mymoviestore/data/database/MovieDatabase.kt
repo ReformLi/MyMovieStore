@@ -43,7 +43,7 @@ import com.hpu.mymoviestore.data.entity.DownloadedVideoIndexEntity
         DownloadTaskEntity::class,
         DownloadedVideoIndexEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class MovieDatabase : RoomDatabase() {
@@ -109,6 +109,14 @@ abstract class MovieDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_task ADD COLUMN playProgressPercent INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN playPositionMs INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_task ADD COLUMN playDurationMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): MovieDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -116,7 +124,7 @@ abstract class MovieDatabase : RoomDatabase() {
                     MovieDatabase::class.java,
                     "movie_database"
                 )
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

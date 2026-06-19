@@ -82,6 +82,10 @@ interface DownloadTaskDao {
     @Query("UPDATE download_task SET danmakuStatus = :danmakuStatus, danmakuFilePath = :danmakuFilePath, danmakuError = :danmakuError, updateTime = :updateTime WHERE taskId = :taskId")
     suspend fun updateDanmakuStatus(taskId: String, danmakuStatus: Int, danmakuFilePath: String = "", danmakuError: String = "", updateTime: Long = System.currentTimeMillis())
 
+    /** 更新离线播放进度 */
+    @Query("UPDATE download_task SET playProgressPercent = :percent, playPositionMs = :positionMs, playDurationMs = :durationMs, updateTime = :updateTime WHERE taskId = :taskId")
+    suspend fun updatePlayProgress(taskId: String, percent: Int, positionMs: Long, durationMs: Long, updateTime: Long = System.currentTimeMillis())
+
     @Query("SELECT COALESCE(SUM(fileSize), 0) FROM download_task WHERE status = 3")
     suspend fun getTotalFileSize(): Long
 

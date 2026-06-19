@@ -58,6 +58,7 @@ class DownloadActivity : AppCompatActivity() {
 
     // 多选模式状态
     private var isInMultiSelectMode = false
+    private var hasCheckedInitialTab = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -168,6 +169,13 @@ class DownloadActivity : AppCompatActivity() {
         viewModel.downloadingTasks.observe(this) { tasks ->
             Log.d(TAG, "下载中任务更新: ${tasks.size} 条")
             downloadingAdapter.submitList(tasks)
+            // 首次数据到达时，如果下载中列表为空，自动切换到已完成标签页
+            if (!hasCheckedInitialTab) {
+                hasCheckedInitialTab = true
+                if (tasks.isEmpty()) {
+                    binding.viewPager.currentItem = DownloadPagerAdapter.PAGE_COMPLETED
+                }
+            }
         }
 
         // 观察已完成的任务列表
@@ -233,7 +241,7 @@ class DownloadActivity : AppCompatActivity() {
 
     private fun onTaskPlay(task: DownloadTaskEntity) {
         // 跳转到播放器播放本地文件（使用离线播放专用 Intent）
-        Log.d(TAG, "播放本地文件: ${task.localFilePath}")
+        Log.d(TAG, "播放本地文件: ${task.localFilePath}, taskId=${task.taskId}")
         startActivity(
             PlayerActivity.newIntent(
                 context = this,
@@ -241,7 +249,9 @@ class DownloadActivity : AppCompatActivity() {
                 danmakuFilePath = task.danmakuFilePath.ifEmpty { null },
                 title = task.title,
                 episodeTitle = task.episodeTitle
-            )
+            ).apply {
+                putExtra("extra_offline_task_id", task.taskId)
+            }
         )
     }
 

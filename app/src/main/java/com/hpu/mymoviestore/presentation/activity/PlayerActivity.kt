@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.GestureDetector
+import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +28,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
@@ -43,6 +45,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
@@ -73,6 +76,9 @@ class PlayerActivity : AppCompatActivity() {
     private var videoUrl: String = ""
     private var episodeTitle: String = ""
     private var resumeFromMs: Long = 0L
+    private var isOfflineMode: Boolean = false
+    private var offlineTaskId: String = ""
+    private var hasSeekedResume: Boolean = false
     private var lastSavedProgressMs: Long = -1L
     private var lastSyncPositionMs: Long = -1L
     private val progressSaveIntervalMs: Long = 30_000L
@@ -202,6 +208,8 @@ class PlayerActivity : AppCompatActivity() {
         // 离线播放相关参数
         val localFilePath = intent.getStringExtra(EXTRA_LOCAL_FILE_PATH)
         val danmakuFilePath = intent.getStringExtra(EXTRA_DANMAKU_FILE_PATH)
+        val offlineTaskId = intent.getStringExtra("extra_offline_task_id") ?: ""
+        isOfflineMode = !localFilePath.isNullOrEmpty()
 
         screenWidth = resources.displayMetrics.widthPixels
         screenHeight = resources.displayMetrics.heightPixels
@@ -222,11 +230,25 @@ class PlayerActivity : AppCompatActivity() {
 
         if (!localFilePath.isNullOrEmpty()) {
             // ========== 离线播放模式 ==========
-            Log.d(TAG, "离线播放模式: localFilePath=$localFilePath")
+            Log.d(TAG, "离线播放模式: localFilePath=$localFilePath, taskId=$offlineTaskId")
+            this.offlineTaskId = offlineTaskId
             val localFile = File(localFilePath)
             if (localFile.exists()) {
                 val localUri = Uri.fromFile(localFile)
                 Log.d(TAG, "本地文件存在，使用 Uri: $localUri")
+
+                // 读取离线播放进度
+                val app = MovieApplication.get()
+                val task = runBlocking { app.downloadRepository.getTaskById(offlineTaskId) }
+                if (task != null && task.playProgressPercent >= 100) {
+                    // 已看完，重新观看
+                    Log.d(TAG, "离线播放：已看完，从头开始")
+                    resumeFromMs = 0L
+                } else if (task != null && task.playPositionMs > 0) {
+                    resumeFromMs = task.playPositionMs
+                    Log.d(TAG, "离线播放：续播 ${task.playPositionMs}ms")
+                }
+
                 initializePlayerWithLocalFile(localUri)
 
                 // 如果有本地弹幕文件，直接加载
@@ -365,6 +387,12 @@ class PlayerActivity : AppCompatActivity() {
                         when (playbackState) {
                             Player.STATE_READY -> {
                                 Log.d(TAG, "离线播放状态: STATE_READY")
+                                // 续播：seek 到上次进度（只执行一次）
+                                if (!hasSeekedResume && resumeFromMs > 0 && exoPlayer.duration > 0) {
+                                    hasSeekedResume = true
+                                    exoPlayer.seekTo(resumeFromMs)
+                                    Log.d(TAG, "离线播放续播: seekTo ${resumeFromMs}ms")
+                                }
                                 danmakuManager?.ensureStarted()
                                 danmakuManager?.setPaused(!exoPlayer.isPlaying)
                             }
@@ -443,6 +471,11 @@ class PlayerActivity : AppCompatActivity() {
                     saveCurrentProgress(false)
                     lastSavedProgressMs = currentMs
                 }
+
+                // 更新锁定状态下的只读进度条
+                if (isScreenLocked) {
+                    updateLockedProgress()
+                }
             }
             binding.playerView.postDelayed(this, 1000)
         }
@@ -459,10 +492,30 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun saveCurrentProgress(force: Boolean) {
         val p = player ?: return
-        val currentSec = p.currentPosition / 1000
-        val durSec = if (p.duration > 0) p.duration / 1000 else 0L
-        viewModel.updateProgress(videoId, currentSec, durSec)
-        if (force) Log.d(TAG, "强制写入进度: ${currentSec}s / ${durSec}s")
+        val currentMs = p.currentPosition
+        val currentSec = currentMs / 1000
+        val durMs = p.duration
+        val durSec = if (durMs > 0) durMs / 1000 else 0L
+
+        if (isOfflineMode && offlineTaskId.isNotEmpty()) {
+            // 离线播放：保存进度到下载任务，不记录历史
+            val percent = if (durMs > 0) ((currentMs * 100) / durMs).toInt() else -1
+            val app = MovieApplication.get()
+            uiScope.launch(Dispatchers.IO) {
+                try {
+                    app.downloadRepository.updateOfflinePlayProgress(
+                        offlineTaskId, percent, currentMs, durMs
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "保存离线播放进度失败: ${e.message}")
+                }
+            }
+            if (force) Log.d(TAG, "离线进度: ${currentMs}ms / ${durMs}ms ($percent%)")
+        } else {
+            // 在线播放：保存到历史记录
+            viewModel.updateProgress(videoId, currentSec, durSec)
+            if (force) Log.d(TAG, "强制写入进度: ${currentSec}s / ${durSec}s")
+        }
     }
 
     // ================== UI 设置 ==================
@@ -588,6 +641,7 @@ class PlayerActivity : AppCompatActivity() {
                 binding.btnLock.setImageResource(R.drawable.ic_player_unlock)
                 binding.playerView.useController = true
                 binding.playerView.showController()
+                binding.lockedProgressBar.visibility = View.GONE
                 Log.d(TAG, "屏幕已解锁")
             } else {
                 // 锁定
@@ -595,9 +649,22 @@ class PlayerActivity : AppCompatActivity() {
                 binding.btnLock.setImageResource(R.drawable.ic_player_lock)
                 binding.playerView.useController = false
                 binding.playerView.hideController()
+                binding.lockedProgressBar.visibility = View.VISIBLE
+                updateLockedProgress()
                 Log.d(TAG, "屏幕已锁定")
             }
         }
+    }
+
+    /** 更新锁定状态下的只读进度条 */
+    private fun updateLockedProgress() {
+        val p = player ?: return
+        val currentMs = p.currentPosition
+        val durationMs = p.duration
+        binding.tvLockedPosition.text = formatTime(currentMs)
+        binding.tvLockedDuration.text = formatTime(durationMs)
+        val percent = if (durationMs > 0) ((currentMs * 100) / durationMs).toInt() else 0
+        binding.progressBarLocked.progress = percent
     }
 
     // ================== 手势控制 ==================
@@ -612,8 +679,10 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 if (isScreenLocked) {
-                    // 锁定状态下点击显示/隐藏锁定按钮
-                    binding.btnLock.visibility = if (binding.btnLock.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                    // 锁定状态下点击显示/隐藏锁定按钮和进度条
+                    val show = binding.btnLock.visibility != View.VISIBLE
+                    binding.btnLock.visibility = if (show) View.VISIBLE else View.GONE
+                    binding.lockedProgressBar.visibility = if (show) View.VISIBLE else View.GONE
                     return true
                 }
                 return false
@@ -625,6 +694,17 @@ class PlayerActivity : AppCompatActivity() {
         if (isScreenLocked) {
             // 锁定状态：只处理单击显示锁定按钮和点击解锁按钮
             gestureDetector.onTouchEvent(event)
+            return super.dispatchTouchEvent(event)
+        }
+
+        // 检测触摸是否在进度条区域（ExoPlayer 的 DefaultTimeBar）
+        if (isTouchOnProgressBar(event)) {
+            // 进度条上的触摸不触发长按手势，直接让系统处理
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    handler.removeCallbacks(longPressRunnable)
+                }
+            }
             return super.dispatchTouchEvent(event)
         }
 
@@ -655,6 +735,35 @@ class PlayerActivity : AppCompatActivity() {
 
         gestureDetector.onTouchEvent(event)
         return super.dispatchTouchEvent(event)
+    }
+
+    /**
+     * 检测触摸事件是否在 ExoPlayer 进度条（DefaultTimeBar）区域内
+     */
+    private fun isTouchOnProgressBar(event: MotionEvent): Boolean {
+        try {
+            val playerView = binding.playerView
+            // ExoPlayer 的进度条 ID 是 exo_progress
+            val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+                ?: playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress_placeholder)
+                ?: return false
+
+            val location = IntArray(2)
+            progressBar.getLocationOnScreen(location)
+            val rect = Rect(
+                location[0],
+                location[1],
+                location[0] + progressBar.width,
+                location[1] + progressBar.height
+            )
+            // 扩大检测区域（进度条上下各 20dp 的触摸热区）
+            val touchSlop = (20 * resources.displayMetrics.density).toInt()
+            rect.top -= touchSlop
+            rect.bottom += touchSlop
+            return rect.contains(event.rawX.toInt(), event.rawY.toInt())
+        } catch (e: Exception) {
+            return false
+        }
     }
 
     private val longPressRunnable = Runnable {
@@ -864,6 +973,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     // ================== 工具 ==================
+
+    private fun formatTime(ms: Long): String {
+        val totalSec = (ms / 1000).toInt()
+        val h = totalSec / 3600
+        val m = (totalSec % 3600) / 60
+        val s = totalSec % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
+    }
 
     private fun normalizeEpisodeTitle(title: String): String {
         if (title.isBlank()) return ""

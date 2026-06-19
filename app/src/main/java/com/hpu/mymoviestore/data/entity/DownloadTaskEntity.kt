@@ -81,7 +81,16 @@ data class DownloadTaskEntity(
     val danmakuRetryCount: Int,
 
     /** 弹幕下载错误信息 */
-    val danmakuError: String
+    val danmakuError: String,
+
+    /** 离线播放进度百分比（0~100，-1 表示未观看） */
+    val playProgressPercent: Int = -1,
+
+    /** 离线播放位置（毫秒） */
+    val playPositionMs: Long = 0L,
+
+    /** 离线播放总时长（毫秒） */
+    val playDurationMs: Long = 0L
 ) {
     companion object {
         // ========== 下载状态常量 ==========
@@ -163,6 +172,15 @@ data class DownloadTaskEntity(
          */
         fun needsDanmakuDownload(status: Int): Boolean {
             return status in listOf(DANMAKU_NOT_DOWNLOADED, DANMAKU_FAILED, DANMAKU_RETRYING)
+        }
+
+        /**
+         * 将播放进度百分比转换为显示文字
+         */
+        fun progressToText(percent: Int): String = when {
+            percent < 0 -> "未观看"
+            percent >= 100 -> "已看完"
+            else -> "已观看${percent}%"
         }
     }
 }

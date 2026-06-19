@@ -167,6 +167,12 @@ class DownloadRepository(
         taskDao.updateDanmakuStatus(taskId, danmakuStatus, danmakuFilePath, danmakuError)
     }
 
+    // ======================== 离线播放进度 ========================
+
+    suspend fun updateOfflinePlayProgress(taskId: String, percent: Int, positionMs: Long, durationMs: Long) {
+        taskDao.updatePlayProgress(taskId, percent, positionMs, durationMs)
+    }
+
     // ======================== 删除 ========================
 
     suspend fun deleteTask(taskId: String) {

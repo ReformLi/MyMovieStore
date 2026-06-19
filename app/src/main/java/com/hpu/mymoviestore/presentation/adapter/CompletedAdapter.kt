@@ -1,5 +1,6 @@
 package com.hpu.mymoviestore.presentation.adapter
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -84,6 +85,19 @@ class CompletedAdapter(
 
             // 文件大小
             binding.tvFileSize.text = formatFileSize(task.fileSize)
+
+            // 播放进度
+            val progressText = DownloadTaskEntity.progressToText(task.playProgressPercent)
+            binding.tvPlayProgress.text = progressText
+            binding.tvPlayProgress.visibility = View.VISIBLE
+            // 已看完显示绿色，未观看显示灰色，其他显示蓝色
+            binding.tvPlayProgress.setTextColor(
+                when {
+                    task.playProgressPercent >= 100 -> Color.parseColor("#FF4CAF50")
+                    task.playProgressPercent < 0 -> Color.parseColor("#FF8A8A8A")
+                    else -> Color.parseColor("#FF2196F3")
+                }
+            )
 
             // 多选复选框
             binding.cbSelect.visibility = if (isMultiSelectMode) View.VISIBLE else View.GONE
