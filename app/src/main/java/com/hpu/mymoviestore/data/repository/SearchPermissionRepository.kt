@@ -92,9 +92,14 @@ class SearchPermissionRepository(
 
     /**
      * 异步触发权限检查（后台执行，不阻塞 UI）。
+     * 缓存有效时直接跳过，避免不必要的网络请求。
      * 检查结果会更新到内存和本地缓存。
      */
     suspend fun fetchPermissionAsync() {
+        if (isCacheValid()) {
+            Log.d(TAG, "搜索权限：缓存有效，跳过后台网络请求")
+            return
+        }
         try {
             val result = fetchPermissionWithRetry()
             Log.d(TAG, "后台权限检查完成: $result")

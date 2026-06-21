@@ -312,16 +312,16 @@ class ProfileFragment : Fragment() {
                 results.add("首页缓存 (${rows}条)")
             }
 
-            // 3. 清理详情页缓存
+            // 3. 清理详情页缓存（通配符匹配，兼容所有源前缀）
             if (5 in selectedItems || 2 in selectedItems) {
-                val rows = cacheRepo.deleteByPrefix(":detail:meta")
+                val rows = cacheRepo.deleteByPattern("%:detail:meta%")
                 results.add("详情页缓存 (${rows}条)")
             }
 
-            // 4. 清理播放地址缓存
+            // 4. 清理播放地址缓存（通配符匹配，兼容所有源前缀）
             if (5 in selectedItems || 3 in selectedItems) {
-                val rows1 = cacheRepo.deleteByPrefix(":play:real_url")
-                val rows2 = cacheRepo.deleteByPrefix(":detail:first_play_page")
+                val rows1 = cacheRepo.deleteByPattern("%:play:real_url%")
+                val rows2 = cacheRepo.deleteByPattern("%:detail:first_play_page%")
                 results.add("播放地址缓存 (${rows1 + rows2}条)")
             }
 
