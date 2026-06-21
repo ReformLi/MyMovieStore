@@ -32,11 +32,6 @@ import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -678,25 +673,22 @@ class DetailActivity : AppCompatActivity() {
                 }
             }
             Log.d(TAG, "批量创建下载任务完成: videoId=$videoId, count=${episodes.size}")
-            // 第一步：并行解析所有集的 m3u8 地址（每集之间仍保持 3~5 秒间隔以保护源站）
-            val m3u8Results = coroutineScope {
-                episodes.mapIndexed { index, episode ->
-                    async(Dispatchers.IO) {
-                        // 从第二集开始，每集之间延迟 3~5 秒（模拟人工操作）
-                        if (index > 0) {
-                            val delayMs = (3000L..5000L).random()
-                            Log.d(TAG, "下载：等待 ${delayMs}ms 后解析下一集（${index + 1}/${episodes.size}）")
-                            delay(delayMs)
-                        }
-                        val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
-                        episode to result.getOrNull()
-                    }
+            // 第一步：串行解析每集的 m3u8 地址（每集之间保持 3~5 秒间隔以保护源站）
+            // 必须串行：RequestRateLimiter 对同优先级(PLAY)任务会互相抢占，
+            // 并行提交多个 PLAY 请求会导致除最后一个外全部被取消
+            val m3u8Results = mutableListOf<Pair<PlayEpisode, String?>>()
+            episodes.forEachIndexed { index, episode ->
+                if (index > 0) {
+                    val delayMs = (3000L..5000L).random()
+                    Log.d(TAG, "下载：等待 ${delayMs}ms 后解析下一集（${index + 1}/${episodes.size}）")
+                    delay(delayMs)
                 }
+                val result = app.videoRepository.getRealPlayUrlByPlayPageUrl(episode.playPageUrl)
+                m3u8Results.add(episode to result.getOrNull())
             }
 
-            // 第二步：按顺序收集结果并提交到 DownloadEngine
-            m3u8Results.forEach { deferred ->
-                val (episode, m3u8Url) = deferred.await()
+            // 第二步：按顺序提交到 DownloadEngine
+            m3u8Results.forEach { (episode, m3u8Url) ->
 
                 if (m3u8Url.isNullOrBlank()) {
                     Log.w(TAG, "下载：解析播放地址失败, episode=${episode.title}")

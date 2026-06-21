@@ -8,6 +8,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.databinding.ActivityMainBinding
@@ -16,18 +19,23 @@ import com.hpu.mymoviestore.presentation.fragment.ProfileFragment
 import com.hpu.mymoviestore.presentation.fragment.SearchFragment
 
 /**
- * 应用主页面 —— 底部导航承载
+ * 应用主页面 —— 底部导航 + ViewPager2 承载
  * Tab 列表：首页 / 搜索 / 我的
+ *
+ * ViewPager2 提供丝滑的左右滑动切换效果，与底部导航栏双向同步。
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var lastBackPressedTime: Long = 0L
-    private var homeFragment: HomeFragment? = null
-    private var searchFragment: SearchFragment? = null
-    private var profileFragment: ProfileFragment? = null
     private var pendingSearchKeyword: String? = null
     private var resetSearchOnNextShow: Boolean = false
+
+    /** 底部导航 Tab 顺序，与 ViewPager2 页面索引一一对应 */
+    private val tabIds = listOf(R.id.nav_home, R.id.nav_search, R.id.nav_profile)
+
+    /** ViewPager2 适配器 */
+    private lateinit var pagerAdapter: MainPagerAdapter
 
     /**
      * 搜索页的进入方式：
@@ -38,117 +46,114 @@ class MainActivity : AppCompatActivity() {
     private enum class SearchEntryMode { MANUAL, EXTERNAL }
     private var searchEntryMode: SearchEntryMode = SearchEntryMode.MANUAL
 
-    private val onNavigationItemSelectedListener =
-        BottomNavigationView.OnNavigationItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_home -> {
-                    Log.d(TAG, "切换到首页")
-                    showFragment(R.id.nav_home)
-                    true
-                }
-                R.id.nav_search -> {
-                    Log.d(TAG, "切换到搜索")
-                    if (pendingSearchKeyword == null) {
-                        searchEntryMode = SearchEntryMode.MANUAL
-                        resetSearchOnNextShow = true
-                    }
-                    showFragment(R.id.nav_search)
-                    true
-                }
-                R.id.nav_profile -> {
-                    Log.d(TAG, "切换到我的")
-                    showFragment(R.id.nav_profile)
-                    true
-                }
-                else -> false
-            }
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         applySystemBarInsets()
 
-        binding.bottomNavigation.setOnItemSelectedListener(onNavigationItemSelectedListener)
+        setupViewPager()
+        setupBottomNavigation()
+        setupBackPressed()
+    }
+
+    // ======================== ViewPager2 ========================
+
+    private fun setupViewPager() {
+        pagerAdapter = MainPagerAdapter(this)
+        binding.viewPager.adapter = pagerAdapter
+        // 预加载所有页面，避免切换时重建 Fragment
+        binding.viewPager.offscreenPageLimit = tabIds.size
+        // 禁止超出边界的回弹效果
+        (binding.viewPager.getChildAt(0) as? android.view.ViewGroup)?.let {
+            it.getChildAt(0)?.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+        }
+
+        // ViewPager2 页面切换 → 同步底部导航 + 处理搜索页逻辑
+        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                // 同步底部导航栏选中状态
+                if (position < tabIds.size) {
+                    val tabId = tabIds[position]
+                    if (binding.bottomNavigation.selectedItemId != tabId) {
+                        binding.bottomNavigation.selectedItemId = tabId
+                    }
+                }
+
+                // 搜索页可见时，处理待搜索关键词或重置
+                if (tabIds.getOrNull(position) == R.id.nav_search) {
+                    binding.viewPager.post {
+                        if (pendingSearchKeyword != null) {
+                            deliverPendingSearchKeyword()
+                        } else {
+                            resetSearchIfNeeded()
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    // ======================== 底部导航 ========================
+
+    private fun setupBottomNavigation() {
+        binding.bottomNavigation.setOnItemSelectedListener { item ->
+            val index = tabIds.indexOf(item.itemId)
+            if (index >= 0) {
+                // 仅在页面实际需要切换时设置标志（滑动触发的不重复设置）
+                if (binding.viewPager.currentItem != index) {
+                    if (item.itemId == R.id.nav_search && pendingSearchKeyword == null) {
+                        searchEntryMode = SearchEntryMode.MANUAL
+                        resetSearchOnNextShow = true
+                    }
+                    binding.viewPager.currentItem = index
+                }
+            }
+            true
+        }
+
         binding.bottomNavigation.setOnItemReselectedListener { item ->
             if (item.itemId == R.id.nav_search && pendingSearchKeyword == null) {
                 Log.d(TAG, "重新点击搜索导航，重置搜索页")
                 resetSearchOnNextShow = true
-                showFragment(R.id.nav_search)
+                resetSearchIfNeeded()
             }
-        }
-        setupBackPressed()
-
-        if (savedInstanceState == null) {
-            Log.d(TAG, "首次启动，显式显示首页")
-            binding.bottomNavigation.selectedItemId = R.id.nav_home
-            showFragment(R.id.nav_home)
-        } else {
-            restoreFragments()
-            showFragment(binding.bottomNavigation.selectedItemId)
         }
     }
 
+    // ======================== 搜索相关 ========================
+
+    /**
+     * 从首页内容跳转到搜索页，携带搜索关键词
+     */
     fun navigateToSearchWithKeyword(keyword: String) {
         val cleanKeyword = keyword.trim()
         if (cleanKeyword.isBlank()) return
         Log.d(TAG, "首页内容发现跳转搜索: keyword=$cleanKeyword")
         pendingSearchKeyword = cleanKeyword
         searchEntryMode = SearchEntryMode.EXTERNAL
-        if (binding.bottomNavigation.selectedItemId == R.id.nav_search) {
-            showFragment(R.id.nav_search)
+        val searchIndex = tabIds.indexOf(R.id.nav_search)
+        if (binding.viewPager.currentItem == searchIndex) {
+            // 已在搜索页，直接投递关键词
+            deliverPendingSearchKeyword()
         } else {
-            binding.bottomNavigation.selectedItemId = R.id.nav_search
+            // 切换到搜索页，onPageSelected 会投递关键词
+            binding.viewPager.currentItem = searchIndex
         }
     }
 
-    private fun showFragment(itemId: Int) {
-        restoreFragments()
-        val target = when (itemId) {
-            R.id.nav_home -> homeFragment ?: HomeFragment().also { homeFragment = it }
-            R.id.nav_search -> searchFragment ?: SearchFragment().also { searchFragment = it }
-            R.id.nav_profile -> profileFragment ?: ProfileFragment().also { profileFragment = it }
-            else -> homeFragment ?: HomeFragment().also { homeFragment = it }
-        }
-        val targetTag = tagForItem(itemId)
-
-        val transaction = supportFragmentManager.beginTransaction()
-        listOf(homeFragment, searchFragment, profileFragment).forEach { fragment ->
-            if (fragment != null && fragment.isAdded) {
-                transaction.hide(fragment)
-            }
-        }
-        if (target.isAdded) {
-            transaction.show(target)
-        } else {
-            transaction.add(R.id.fragmentContainer, target, targetTag)
-        }
-        transaction.commit()
-
-        if (itemId == R.id.nav_search) {
-            binding.fragmentContainer.post {
-                if (pendingSearchKeyword != null) {
-                    deliverPendingSearchKeyword()
-                } else {
-                    resetSearchIfNeeded()
-                }
-            }
-        }
-    }
-
-    private fun restoreFragments() {
-        homeFragment = homeFragment
-            ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_HOME) as? HomeFragment
-        searchFragment = searchFragment
-            ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_SEARCH) as? SearchFragment
-        profileFragment = profileFragment
-            ?: supportFragmentManager.findFragmentByTag(FRAGMENT_TAG_PROFILE) as? ProfileFragment
+    /**
+     * 从 ViewPager2 获取搜索 Fragment 实例
+     * FragmentStateAdapter 的 tag 格式为 "f{position}"
+     */
+    private fun getSearchFragment(): SearchFragment? {
+        val tag = "f${tabIds.indexOf(R.id.nav_search)}"
+        return supportFragmentManager.findFragmentByTag(tag) as? SearchFragment
     }
 
     private fun deliverPendingSearchKeyword() {
         val keyword = pendingSearchKeyword ?: return
-        val fragment = searchFragment ?: return
+        val fragment = getSearchFragment() ?: return
         if (!fragment.isAdded) return
         pendingSearchKeyword = null
         resetSearchOnNextShow = false
@@ -157,19 +162,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun resetSearchIfNeeded() {
         if (!resetSearchOnNextShow || pendingSearchKeyword != null) return
-        val fragment = searchFragment ?: return
+        val fragment = getSearchFragment() ?: return
         if (!fragment.isAdded) return
         resetSearchOnNextShow = false
         fragment.resetToInitialState()
     }
 
-    private fun tagForItem(itemId: Int): String {
-        return when (itemId) {
-            R.id.nav_search -> FRAGMENT_TAG_SEARCH
-            R.id.nav_profile -> FRAGMENT_TAG_PROFILE
-            else -> FRAGMENT_TAG_HOME
-        }
-    }
+    // ======================== 系统适配 ========================
 
     private fun applySystemBarInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
@@ -182,20 +181,20 @@ class MainActivity : AppCompatActivity() {
     private fun setupBackPressed() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val currentNav = binding.bottomNavigation.selectedItemId
+                val currentNav = tabIds.getOrNull(binding.viewPager.currentItem) ?: R.id.nav_home
 
                 // 在搜索页：手动进入 + 已经展示搜索结果时，先回到搜索原页面
                 if (currentNav == R.id.nav_search &&
                     searchEntryMode == SearchEntryMode.MANUAL &&
-                    searchFragment?.isShowingSearchResult() == true
+                    getSearchFragment()?.isShowingSearchResult() == true
                 ) {
                     Log.d(TAG, "搜索结果页返回 → 回到搜索原页面")
-                    searchFragment?.resetToInitialState()
+                    getSearchFragment()?.resetToInitialState()
                     return
                 }
 
                 if (currentNav != R.id.nav_home) {
-                    binding.bottomNavigation.selectedItemId = R.id.nav_home
+                    binding.viewPager.currentItem = 0
                     return
                 }
 
@@ -213,8 +212,21 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val EXIT_INTERVAL_MS = 2_000L
-        private const val FRAGMENT_TAG_HOME = "fragment_home"
-        private const val FRAGMENT_TAG_SEARCH = "fragment_search"
-        private const val FRAGMENT_TAG_PROFILE = "fragment_profile"
+    }
+}
+
+/**
+ * 主页面 ViewPager2 适配器，管理三个 Fragment
+ */
+class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
+    override fun getItemCount(): Int = 3
+
+    override fun createFragment(position: Int): Fragment {
+        return when (position) {
+            0 -> HomeFragment()
+            1 -> SearchFragment()
+            2 -> ProfileFragment()
+            else -> HomeFragment()
+        }
     }
 }
