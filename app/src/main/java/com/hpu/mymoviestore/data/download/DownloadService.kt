@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -74,6 +75,9 @@ class DownloadService : Service() {
     /** 已完成的任务计数 */
     private var completedTaskCount: Int = 0
 
+    /** 上一轮检查时的活跃任务数（用于检测任务完成） */
+    private var lastActiveTaskCount: Int = 0
+
     /** 暂停全部/继续全部 广播接收器 */
     private val actionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -100,12 +104,16 @@ class DownloadService : Service() {
         notificationManager = DownloadNotificationManager(this)
         downloadEngine = DownloadEngine.getInstance(this)
 
-        // 注册广播接收器（暂停全部 / 继续全部）
+        // 注册广播接收器（暂停全部 / 继续全部），Android 14+ 需要指定 RECEIVER_NOT_EXPORTED
         val filter = IntentFilter().apply {
             addAction(DownloadNotificationManager.ACTION_PAUSE_ALL)
             addAction(DownloadNotificationManager.ACTION_RESUME_ALL)
         }
-        registerReceiver(actionReceiver, filter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(actionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(actionReceiver, filter)
+        }
 
         // 启动进度刷新定时器
         startProgressUpdateLoop()
@@ -264,28 +272,31 @@ class DownloadService : Service() {
      * 说明全部下载完成，发送完成通知并停止服务。
      */
     private fun checkAllTasksCompleted(currentTasks: List<DownloadTask>) {
-        // 检查是否有任务刚完成（从活跃列表中移除的任务）
-        // DownloadEngine 在任务完成时会从 tasks map 中移除
-        // 这里通过对比当前任务数和上次记录来判断
+        // 检测任务完成：活跃任务数减少说明有任务完成了
+        if (currentTasks.size < lastActiveTaskCount) {
+            val completed = lastActiveTaskCount - currentTasks.size
+            completedTaskCount += completed
+            Log.d(TAG, "检测到 $completed 个任务完成，累计完成: $completedTaskCount")
+        }
+        lastActiveTaskCount = currentTasks.size
 
-        val hasDownloadingOrPending = currentTasks.any {
+        val hasActiveTasks = currentTasks.any {
             it.status == DownloadStatus.PENDING ||
                     it.status == DownloadStatus.DOWNLOADING ||
                     it.status == DownloadStatus.MERGING
         }
 
-        if (!hasDownloadingOrPending) {
-            // 所有活跃任务都不是下载/等待/合并状态
-            val hasPaused = currentTasks.any { it.status == DownloadStatus.PAUSED }
-            if (!hasPaused && currentTasks.isEmpty()) {
-                // 没有任何活跃任务了，全部完成
+        // 没有正在下载/等待/合并的任务时，停止前台服务
+        if (!hasActiveTasks) {
+            if (completedTaskCount > 0) {
                 Log.d(TAG, "所有下载任务已完成，发送完成通知并停止服务")
-                if (completedTaskCount > 0) {
-                    notificationManager.showAllDownloadsCompletedNotification(completedTaskCount)
-                }
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                notificationManager.showAllDownloadsCompletedNotification(completedTaskCount)
+                completedTaskCount = 0
+            } else {
+                Log.d(TAG, "没有活跃的下载任务，停止前台服务")
             }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 

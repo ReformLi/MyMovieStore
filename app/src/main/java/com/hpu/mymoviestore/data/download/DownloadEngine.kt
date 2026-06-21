@@ -70,7 +70,9 @@ data class DownloadTask(
     /** 该任务的协程 Job */
     var job: Job? = null,
     /** 当前活跃的 OkHttp Call（用于暂停/取消时中断网络请求） */
-    val activeCalls: ConcurrentHashMap<Int, okhttp3.Call> = ConcurrentHashMap()
+    val activeCalls: ConcurrentHashMap<Int, okhttp3.Call> = ConcurrentHashMap(),
+    /** 该任务是否已获取信号量 permit（用于精确释放，避免泄漏） */
+    val hasPermit: AtomicBoolean = AtomicBoolean(false)
 )
 
 /**
@@ -177,6 +179,17 @@ class DownloadEngine(context: Context) {
         callback: DownloadCallback? = null
     ): String {
         val finalTaskId = taskId ?: UUID.randomUUID().toString().replace("-", "").substring(0, 16)
+
+        // 如果引擎中已存在同 ID 的旧任务，先取消其协程 Job，防止重复执行
+        tasks[finalTaskId]?.let { oldTask ->
+            Log.w(TAG, "提交任务时发现旧任务仍存在，先取消: taskId=$finalTaskId, oldStatus=${oldTask.status}")
+            oldTask.job?.cancel()
+            // 释放旧任务的信号量 permit（如果持有）
+            if (oldTask.hasPermit.compareAndSet(true, false)) {
+                taskSemaphore.release()
+            }
+        }
+
         val task = DownloadTask(
             taskId = finalTaskId,
             m3u8Url = m3u8Url,
@@ -210,10 +223,10 @@ class DownloadEngine(context: Context) {
             try { call.cancel() } catch (_: Exception) {}
         }
         task.activeCalls.clear()
-        // 释放信号量，让等待中的任务可以开始
-        try {
+        // 仅在任务确实持有 permit 时才释放，避免排队中任务被暂停导致 permit 泄漏
+        if (task.hasPermit.compareAndSet(true, false)) {
             taskSemaphore.release()
-        } catch (_: Exception) {}
+        }
         task.callback?.onStatusChanged(taskId, DownloadStatus.PAUSED, null)
         Log.d(TAG, "任务已暂停: taskId=$taskId")
     }
@@ -230,6 +243,8 @@ class DownloadEngine(context: Context) {
             Log.w(TAG, "恢复失败：任务不在暂停状态 taskId=$taskId, status=${task.status}")
             return
         }
+        // 取消旧的协程 Job，防止恢复后两个协程同时执行同一任务
+        task.job?.cancel()
         task.isPaused.set(false)
         task.status = DownloadStatus.PENDING
         task.callback?.onStatusChanged(taskId, DownloadStatus.PENDING, null)
@@ -238,6 +253,7 @@ class DownloadEngine(context: Context) {
         task.job = scope.launch {
             // 恢复时重新获取信号量
             taskSemaphore.acquire()
+            task.hasPermit.set(true)
             try {
                 executeTaskBody(task)
             } catch (e: CancellationException) {
@@ -246,7 +262,7 @@ class DownloadEngine(context: Context) {
                 Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
                 updateStatus(task, DownloadStatus.FAILED, e.message)
             } finally {
-                if (!task.isPaused.get() && !task.isCancelled.get()) {
+                if (task.hasPermit.compareAndSet(true, false)) {
                     taskSemaphore.release()
                 }
             }
@@ -270,10 +286,10 @@ class DownloadEngine(context: Context) {
             try { call.cancel() } catch (_: Exception) {}
         }
         task.activeCalls.clear()
-        // 释放信号量（如果任务正在执行中）
-        try {
+        // 仅在任务确实持有 permit 时才释放
+        if (task.hasPermit.compareAndSet(true, false)) {
             taskSemaphore.release()
-        } catch (_: Exception) {}
+        }
         task.callback?.onStatusChanged(taskId, DownloadStatus.CANCELLED, null)
         cleanupTempFiles(taskId)
         tasks.remove(taskId)
@@ -297,6 +313,7 @@ class DownloadEngine(context: Context) {
      */
     private suspend fun executeTask(task: DownloadTask) {
         taskSemaphore.acquire()
+        task.hasPermit.set(true)
         try {
             executeTaskBody(task)
         } catch (e: CancellationException) {
@@ -305,7 +322,7 @@ class DownloadEngine(context: Context) {
             Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
             updateStatus(task, DownloadStatus.FAILED, e.message)
         } finally {
-            if (!task.isPaused.get() && !task.isCancelled.get()) {
+            if (task.hasPermit.compareAndSet(true, false)) {
                 taskSemaphore.release()
             }
         }

@@ -40,8 +40,8 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_task ORDER BY createTime DESC")
     fun getAll(): Flow<List<DownloadTaskEntity>>
 
-    /** 活跃任务（等待、下载中、暂停、失败） */
-    @Query("SELECT * FROM download_task WHERE status IN (0, 1, 2, 4) ORDER BY createTime DESC")
+    /** 活跃任务（等待、下载中、暂停、失败、合并中） */
+    @Query("SELECT * FROM download_task WHERE status IN (0, 1, 2, 4, 6) ORDER BY createTime DESC")
     fun getDownloading(): Flow<List<DownloadTaskEntity>>
 
     /** 已完成任务 */

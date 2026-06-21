@@ -234,8 +234,8 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun onDanmakuRetry(task: DownloadTaskEntity) {
-        // 弹幕重试：通过 repository 的 retryDanmaku 方法
-        viewModel.retryTask(task.taskId)
+        // 弹幕重试：仅重试弹幕下载，不重新下载视频
+        viewModel.retryDanmaku(task)
         Log.d(TAG, "弹幕重试: ${task.taskId}")
     }
 

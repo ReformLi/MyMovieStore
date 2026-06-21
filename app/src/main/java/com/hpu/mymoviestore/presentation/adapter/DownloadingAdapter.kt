@@ -94,6 +94,13 @@ class DownloadingAdapter(
                     binding.btnCancel.visibility = android.view.View.VISIBLE
                     binding.btnRetry.visibility = android.view.View.GONE
                 }
+                DownloadTaskEntity.STATUS_MERGING -> {
+                    // 合并中 -> 不显示操作按钮，等待合并完成
+                    binding.btnPauseResume.visibility = android.view.View.GONE
+                    binding.btnCancel.visibility = android.view.View.GONE
+                    binding.btnRetry.visibility = android.view.View.GONE
+                    binding.btnDeleteFailed.visibility = android.view.View.GONE
+                }
                 DownloadTaskEntity.STATUS_FAILED -> {
                     // 失败 -> 显示重试、删除
                     binding.btnPauseResume.visibility = android.view.View.GONE

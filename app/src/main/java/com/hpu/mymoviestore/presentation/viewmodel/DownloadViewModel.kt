@@ -208,6 +208,28 @@ class DownloadViewModel : ViewModel() {
         }
     }
 
+    // ======================== 弹幕重试 ========================
+
+    /**
+     * 仅重试弹幕下载，不影响视频下载状态。
+     * 用于视频已下载完成但弹幕下载失败的场景。
+     */
+    fun retryDanmaku(task: DownloadTaskEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                DanmakuDownloadManager.getInstance(app).retryDanmaku(
+                    taskId = task.taskId,
+                    title = task.title,
+                    episodeTitle = task.episodeTitle,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                )
+                Log.d(TAG, "弹幕重试已触发: taskId=${task.taskId}")
+            } catch (e: Exception) {
+                Log.w(TAG, "弹幕重试失败: taskId=${task.taskId}, error=${e.message}")
+            }
+        }
+    }
+
     // ======================== 删除 ========================
 
     /**
@@ -241,9 +263,11 @@ class DownloadViewModel : ViewModel() {
 
     /** 暂停所有下载中/等待中的任务 */
     fun pauseAll() {
-        // 中断 DownloadEngine 中所有活跃任务
-        DownloadEngine.getInstance(app).getAllTasks().forEach {
-            DownloadEngine.getInstance(app).pauseTask(it.taskId)
+        // 仅暂停下载中/等待中的任务，不影响已失败的任务
+        DownloadEngine.getInstance(app).getAllTasks().forEach { task ->
+            if (task.status == DownloadStatus.DOWNLOADING || task.status == DownloadStatus.PENDING) {
+                DownloadEngine.getInstance(app).pauseTask(task.taskId)
+            }
         }
         viewModelScope.launch(Dispatchers.IO) {
             repository.pauseAll()
@@ -326,10 +350,9 @@ class DownloadViewModel : ViewModel() {
      * 这与 DetailActivity.startDownloadForEpisodes 中的回调保持一致。
      */
     private fun buildDownloadCallback(taskId: String, videoTitle: String, episodeTitle: String): DownloadCallback {
-        val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         return object : DownloadCallback {
             override fun onProgress(taskId: String, downloadedSegments: Int, totalSegments: Int, fileSize: Long) {
-                callbackScope.launch {
+                viewModelScope.launch(Dispatchers.IO) {
                     try {
                         repository.updateProgress(taskId, downloadedSegments, totalSegments, fileSize)
                     } catch (e: Exception) {
@@ -340,12 +363,13 @@ class DownloadViewModel : ViewModel() {
 
             override fun onStatusChanged(taskId: String, status: Int, errorMsg: String?) {
                 Log.d(TAG, "下载状态变更(恢复): taskId=$taskId, status=$status, error=$errorMsg")
-                callbackScope.launch {
+                viewModelScope.launch(Dispatchers.IO) {
                     try {
                         when (status) {
                             DownloadStatus.DOWNLOADING -> repository.markDownloading(taskId)
                             DownloadStatus.PAUSED -> repository.pauseTask(taskId)
                             DownloadStatus.FAILED -> repository.markFailed(taskId, errorMsg ?: "")
+                            DownloadStatus.MERGING -> repository.updateStatus(taskId, DownloadTaskEntity.STATUS_MERGING, "合并中…")
                             else -> {}
                         }
                     } catch (e: Exception) {
@@ -356,7 +380,7 @@ class DownloadViewModel : ViewModel() {
 
             override fun onCompleted(taskId: String, localFilePath: String, fileSize: Long) {
                 Log.d(TAG, "下载完成(恢复): taskId=$taskId, path=$localFilePath, size=$fileSize")
-                callbackScope.launch {
+                viewModelScope.launch(Dispatchers.IO) {
                     try {
                         repository.markCompleted(taskId, localFilePath, fileSize)
                         // 下载完成后触发弹幕下载

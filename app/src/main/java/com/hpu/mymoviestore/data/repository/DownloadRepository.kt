@@ -167,6 +167,11 @@ class DownloadRepository(
         taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_FAILED, errorMsg)
     }
 
+    /** 更新任务状态（通用方法，用于 MERGING 等自定义状态） */
+    suspend fun updateStatus(taskId: String, status: Int, errorMsg: String = "") {
+        taskDao.updateStatus(taskId, status, errorMsg)
+    }
+
     // ======================== 弹幕状态 ========================
 
     suspend fun updateDanmakuStatus(taskId: String, danmakuStatus: Int, danmakuFilePath: String = "", danmakuError: String = "") {

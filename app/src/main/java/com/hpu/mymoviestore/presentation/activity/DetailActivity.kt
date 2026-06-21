@@ -25,6 +25,7 @@ import com.hpu.mymoviestore.data.download.DanmakuDownloadManager
 import com.hpu.mymoviestore.data.download.DownloadCallback
 import com.hpu.mymoviestore.data.download.DownloadEngine
 import com.hpu.mymoviestore.data.download.DownloadStatus
+import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.download.DownloadService
 import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.PlayEpisode
@@ -664,8 +665,8 @@ class DetailActivity : AppCompatActivity() {
         val downloadEngine = DownloadEngine.getInstance(this)
         val danmakuManager = DanmakuDownloadManager.getInstance(this)
 
-        // 使用全局 CoroutineScope，确保离开详情页后仍能继续解析和下载
-        val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // 使用 Application 级 CoroutineScope，确保离开详情页后下载回调仍能更新数据库
+        val downloadScope = MovieApplication.get().applicationScope
 
         downloadScope.launch {
             // 第一步：并行解析所有集的 m3u8 地址（每集之间仍保持 3~5 秒间隔以保护源站）
@@ -725,6 +726,7 @@ class DetailActivity : AppCompatActivity() {
                                         DownloadStatus.DOWNLOADING -> app.downloadRepository.markDownloading(taskId)
                                         DownloadStatus.PAUSED -> app.downloadRepository.pauseTask(taskId)
                                         DownloadStatus.FAILED -> app.downloadRepository.markFailed(taskId, errorMsg ?: "")
+                                        DownloadStatus.MERGING -> app.downloadRepository.updateStatus(taskId, DownloadTaskEntity.STATUS_MERGING, "合并中…")
                                         else -> {}
                                     }
                                 } catch (e: Exception) {

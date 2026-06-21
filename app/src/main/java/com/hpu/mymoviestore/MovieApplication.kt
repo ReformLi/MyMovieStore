@@ -41,6 +41,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
 
     private val TAG = "MovieApplication"
 
+    /** Application 级协程作用域，生命周期与 Application 相同，用于下载回调等需要跨 Activity 生存的场景 */
+    val applicationScope: CoroutineScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
     lateinit var videoRepository: VideoRepository
         private set
 
