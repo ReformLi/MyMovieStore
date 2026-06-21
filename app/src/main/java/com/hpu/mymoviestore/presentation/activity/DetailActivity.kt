@@ -643,24 +643,14 @@ class DetailActivity : AppCompatActivity() {
      * 4. 对每一集：解析真实播放地址 → 提交到 DownloadEngine → 下载弹幕
      */
     private fun startDownloadForEpisodes(episodes: List<PlayEpisode>) {
-        // 1. 创建下载任务到数据库
-        downloadViewModel.createTasks(
-            videoId = videoId,
-            title = videoTitle,
-            coverUrl = videoCover,
-            sourceName = sourceName,
-            episodes = episodes
-        )
-
-        // 2. Toast 提示
+        // Toast 提示
         Toast.makeText(this, "已添加到下载列表", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "已创建 ${episodes.size} 个下载任务: videoId=$videoId, title=$videoTitle")
 
-        // 3. 启动前台服务
+        // 启动前台服务
         val serviceIntent = Intent(this, DownloadService::class.java)
         startForegroundService(serviceIntent)
 
-        // 4. 对每一集解析真实播放地址并提交下载
         val app = MovieApplication.get()
         val downloadEngine = DownloadEngine.getInstance(this)
         val danmakuManager = DanmakuDownloadManager.getInstance(this)
@@ -669,6 +659,25 @@ class DetailActivity : AppCompatActivity() {
         val downloadScope = MovieApplication.get().applicationScope
 
         downloadScope.launch {
+            // 第零步：先同步创建数据库任务，确保后续 startDanmakuDownload 调用
+            // dao.updateDanmakuStatus 时数据库中已有对应行（否则更新 0 行，弹幕状态永远停留 0）
+            episodes.forEach { episode ->
+                val stableIndex = episode.playPageUrl.hashCode()
+                try {
+                    app.downloadRepository.createTask(
+                        videoId = videoId,
+                        title = videoTitle,
+                        coverUrl = videoCover,
+                        sourceName = sourceName,
+                        episodeIndex = stableIndex,
+                        episodeTitle = episode.title,
+                        playUrl = episode.playPageUrl
+                    )
+                } catch (t: Throwable) {
+                    Log.w(TAG, "创建下载任务失败: episode=${episode.title}, error=${t.message}")
+                }
+            }
+            Log.d(TAG, "批量创建下载任务完成: videoId=$videoId, count=${episodes.size}")
             // 第一步：并行解析所有集的 m3u8 地址（每集之间仍保持 3~5 秒间隔以保护源站）
             val m3u8Results = coroutineScope {
                 episodes.mapIndexed { index, episode ->
@@ -691,6 +700,16 @@ class DetailActivity : AppCompatActivity() {
 
                 if (m3u8Url.isNullOrBlank()) {
                     Log.w(TAG, "下载：解析播放地址失败, episode=${episode.title}")
+                    // 将数据库中的任务标记为失败，避免任务永远停留在 PENDING 状态
+                    val stableIndex = episode.playPageUrl.hashCode()
+                    val dbTaskId = "${videoId}_$stableIndex"
+                    downloadScope.launch {
+                        try {
+                            app.downloadRepository.markFailed(dbTaskId, "解析播放地址失败")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "标记任务失败状态出错: ${e.message}")
+                        }
+                    }
                     return@forEach
                 }
 

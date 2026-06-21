@@ -31,6 +31,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.data.database.MovieDatabase
+import com.hpu.mymoviestore.data.download.DanmakuDownloadManager
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
@@ -256,6 +258,21 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 initializePlayerWithLocalFile(localUri)
+
+                // 弹幕重试逻辑：如果弹幕下载失败或未下载，且弹幕总开关开启，则后台重试下载弹幕
+                if (task != null) {
+                    val masterEnabled = DanmakuPrefs(this@PlayerActivity).isMasterEnabled()
+                    if (masterEnabled && (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
+                            task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED)) {
+                        Log.d(TAG, "离线播放：弹幕状态=${task.danmakuStatus}，触发后台重试下载")
+                        DanmakuDownloadManager.getInstance(this@PlayerActivity).retryDanmaku(
+                            taskId = offlineTaskId,
+                            title = task.title,
+                            episodeTitle = task.episodeTitle,
+                            dao = MovieDatabase.getInstance(this@PlayerActivity).downloadTaskDao()
+                        )
+                    }
+                }
 
                 // 如果有本地弹幕文件，直接加载
                 if (!danmakuFilePath.isNullOrEmpty()) {

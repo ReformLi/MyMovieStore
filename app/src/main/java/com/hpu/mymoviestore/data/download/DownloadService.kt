@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.hpu.mymoviestore.MovieApplication
@@ -53,6 +54,9 @@ class DownloadService : Service() {
 
     /** 下载引擎 */
     private lateinit var downloadEngine: DownloadEngine
+
+    /** CPU 唤醒锁，保证屏幕关闭后下载协程继续执行 */
+    private var wakeLock: PowerManager.WakeLock? = null
 
     /** 协程作用域 */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -104,6 +108,14 @@ class DownloadService : Service() {
         notificationManager = DownloadNotificationManager(this)
         downloadEngine = DownloadEngine.getInstance(this)
 
+        // 获取 CPU 唤醒锁，确保屏幕关闭/深度睡眠时下载协程仍能继续执行
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "MyMovieStore:DownloadWakeLock"
+        ).apply { acquire() }
+        Log.d(TAG, "已获取 PARTIAL_WAKE_LOCK")
+
         // 注册广播接收器（暂停全部 / 继续全部），Android 14+ 需要指定 RECEIVER_NOT_EXPORTED
         val filter = IntentFilter().apply {
             addAction(DownloadNotificationManager.ACTION_PAUSE_ALL)
@@ -142,6 +154,15 @@ class DownloadService : Service() {
 
         // 取消进度刷新
         progressUpdateJob?.cancel()
+
+        // 释放唤醒锁
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.d(TAG, "已释放 PARTIAL_WAKE_LOCK")
+            }
+        }
+        wakeLock = null
 
         // 注销广播接收器
         try {

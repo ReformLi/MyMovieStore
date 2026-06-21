@@ -145,6 +145,8 @@ class DownloadViewModel : ViewModel() {
                     Log.w(TAG, "恢复失败：找不到任务 $taskId")
                 }
             } else {
+                // 确保前台服务已启动（可能因所有任务暂停后服务已停止）
+                ensureDownloadServiceRunning()
                 DownloadEngine.getInstance(app).resumeTask(taskId)
             }
         }
@@ -347,12 +349,14 @@ class DownloadViewModel : ViewModel() {
     /**
      * 构建标准的 DownloadCallback，用于恢复/重试任务时将进度和状态同步到数据库。
      *
-     * 这与 DetailActivity.startDownloadForEpisodes 中的回调保持一致。
+     * 使用 applicationScope 而非 viewModelScope，确保即使用户离开了 DownloadActivity，
+     * 下载回调仍能正常更新数据库并触发弹幕下载。
      */
     private fun buildDownloadCallback(taskId: String, videoTitle: String, episodeTitle: String): DownloadCallback {
+        val scope = app.applicationScope
         return object : DownloadCallback {
             override fun onProgress(taskId: String, downloadedSegments: Int, totalSegments: Int, fileSize: Long) {
-                viewModelScope.launch(Dispatchers.IO) {
+                scope.launch(Dispatchers.IO) {
                     try {
                         repository.updateProgress(taskId, downloadedSegments, totalSegments, fileSize)
                     } catch (e: Exception) {
@@ -363,7 +367,7 @@ class DownloadViewModel : ViewModel() {
 
             override fun onStatusChanged(taskId: String, status: Int, errorMsg: String?) {
                 Log.d(TAG, "下载状态变更(恢复): taskId=$taskId, status=$status, error=$errorMsg")
-                viewModelScope.launch(Dispatchers.IO) {
+                scope.launch(Dispatchers.IO) {
                     try {
                         when (status) {
                             DownloadStatus.DOWNLOADING -> repository.markDownloading(taskId)
@@ -380,7 +384,7 @@ class DownloadViewModel : ViewModel() {
 
             override fun onCompleted(taskId: String, localFilePath: String, fileSize: Long) {
                 Log.d(TAG, "下载完成(恢复): taskId=$taskId, path=$localFilePath, size=$fileSize")
-                viewModelScope.launch(Dispatchers.IO) {
+                scope.launch(Dispatchers.IO) {
                     try {
                         repository.markCompleted(taskId, localFilePath, fileSize)
                         // 下载完成后触发弹幕下载

@@ -7,6 +7,8 @@ import android.view.MenuItem
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayoutMediator
@@ -72,6 +74,7 @@ class DownloadActivity : AppCompatActivity() {
         setupViewPager()
         setupObservers()
         refreshStorage()
+        applySystemBarInsets()
 
     }
 
@@ -136,6 +139,14 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     // ======================== 初始化 ========================
+
+    private fun applySystemBarInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+            insets
+        }
+    }
 
     private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)

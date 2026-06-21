@@ -223,9 +223,14 @@ class DownloadEngine(context: Context) {
             try { call.cancel() } catch (_: Exception) {}
         }
         task.activeCalls.clear()
-        // 仅在任务确实持有 permit 时才释放，避免排队中任务被暂停导致 permit 泄漏
         if (task.hasPermit.compareAndSet(true, false)) {
+            // 任务正在下载中（持有 permit）→ 释放信号量，下载协程会在 isPaused 检查处自然退出
             taskSemaphore.release()
+        } else {
+            // 任务在排队等待中（阻塞在 acquire()）→ 取消协程，避免占用等待位置
+            // 否则协程会在 acquire() 处一直阻塞，直到有 permit 可用时才被唤醒，
+            // 短暂"偷"走 permit 后才发现已被暂停，造成调度延迟
+            task.job?.cancel()
         }
         task.callback?.onStatusChanged(taskId, DownloadStatus.PAUSED, null)
         Log.d(TAG, "任务已暂停: taskId=$taskId")
@@ -387,10 +392,13 @@ class DownloadEngine(context: Context) {
             tasks.remove(task.taskId)
 
         } catch (e: CancellationException) {
-            Log.d(TAG, "任务被取消: taskId=${task.taskId}")
-            if (!task.isCancelled.get()) {
+            Log.d(TAG, "任务被中断: taskId=${task.taskId}")
+            if (task.isCancelled.get()) {
                 task.status = DownloadStatus.CANCELLED
                 task.callback?.onStatusChanged(task.taskId, DownloadStatus.CANCELLED, null)
+            } else if (task.isPaused.get()) {
+                task.status = DownloadStatus.PAUSED
+                task.callback?.onStatusChanged(task.taskId, DownloadStatus.PAUSED, null)
             }
         } catch (e: Exception) {
             Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)

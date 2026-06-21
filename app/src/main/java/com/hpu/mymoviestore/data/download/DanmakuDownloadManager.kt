@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * - 单例模式，通过 getInstance(context) 获取
  * - 使用 CoroutineScope(SupervisorJob() + Dispatchers.IO) 管理协程
  * - 下载弹幕流程：搜索候选 -> 获取分集 -> 获取弹幕 -> 序列化保存 -> 更新数据库
- * - 自动重试策略：首次失败后自动重试，最多5次，指数退避间隔（1min, 2min, 4min, 8min, 16min）
+ * - 自动重试策略：首次失败后自动重试，最多5次，固定间隔（1min）
  * - 手动重试：retryDanmaku() 不计入自动重试次数
  */
 class DanmakuDownloadManager private constructor(context: Context) {
@@ -32,7 +32,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
         /** 自动重试最大次数 */
         private const val MAX_AUTO_RETRY = 5
 
-        /** 指数退避基础间隔（毫秒）：1min */
+        /** 自动重试固定间隔（毫秒）：1min */
         private const val BASE_RETRY_DELAY_MS = 60_000L
 
         @Volatile
@@ -333,8 +333,8 @@ class DanmakuDownloadManager private constructor(context: Context) {
         val currentRetry = countHolder.getAndIncrement()
 
         if (currentRetry < MAX_AUTO_RETRY) {
-            // 还有重试机会，计算指数退避间隔
-            val delayMs = BASE_RETRY_DELAY_MS * (1L shl currentRetry) // 1min, 2min, 4min, 8min, 16min
+            // 还有重试机会，固定间隔重试
+            val delayMs = BASE_RETRY_DELAY_MS // 固定 1min
             Log.d(TAG, "弹幕下载失败，将在 ${delayMs / 1000}s 后进行第 ${currentRetry + 1} 次自动重试: taskId=$taskId, error=$error")
 
             // 更新状态为重试中
