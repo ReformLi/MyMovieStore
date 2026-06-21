@@ -247,6 +247,7 @@ class DownloadActivity : AppCompatActivity() {
     private fun onDanmakuRetry(task: DownloadTaskEntity) {
         // 弹幕重试：仅重试弹幕下载，不重新下载视频
         viewModel.retryDanmaku(task)
+        Toast.makeText(this, "正在重试弹幕下载", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "弹幕重试: ${task.taskId}")
     }
 

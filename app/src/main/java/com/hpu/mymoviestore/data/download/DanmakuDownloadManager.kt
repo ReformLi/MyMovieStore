@@ -152,6 +152,8 @@ class DanmakuDownloadManager private constructor(context: Context) {
     ) {
         // 取消该任务之前可能存在的下载协程
         jobMap[taskId]?.cancel()
+        // 重置自动重试计数，让手动重试后的后续自动重试从 0 开始
+        retryCountMap.remove(taskId)
 
         Log.d(TAG, "手动重试弹幕下载: taskId=$taskId, title=$title, episode=$episodeTitle")
 

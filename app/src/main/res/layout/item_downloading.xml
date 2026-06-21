@@ -113,15 +113,17 @@
                     android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="11sp" />
 
-                <ImageButton
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnDanmakuRetry"
-                    android:layout_width="28dp"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
                     android:layout_height="28dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="重试弹幕"
-                    android:src="@android:drawable/ic_menu_rotate"
-                    android:visibility="gone"
-                    app:tint="@color/colorPrimary" />
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="重试"
+                    android:textColor="@color/colorPrimary"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- 操作按钮行 -->
