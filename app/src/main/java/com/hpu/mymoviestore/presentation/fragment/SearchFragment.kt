@@ -235,8 +235,13 @@ class SearchFragment : Fragment() {
         }
 
         // 如果无缓存（首次），后台异步触发权限检查，下次搜索时生效
-        CoroutineScope(Dispatchers.IO).launch {
-            MovieApplication.get().searchPermissionRepository.fetchPermissionAsync()
+        if (!MovieApplication.get().searchPermissionRepository.isCacheValid()) {
+            Log.d(TAG, "搜索权限缓存无效或不存在，触发后台刷新")
+            CoroutineScope(Dispatchers.IO).launch {
+                MovieApplication.get().searchPermissionRepository.fetchPermissionAsync()
+            }
+        } else {
+            Log.d(TAG, "搜索权限缓存有效，跳过后台刷新")
         }
 
         // 权限通过，继续搜索

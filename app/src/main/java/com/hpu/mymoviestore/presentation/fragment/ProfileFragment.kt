@@ -426,7 +426,7 @@ class ProfileFragment : Fragment() {
             .setTitle("关于")
             .setMessage(
                 "我的影视\n" +
-                    "版本: 1.0\n\n" +
+                    "版本: 1.0.0\n\n" +
                     "一款简洁的影视浏览与播放应用，\n" +
                     "聚合豆瓣内容发现与在线播放资源。\n\n" +
                     "仅供学习交流使用。"

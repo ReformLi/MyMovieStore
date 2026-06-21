@@ -157,6 +157,29 @@ class SearchPermissionRepository(
     }
 
     /**
+     * 检查是否有有效的缓存（内存缓存或本地缓存未过期）
+     * @return true 表示有有效缓存，false 表示无缓存或缓存已过期
+     */
+    fun isCacheValid(): Boolean {
+        // 1. 检查内存缓存
+        if (memoryPermissionResult != null) {
+            Log.d(TAG, "搜索权限：内存缓存有效")
+            return true
+        }
+
+        // 2. 检查本地 SharedPreferences 缓存
+        val localResult = readLocalCache()
+        if (localResult != null) {
+            memoryPermissionResult = localResult
+            Log.d(TAG, "搜索权限：本地缓存有效，已加载到内存")
+            return true
+        }
+
+        Log.d(TAG, "搜索权限：无有效缓存")
+        return false
+    }
+
+    /**
      * 读取本地缓存
      */
     private fun readLocalCache(): Boolean? {
