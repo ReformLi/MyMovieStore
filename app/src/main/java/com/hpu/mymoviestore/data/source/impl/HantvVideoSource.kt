@@ -16,7 +16,7 @@ import java.net.URLEncoder
 class HantvVideoSource(
     client: OkHttpClient = defaultClient(),
     cacheRepository: ApiCacheRepository? = null,
-    rateLimiter: RequestRateLimiter = RequestRateLimiter("JJU", 3_000L, 3)
+    rateLimiter: RequestRateLimiter = RequestRateLimiter("HTV", 3_000L, 3)
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_hantv"

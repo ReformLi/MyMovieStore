@@ -14,9 +14,11 @@ import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceManager
+import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
 import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
 import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import kotlinx.coroutines.CoroutineScope
@@ -92,9 +94,10 @@ class MovieApplication : Application(), ImageLoaderFactory {
         val tiantangSource = TiantangVideoSource(cacheRepository = apiCacheRepository)
         val hantvVideoSource = HantvVideoSource(cacheRepository = apiCacheRepository)
         val doujiaoVideoSource = DoujiaoVideoSource(cacheRepository = apiCacheRepository)
+        val nongmingVideoSource = NongmingVideoSource(cacheRepository = apiCacheRepository)
+        val cechiVideoSource = CechiVideoSource(cacheRepository = apiCacheRepository)
         val doubanDiscoverySource = DoubanDiscoverySource()
-
-        _allVideoSources = listOf(doujiaoVideoSource,hantvVideoSource, tiantangSource,crawlerSource,yinghuaSource)
+        _allVideoSources = listOf(nongmingVideoSource,cechiVideoSource,doujiaoVideoSource,hantvVideoSource, tiantangSource,crawlerSource,yinghuaSource)
 
         // 从 SharedPreferences 恢复视频源启用状态
         restoreSourceEnabledStates()
