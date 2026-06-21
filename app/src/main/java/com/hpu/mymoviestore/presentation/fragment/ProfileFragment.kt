@@ -199,7 +199,7 @@ class ProfileFragment : Fragment() {
             CacheItem("清理首页缓存", "删除首页列表缓存数据", R.drawable.ic_player_home, true),
             CacheItem("清理详情页缓存", "删除所有详情页元数据", R.drawable.ic_player_detail, true),
             CacheItem("清理播放地址缓存", "删除所有缓存的 m3u8 地址", R.drawable.ic_player_play, true),
-            CacheItem("清理弹幕缓存", "删除所有本地弹幕 JSON 文件", R.drawable.ic_player_danmaku, true),
+            CacheItem("清理弹幕缓存", "删除所有本地弹幕 JSON 文件及弹幕源选择记录", R.drawable.ic_player_danmaku, true),
             CacheItem("清理全部缓存", "删除以上所有内容", R.drawable.ic_player_clear_all, false)
         )
 
@@ -277,6 +277,7 @@ class ProfileFragment : Fragment() {
         items.forEachIndexed { index, item ->
             val itemView = createCacheItemView(item, index in selectedItems) { isChecked ->
                 if (isChecked) selectedItems.add(index) else selectedItems.remove(index)
+                // 如果选了"全部"，自动选中其他项；如果取消"全部"，不影响其他项
                 if (index == 5 && isChecked) {
                     (0..4).forEach { selectedItems.add(it) }
                     refreshAllItems(container, items, selectedItems)
@@ -324,10 +325,11 @@ class ProfileFragment : Fragment() {
                 results.add("播放地址缓存 (${rows1 + rows2}条)")
             }
 
-            // 5. 清理弹幕缓存
+            // 5. 清理弹幕缓存（包括弹幕源选择记录）
             if (5 in selectedItems || 4 in selectedItems) {
                 DanmakuCache(requireContext()).clearAll()
-                results.add("弹幕缓存")
+                DanmakuPrefs(requireContext()).clearSavedAnimeChoices()
+                results.add("弹幕缓存及弹幕源选择记录")
             }
 
             withContext(Dispatchers.Main) {

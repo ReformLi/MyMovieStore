@@ -6,6 +6,7 @@ import com.hpu.mymoviestore.data.dao.DownloadTaskDao
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.repository.DanmakuRepository
+import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.*
@@ -248,8 +249,25 @@ class DanmakuDownloadManager private constructor(context: Context) {
             return DownloadResult(error = error)
         }
 
-        val anime = candidates.first()
-        Log.d(TAG, "[$taskId] 选中弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
+        // 优先使用保存的弹幕源偏好
+        val videoIdFromTask = taskId.substringBefore('_').toLongOrNull() ?: 0L
+        val savedAnimeId = if (videoIdFromTask > 0L) {
+            DanmakuPrefs(appContext).getSavedAnimeId(videoIdFromTask)
+        } else {
+            0L
+        }
+
+        val anime = if (savedAnimeId > 0L) {
+            candidates.find { it.animeId == savedAnimeId }
+        } else {
+            null
+        } ?: candidates.first()
+
+        if (savedAnimeId > 0L && anime.animeId == savedAnimeId) {
+            Log.d(TAG, "[$taskId] 使用保存的弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
+        } else {
+            Log.d(TAG, "[$taskId] 使用默认弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
+        }
 
         // 2. 获取分集信息
         Log.d(TAG, "[$taskId] 获取分集信息: animeId=${anime.animeId}")

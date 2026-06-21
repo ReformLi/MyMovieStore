@@ -33,6 +33,7 @@ import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
+import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuCommentResponse
 import com.hpu.mymoviestore.data.repository.DanmakuRepository
@@ -89,8 +90,10 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var danmakuRepository: DanmakuRepository
     private var candidateList: List<DanmakuAnime> = emptyList()
     private var selectedBangumi: DanmakuBangumi? = null
-    private var danmakuLoadJob: Job? = null
-    private val uiScope = CoroutineScope(Dispatchers.Main)
+        private var danmakuLoadJob: Job? = null
+        private var danmakuSearchJob: Job? = null
+        private var lastLoadedAnimeId: Long = 0L
+        private val uiScope = CoroutineScope(Dispatchers.Main)
 
     // PlayerView 内部的弹幕控件引用（在自定义控制栏中）
     private val danmakuSwitch: android.widget.Switch get() =
@@ -233,6 +236,8 @@ class PlayerActivity : AppCompatActivity() {
             // ========== 离线播放模式 ==========
             Log.d(TAG, "离线播放模式: localFilePath=$localFilePath, taskId=$offlineTaskId")
             this.offlineTaskId = offlineTaskId
+            this.videoId = offlineTaskId.substringBeforeLast("_").toLongOrNull() ?: 0L
+            Log.d(TAG, "离线模式解析 videoId=$videoId from taskId=$offlineTaskId")
             val localFile = File(localFilePath)
             if (localFile.exists()) {
                 val localUri = Uri.fromFile(localFile)
@@ -626,7 +631,12 @@ class PlayerActivity : AppCompatActivity() {
                 if (position < 0 || position >= candidateList.size) return
                 val anime = candidateList[position]
                 Log.d(TAG, "用户选择弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
-                loadDanmakuForAnime(anime, episodeTitle)
+                DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
+                // 强制重新加载，不使用 lastLoadedAnimeId 跳过
+                lastLoadedAnimeId = 0L
+                // 提取集数数字，兼容不同源的集数格式
+                val epNum = extractEpisodeNumber(episodeTitle)
+                loadDanmakuForAnime(anime.animeId, epNum)
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -853,9 +863,29 @@ class PlayerActivity : AppCompatActivity() {
 
     // ================== 弹幕搜索/加载 ==================
 
+    /** 从标题中提取集数数字，兼容不同源的集数格式（"第1集"、"EP1" → "1"） */
+    private fun extractEpisodeNumber(title: String): String {
+        val match = Regex("""(\d+)""").find(title)
+        return match?.value ?: title
+    }
+
     private fun launchDanmakuSearch(title: String, episode: String) {
+        danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
-        danmakuLoadJob = uiScope.launch {
+
+        val prefs = DanmakuPrefs(this)
+        val savedAnimeId = prefs.getSavedAnimeId(videoId)
+
+        // 有保存的弹幕源时，提前直接加载（搜索完成前即可显示）
+        if (savedAnimeId > 0L) {
+            Log.d(TAG, "发现保存的弹幕源: videoId=$videoId, savedAnimeId=$savedAnimeId")
+            val epNum = extractEpisodeNumber(episode)
+            uiScope.launch {
+                loadDanmakuForAnime(savedAnimeId, epNum)
+            }
+        }
+
+        danmakuSearchJob = uiScope.launch {
             val candidates = danmakuRepository.searchCandidates(title)
             Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
 
@@ -865,7 +895,6 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             candidateList = candidates
-            // Spinner 收起时显示 source（如 "弹幕源 tencent"）
             val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
             val adapter = object : ArrayAdapter<String>(
                 this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
@@ -876,7 +905,6 @@ class PlayerActivity : AppCompatActivity() {
                     v.textSize = 13f
                     return v
                 }
-                // 下拉列表显示 animeTitle（番剧名称）
                 override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getDropDownView(position, convertView, parent) as TextView
                     v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
@@ -889,20 +917,39 @@ class PlayerActivity : AppCompatActivity() {
             }
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             danmakuSpinner.adapter = adapter
-            danmakuSpinner.setSelection(0)
+
+            // 选中已保存的弹幕源
+            if (savedAnimeId > 0L) {
+                val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
+                if (savedIndex >= 0) {
+                    danmakuSpinner.setSelection(savedIndex)
+                    Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
+                } else {
+                    Log.w(TAG, "保存的弹幕源不在搜索结果中: savedAnimeId=$savedAnimeId")
+                    danmakuSpinner.setSelection(0)
+                }
+            } else {
+                danmakuSpinner.setSelection(0)
+            }
         }
     }
 
-    private fun loadDanmakuForAnime(anime: DanmakuAnime, episode: String) {
+    private fun loadDanmakuForAnime(animeId: Long, episode: String) {
+        if (animeId == lastLoadedAnimeId) {
+            Log.d(TAG, "弹幕源已加载，跳过: animeId=$animeId")
+            return
+        }
+        lastLoadedAnimeId = animeId
+
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
             val bangumi = danmakuRepository.fetchBangumi(
-                animeId = anime.animeId, keyword = videoTitle
+                animeId = animeId, keyword = videoTitle
             ) { success, _, _ ->
-                if (!success) Log.w(TAG, "获取 bangumi 最终失败")
+                if (!success) Log.w(TAG, "获取 bangumi 最终失败: animeId=$animeId")
             }
             if (bangumi == null) {
-                Log.w(TAG, "bangumi 为空，无法加载弹幕")
+                Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
                 return@launch
             }
             selectedBangumi = bangumi
@@ -921,17 +968,73 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             if (comments.isEmpty()) {
-                Log.w(TAG, "弹幕列表为空或失败")
+                Log.w(TAG, "弹幕列表为空: animeId=$animeId")
                 danmakuManager?.loadDanmaku(null)
-            } else {
-                Log.d(TAG, "加载弹幕成功: ${comments.size} 条")
-                danmakuManager?.loadDanmaku(comments)
-                player?.let { p ->
-                    danmakuManager?.syncTo(p.currentPosition)
-                    if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
+                return@launch
+            }
+
+            Log.d(TAG, "加载弹幕成功: ${comments.size} 条")
+            danmakuManager?.loadDanmaku(comments)
+            player?.let { p ->
+                danmakuManager?.syncTo(p.currentPosition)
+                if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
+            }
+
+            // 保存弹幕到本地文件
+            saveDanmakuToLocalFile(animeId, episode, comments)
+        }
+    }
+
+    /**
+     * 将弹幕列表保存到本地文件
+     *
+     * 离线播放时写入关联下载任务；在线播放时若对应任务存在也写入。
+     * 文件保存在 filesDir/Danmaku/{taskId}.json
+     */
+    private fun saveDanmakuToLocalFile(animeId: Long, episode: String, comments: List<com.hpu.mymoviestore.data.model.danmaku.DanmakuComment>) {
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+                val adapter = moshi.adapter<List<com.hpu.mymoviestore.data.model.danmaku.DanmakuComment>>(List::class.java)
+                val json = adapter.toJson(comments)
+
+                // 确定 taskId
+                val taskId = if (isOfflineMode && offlineTaskId.isNotEmpty()) {
+                    offlineTaskId
+                } else {
+                    // 在线模式：尝试根据 videoId + episodeTitle 查找下载任务
+                    val tasks = MovieApplication.get().downloadRepository.getTasksByVideoId(videoId)
+                    tasks.find { matchEpisodeTitle(it.episodeTitle, episode) }?.taskId
                 }
+
+                if (taskId == null) {
+                    Log.d(TAG, "saveDanmakuToLocalFile: 无匹配下载任务，跳过写文件")
+                    return@launch
+                }
+
+                val danmakuDir = java.io.File(filesDir, "Danmaku").also { it.mkdirs() }
+                val file = java.io.File(danmakuDir, "$taskId.json")
+                file.writeText(json, Charsets.UTF_8)
+                Log.d(TAG, "弹幕已缓存到本地: ${file.absolutePath}, size=${file.length()}")
+
+                // 更新数据库中的弹幕文件路径
+                MovieApplication.get().downloadRepository.updateDanmakuStatus(
+                    taskId, DownloadTaskEntity.DANMAKU_COMPLETED,
+                    file.absolutePath, ""
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "saveDanmakuToLocalFile 失败: ${e.message}", e)
             }
         }
+    }
+
+    /**
+     * 粗略匹配集数标题中的数字
+     */
+    private fun matchEpisodeTitle(taskEpisodeTitle: String, currentEpisode: String): Boolean {
+        val taskNum = Regex("""\d+""").find(taskEpisodeTitle)?.value
+        val currentNum = Regex("""\d+""").find(currentEpisode)?.value
+        return taskNum != null && currentNum != null && taskNum == currentNum
     }
 
     // ================== 生命周期 ==================
@@ -960,6 +1063,7 @@ class PlayerActivity : AppCompatActivity() {
         saveCurrentProgress(true)
         stopProgressSyncRunnable()
         releasePlayer()
+        danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
         danmakuManager?.release()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
