@@ -60,22 +60,32 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="类型"
+                android:text="类型：国产剧"
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="13sp" />
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/tvPlayTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="播放时间：2026-06-21 08:06"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="13sp" />
+
+            <RelativeLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_marginTop="4dp">
 
                 <TextView
                     android:id="@+id/tvEpisode"
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    android:layout_alignParentStart="true"
+                    android:layout_toStartOf="@id/tvSourceBottom"
+                    android:ellipsize="end"
+                    android:maxLines="1"
                     android:text="第1集"
                     android:textColor="?android:attr/textColorSecondary"
                     android:textSize="13sp" />
@@ -84,11 +94,12 @@
                     android:id="@+id/tvSourceBottom"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
                     android:text="剧集屋"
                     android:textColor="@color/colorAccent"
                     android:textSize="11sp"
                     android:visibility="gone" />
-            </LinearLayout>
+            </RelativeLayout>
         </LinearLayout>
     </LinearLayout>
 </androidx.cardview.widget.CardView>

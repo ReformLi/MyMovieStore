@@ -117,6 +117,7 @@ class PlayerActivity : AppCompatActivity() {
     // 亮度/音量
     private var currentBrightness = -1f
     private var currentVolume = -1
+    private var currentVolumeFloat = -1f  // 音量浮点数，用于连续调节
     private var maxVolume = 0
 
     // 手势方向锁定：长按触发后确定方向，整个手势过程不再切换
@@ -831,6 +832,11 @@ class PlayerActivity : AppCompatActivity() {
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                // 正在长按手势时，忽略新的 ACTION_DOWN（华为 HiTouch 会注入假的 DOWN 事件）
+                if (isLongPressing) {
+                    Log.d(TAG, "长按手势中收到 ACTION_DOWN，已忽略（华为 HiTouch 干扰）")
+                    return true
+                }
                 isLongPressing = false
                 gestureDirection = 0
                 seekBaseMs = 0L
@@ -839,18 +845,28 @@ class PlayerActivity : AppCompatActivity() {
                 longPressStartY = event.y
                 currentBrightness = -1f
                 currentVolume = -1
+                currentVolumeFloat = -1f
                 handler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD_MS)
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isLongPressing) {
                     handleLongPressMove(event)
-                    return true // 长按手势期间完全由我们处理
+                    return true
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(longPressRunnable)
                 if (isLongPressing) {
                     finishLongPressGesture()
+                    return true
+                }
+                gestureDirection = 0
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                // 正在长按手势时，忽略 ACTION_CANCEL（华为 HiTouch 会触发 CANCEL 导致手势中断）
+                if (isLongPressing) {
+                    Log.d(TAG, "长按手势中收到 ACTION_CANCEL，已忽略（华为 HiTouch 干扰）")
                     return true
                 }
                 gestureDirection = 0
@@ -937,15 +953,18 @@ class PlayerActivity : AppCompatActivity() {
                 showGestureTip("$sign${diffSec}s / ${currentSec}s (共${totalSec}s)")
             }
             GESTURE_DIR_VERTICAL -> {
-                // 垂直：亮度/音量（连续平滑调节，每次增量计算）
-                val ratio = (event.y - longPressStartY) / screenHeight
-                if (event.x < screenWidth / 2) {
-                    adjustBrightness(ratio)
-                } else {
-                    adjustVolume(ratio)
+                // 垂直：亮度/音量（传入本次 MOVE 的增量 deltaY，每次只调一点）
+                val deltaY = event.y - longPressStartY
+                // 死区：忽略小于 5px 的抖动（华为 HiTouch 会导致微小反方向抖动）
+                if (abs(deltaY) >= 5) {
+                    if (event.x < screenWidth / 2) {
+                        adjustBrightness(deltaY)
+                    } else {
+                        adjustVolume(deltaY)
+                    }
+                    // 更新起始 Y，使下次 MOVE 基于当前位置计算增量
+                    longPressStartY = event.y
                 }
-                // 更新起始 Y，使下次 MOVE 基于当前位置计算增量
-                longPressStartY = event.y
             }
         }
     }
@@ -967,29 +986,45 @@ class PlayerActivity : AppCompatActivity() {
         gestureDirection = 0
         seekBaseMs = 0L
         seekTargetMs = 0L
+        currentVolumeFloat = -1f // 重置音量浮点数
         hideGestureTip()
     }
 
-    private fun adjustBrightness(ratio: Float) {
+    /**
+     * deltaY：本次 MOVE 的像素增量（上滑为负，下滑为正）
+     * 亮度：上滑变暗，下滑变亮
+     * 阈值：每 300px 对应 1.0 的亮度变化（比之前 400px 更灵敏）
+     */
+    private fun adjustBrightness(deltaY: Float) {
         val layoutParams = window.attributes
         if (currentBrightness < 0) {
             currentBrightness = layoutParams.screenBrightness
             if (currentBrightness < 0) currentBrightness = 0.5f
         }
-        currentBrightness = (currentBrightness - ratio * 2).coerceIn(0.05f, 1f)
+        val change = -deltaY / 300f
+        currentBrightness = (currentBrightness + change).coerceIn(0.05f, 1f)
         layoutParams.screenBrightness = currentBrightness
         window.attributes = layoutParams
         showGestureTip("亮度 ${(currentBrightness * 100).roundToInt()}%")
     }
 
-    private fun adjustVolume(ratio: Float) {
-        if (currentVolume < 0) {
+    /**
+     * deltaY：本次 MOVE 的像素增量（上滑为负，下滑为正）
+     * 音量：上滑升高，下滑降低
+     * 连续调整：每 100px 对应 1 档音量变化（和亮度调节一样丝滑）
+     */
+    private fun adjustVolume(deltaY: Float) {
+        if (currentVolumeFloat < 0) {
             currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            currentVolumeFloat = currentVolume.toFloat()
         }
-        val delta = (ratio * maxVolume * 2).roundToInt()
-        currentVolume = (currentVolume - delta).coerceIn(0, maxVolume)
+        // deltaY 每 100px 对应 1 档音量变化（更灵敏，和亮度一样连续）
+        val change = -deltaY / 100f
+        currentVolumeFloat = (currentVolumeFloat + change).coerceIn(0f, maxVolume.toFloat())
+        currentVolume = currentVolumeFloat.roundToInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
-        showGestureTip("音量 ${(currentVolume * 100 / maxVolume)}%")
+        Log.d(TAG, "音量调节: currentVolume=$currentVolume, change=$change, float=$currentVolumeFloat")
+        showGestureTip("音量 ${if (maxVolume > 0) (currentVolume * 100 / maxVolume) else 0}%")
     }
 
     private fun togglePlayPause() {

@@ -1,7 +1,10 @@
 package com.hpu.mymoviestore.data.download
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import com.hpu.mymoviestore.data.dao.DownloadTaskDao
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
@@ -317,7 +320,10 @@ class DanmakuDownloadManager private constructor(context: Context) {
         isManualRetry: Boolean
     ) {
         if (isManualRetry) {
-            // 手动重试失败，直接标记为失败
+            // 手动重试失败，提示用户
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(appContext, "当前弹幕源没有该集数据，请手动选择其他源", Toast.LENGTH_LONG).show()
+            }
             Log.w(TAG, "手动重试失败: taskId=$taskId, error=$error")
             dao.updateDanmakuStatus(
                 taskId = taskId,

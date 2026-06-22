@@ -58,8 +58,7 @@ class HistoryAdapter(
             val calendar = Calendar.getInstance()
             calendar.timeInMillis = history.lastPlayTime
             val timeStr = DateFormat.format("yyyy-MM-dd HH:mm", calendar).toString()
-            // 将时间拼接到分类后面显示
-            binding.tvCategory.text = "${history.category}  ·  $timeStr"
+            binding.tvPlayTime.text = "播放时间：$timeStr"
 
             if (history.episodeTitle.isNotBlank()) {
                 binding.tvEpisode.text = "播放至 ${normalizeEpisodeTitle(history.episodeTitle)}"
