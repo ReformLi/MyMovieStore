@@ -243,4 +243,19 @@ class DanmakuRepository(
             Log.d(TAG, "使用默认集（第一集）: ${it?.episodeTitle}")
         }
     }
+
+    // ================== 清除任务缓存 ==================
+
+    /**
+     * 清除指定任务的弹幕缓存（搜索、分集、弹幕）
+     * 用于弹幕下载失败时，重试前清除缓存，强制重新联网
+     *
+     * @param keyword 搜索关键词（视频标题）
+     * @param animeId 弹幕源 ID（可为 null）
+     * @param episodeId 集 ID（可为 null）
+     */
+    fun clearTaskCache(keyword: String, animeId: Long? = null, episodeId: Long? = null) {
+        cache?.clearTaskCache(keyword, animeId, episodeId)
+        Log.d(TAG, "已清除任务缓存: keyword=$keyword, animeId=$animeId, episodeId=$episodeId")
+    }
 }

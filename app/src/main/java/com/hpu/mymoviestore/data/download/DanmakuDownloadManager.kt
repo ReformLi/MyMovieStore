@@ -200,6 +200,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
             )
             notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_DOWNLOADING, null)
 
+            // 如果是手动重试，先清除缓存，强制重新联网
+            if (isManualRetry) {
+                repository.clearTaskCache(title)
+                Log.d(TAG, "手动重试，已清除缓存，将重新联网下载: taskId=$taskId")
+            }
+
             // 执行下载
             val result = executeDanmakuDownload(taskId, title, episodeTitle, dao)
 
@@ -322,7 +328,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
         if (isManualRetry) {
             // 手动重试失败，提示用户
             Handler(Looper.getMainLooper()).post {
-                Toast.makeText(appContext, "当前弹幕源没有该集数据，请手动选择其他源", Toast.LENGTH_LONG).show()
+                Toast.makeText(appContext, "当前弹幕源获取失败，请更换其他源", Toast.LENGTH_LONG).show()
             }
             Log.w(TAG, "手动重试失败: taskId=$taskId, error=$error")
             dao.updateDanmakuStatus(

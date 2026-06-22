@@ -131,10 +131,24 @@ class DownloadingAdapter(
             }
 
             // 弹幕状态
-            binding.tvDanmakuStatus.text = "弹幕${DownloadTaskEntity.danmakuStatusToText(task.danmakuStatus)}"
-            binding.btnDanmakuRetry.visibility = when (task.danmakuStatus) {
-                DownloadTaskEntity.DANMAKU_FAILED -> android.view.View.VISIBLE
-                else -> android.view.View.GONE
+            val danmakuStatusText = when (task.danmakuStatus) {
+                DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED -> "弹幕未下载"
+                DownloadTaskEntity.DANMAKU_DOWNLOADING -> "弹幕下载中..."
+                DownloadTaskEntity.DANMAKU_RETRYING -> "弹幕重试中..."
+                DownloadTaskEntity.DANMAKU_COMPLETED -> "弹幕已下载"
+                DownloadTaskEntity.DANMAKU_FAILED -> "弹幕下载失败"
+                else -> "弹幕未知状态"
+            }
+            binding.tvDanmakuStatus.text = danmakuStatusText
+
+            // 弹幕重试按钮：失败时显示，重试中/下载中隐藏（防止重复点击）
+            if (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED) {
+                binding.btnDanmakuRetry.text = "弹幕重试"
+                binding.btnDanmakuRetry.isEnabled = true
+                binding.btnDanmakuRetry.visibility = android.view.View.VISIBLE
+            } else {
+                // 未下载、下载中、重试中、已完成：隐藏重试按钮
+                binding.btnDanmakuRetry.visibility = android.view.View.GONE
             }
             binding.btnDanmakuRetry.setOnClickListener {
                 onDanmakuRetry(task)

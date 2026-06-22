@@ -147,6 +147,33 @@ class DanmakuCache(context: Context) {
 
     // ================== 清理 ==================
 
+    /**
+     * 清除指定任务的弹幕缓存（搜索、分集、弹幕）
+     * 用于弹幕下载失败时，重试前清除缓存，强制重新联网
+     *
+     * @param keyword 搜索关键词（视频标题）
+     * @param animeId 弹幕源 ID（可为 null）
+     * @param episodeId 集 ID（可为 null）
+     */
+    fun clearTaskCache(keyword: String, animeId: Long? = null, episodeId: Long? = null) {
+        val editor = prefs.edit()
+        // 清除搜索缓存
+        val searchKey = "search_$keyword"
+        editor.remove(searchKey).remove("${searchKey}_expire")
+        // 清除分集缓存
+        if (animeId != null) {
+            val bangumiKey = "bangumi_$animeId"
+            editor.remove(bangumiKey).remove("${bangumiKey}_expire")
+        }
+        // 清除弹幕缓存
+        if (episodeId != null) {
+            val commentsKey = "comments_$episodeId"
+            editor.remove(commentsKey).remove("${commentsKey}_expire")
+        }
+        editor.apply()
+        Log.d(TAG, "任务缓存已清除: keyword=$keyword, animeId=$animeId, episodeId=$episodeId")
+    }
+
     fun clearAll() {
         prefs.edit().clear().apply()
         Log.d(TAG, "所有弹幕缓存已清除")
