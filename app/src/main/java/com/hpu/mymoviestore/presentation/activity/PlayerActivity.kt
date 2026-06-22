@@ -44,6 +44,7 @@ import com.hpu.mymoviestore.presentation.danmaku.DanmakuManager
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.viewmodel.PlayerViewModel
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -118,13 +119,23 @@ class PlayerActivity : AppCompatActivity() {
     private var currentVolume = -1
     private var maxVolume = 0
 
+    // 手势方向锁定：长按触发后确定方向，整个手势过程不再切换
+    // 0=未锁定, 1=水平(快进), 2=垂直(亮度/音量)
+    private var gestureDirection = 0
+
+    // 快进拖拽：记录长按触发时的播放位置，MOVE 时只更新预览偏移
+    private var seekBaseMs = 0L     // 长按触发时的 currentPosition
+    private var seekTargetMs = 0L    // 手指抬起时要 seek 到的位置
+
     // 屏幕锁定
     private var isScreenLocked = false
 
     companion object {
         private const val TAG = "PlayerActivity"
-        private const val LONG_PRESS_THRESHOLD_MS = 300L
-        private const val SEEK_STEP_MS = 10_000L  // 10秒
+        private const val LONG_PRESS_THRESHOLD_MS = 500L  // 拉长到 500ms，避免误触发
+        private const val SEEK_STEP_MS = 10_000L
+        private const val GESTURE_DIR_HORIZONTAL = 1
+        private const val GESTURE_DIR_VERTICAL = 2
 
         const val EXTRA_VIDEO_ID = "extra_video_id"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
@@ -384,6 +395,15 @@ class PlayerActivity : AppCompatActivity() {
                         // 更新播放/暂停按钮图标
                         updatePlayPauseIcon(isPlaying)
                     }
+
+                    // 添加错误监听
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        Log.e(TAG, "在线播放错误: ${error.message}", error)
+                        Log.e(TAG, "错误类型: ${error.errorCodeName}, errorCode: ${error.errorCode}")
+                        
+                        // 尝试从错误中恢复（如广告导致的时间戳不连续）
+                        tryRecoverFromError(exoPlayer, error)
+                    }
                 })
             }
 
@@ -401,6 +421,14 @@ class PlayerActivity : AppCompatActivity() {
                 val mediaItem = MediaItem.fromUri(uri)
                 exoPlayer.setMediaItem(mediaItem)
                 Log.d(TAG, "离线播放 - 设置 MediaItem: $uri")
+                Log.d(TAG, "离线播放 - URI scheme: ${uri.scheme}, path: ${uri.path}")
+                
+                // 增强日志记录
+                if (uri.scheme == "file") {
+                    val file = File(uri.path!!)
+                    Log.d(TAG, "离线播放 - 文件存在: ${file.exists()}, 可读: ${file.canRead()}, 大小: ${file.length()} bytes")
+                }
+                
                 exoPlayer.prepare()
                 exoPlayer.playWhenReady = true
                 Log.d(TAG, "离线播放 - 播放器 prepare() 完成，playWhenReady=true")
@@ -418,6 +446,8 @@ class PlayerActivity : AppCompatActivity() {
                                 }
                                 danmakuManager?.ensureStarted()
                                 danmakuManager?.setPaused(!exoPlayer.isPlaying)
+                                // 确保控制栏显示
+                                binding.playerView.showController()
                             }
                             Player.STATE_BUFFERING -> Log.d(TAG, "离线播放状态: STATE_BUFFERING")
                             Player.STATE_ENDED -> {
@@ -432,6 +462,15 @@ class PlayerActivity : AppCompatActivity() {
                         danmakuManager?.setPaused(!isPlaying)
                         updatePlayPauseIcon(isPlaying)
                     }
+
+                    // 添加错误监听
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        Log.e(TAG, "离线播放错误: ${error.message}", error)
+                        Log.e(TAG, "错误类型: ${error.errorCodeName}, errorCode: ${error.errorCode}")
+                        
+                        // 尝试从错误中恢复（如广告导致的时间戳不连续）
+                        tryRecoverFromError(exoPlayer, error)
+                    }
                 })
             }
 
@@ -439,9 +478,42 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
+     * 尝试从播放错误中恢复（如广告导致的时间戳不连续）
+     * 如果是音频时间戳不连续，尝试 seek 跳过问题片段
+     */
+    private fun tryRecoverFromError(exoPlayer: ExoPlayer, error: androidx.media3.common.PlaybackException) {
+        val isAudioError = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+                error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+                error.message?.contains("discontinuity", ignoreCase = true) == true ||
+                error.message?.contains("timestamp", ignoreCase = true) == true
+
+        if (isAudioError && exoPlayer.playbackState != Player.STATE_IDLE) {
+            Log.w(TAG, "检测到音频错误，尝试恢复播放: ${error.errorCodeName}")
+            Toast.makeText(this@PlayerActivity, "广告已跳过", Toast.LENGTH_SHORT).show()
+
+            // seek 到当前位置之后 2 秒，跳过广告片段
+            val currentPos = exoPlayer.currentPosition
+            val seekTo = (currentPos + 2000).coerceAtMost(exoPlayer.duration)
+            Log.d(TAG, "恢复播放: seekTo ${seekTo}ms (当前位置: ${currentPos}ms)")
+
+            try {
+                exoPlayer.seekTo(seekTo)
+                exoPlayer.playWhenReady = true
+                Log.d(TAG, "错误恢复: seek 成功，继续播放")
+            } catch (e: Exception) {
+                Log.e(TAG, "错误恢复失败: ${e.message}", e)
+                Toast.makeText(this@PlayerActivity, "播放失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(this@PlayerActivity, "播放错误: ${error.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
      * 从本地 JSON 文件加载弹幕（离线播放）
-     * JSON 格式与 DanmakuCommentResponse 一致：
-     * { "count": N, "comments": [{"cid":1, "p":"...", "m":"...", ...}, ...] }
+     * 支持两种格式：
+     * 1. 数组格式：直接是 [{"cid":1, "p":"...", "m":"..."}, ...]
+     * 2. 对象格式：{"count": N, "comments": [{"cid":1, "p":"...", "m":"..."}, ...]}
      */
     private fun loadDanmakuFromLocalFile(file: File) {
         danmakuLoadJob?.cancel()
@@ -450,12 +522,28 @@ class PlayerActivity : AppCompatActivity() {
                 try {
                     val json = file.readText(Charsets.UTF_8)
                     val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-                    val adapter = moshi.adapter(DanmakuCommentResponse::class.java)
-                    val response = adapter.fromJson(json)
-                    Log.d(TAG, "本地弹幕文件解析成功: ${response?.comments?.size ?: 0} 条")
-                    response?.comments ?: emptyList()
+                    
+                    // 尝试按数组格式解析（直接是 List<DanmakuComment>）
+                    return@withContext try {
+                        val type = Types.newParameterizedType(List::class.java, DanmakuComment::class.java)
+                        val listAdapter = moshi.adapter<List<DanmakuComment>>(type)
+                        val list = listAdapter.fromJson(json)
+                        Log.d(TAG, "本地弹幕文件解析成功(数组格式): ${list?.size ?: 0} 条")
+                        list ?: emptyList()
+                    } catch (e: Exception) {
+                        // 如果数组解析失败，尝试按对象格式解析（DanmakuCommentResponse）
+                        try {
+                            val objAdapter = moshi.adapter(DanmakuCommentResponse::class.java)
+                            val response = objAdapter.fromJson(json)
+                            Log.d(TAG, "本地弹幕文件解析成功(对象格式): ${response?.comments?.size ?: 0} 条")
+                            response?.comments ?: emptyList()
+                        } catch (e2: Exception) {
+                            Log.e(TAG, "本地弹幕文件解析失败(两种格式都失败): ${e2.message}", e2)
+                            emptyList()
+                        }
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "本地弹幕文件解析失败: ${e.message}", e)
+                    Log.e(TAG, "本地弹幕文件读取失败: ${e.message}", e)
                     emptyList()
                 }
             }
@@ -463,6 +551,8 @@ class PlayerActivity : AppCompatActivity() {
             if (comments.isEmpty()) {
                 Log.w(TAG, "本地弹幕列表为空")
                 danmakuManager?.loadDanmaku(null)
+                // 弹幕为空时，显示 Spinner 让用户可以搜索在线弹幕源
+                danmakuSpinner.visibility = View.VISIBLE
             } else {
                 Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
                 danmakuManager?.loadDanmaku(comments)
@@ -470,6 +560,9 @@ class PlayerActivity : AppCompatActivity() {
                     danmakuManager?.syncTo(p.currentPosition)
                     if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
                 }
+                // 离线播放且有本地弹幕时，隐藏弹幕源 Spinner（不需要切换源）
+                danmakuSpinner.visibility = View.GONE
+                Log.d(TAG, "本地弹幕加载成功，隐藏弹幕源 Spinner")
             }
         }
     }
@@ -720,18 +813,18 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (isScreenLocked) {
-            // 锁定状态：只处理单击显示锁定按钮和点击解锁按钮
             gestureDetector.onTouchEvent(event)
             return super.dispatchTouchEvent(event)
         }
 
         // 检测触摸是否在进度条区域（ExoPlayer 的 DefaultTimeBar）
         if (isTouchOnProgressBar(event)) {
-            // 进度条上的触摸不触发长按手势，直接让系统处理
+            // 进度条上的触摸：如果正在长按手势，先结束
+            if (isLongPressing) {
+                finishLongPressGesture()
+            }
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    handler.removeCallbacks(longPressRunnable)
-                }
+                MotionEvent.ACTION_DOWN -> handler.removeCallbacks(longPressRunnable)
             }
             return super.dispatchTouchEvent(event)
         }
@@ -739,6 +832,9 @@ class PlayerActivity : AppCompatActivity() {
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 isLongPressing = false
+                gestureDirection = 0
+                seekBaseMs = 0L
+                seekTargetMs = 0L
                 longPressStartX = event.x
                 longPressStartY = event.y
                 currentBrightness = -1f
@@ -748,16 +844,16 @@ class PlayerActivity : AppCompatActivity() {
             MotionEvent.ACTION_MOVE -> {
                 if (isLongPressing) {
                     handleLongPressMove(event)
-                    return true
+                    return true // 长按手势期间完全由我们处理
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPressRunnable)
                 if (isLongPressing) {
-                    isLongPressing = false
-                    hideGestureTip()
+                    finishLongPressGesture()
                     return true
                 }
+                gestureDirection = 0
             }
         }
 
@@ -796,38 +892,82 @@ class PlayerActivity : AppCompatActivity() {
 
     private val longPressRunnable = Runnable {
         isLongPressing = true
-        Log.d(TAG, "长按触发")
+        gestureDirection = 0 // 尚未锁定方向，等第一次 MOVE 再决定
+        Log.d(TAG, "长按触发，等待方向锁定")
     }
 
+    /**
+     * 长按触发后，第一次 MOVE 时根据滑动方向锁定手势类型：
+     * - 水平滑动 → 快进/快退（整手势过程不再响应垂直）
+     * - 垂直滑动 → 亮度/音量（整手势过程不再响应水平）
+     *
+     * 快进逻辑：实时显示预览位置（基于按下时的进度 + 拖拽偏移），
+     *           手指抬起时才真正 seek，避免频繁 seek 导致卡顿。
+     */
     private fun handleLongPressMove(event: MotionEvent) {
         val deltaX = event.x - longPressStartX
         val deltaY = event.y - longPressStartY
         val absX = abs(deltaX)
         val absY = abs(deltaY)
 
-        if (absX > absY && absX > 20) {
-            // 水平滑动：快进/快退
-            val direction = if (deltaX > 0) 1 else -1
-            val seekMs = (absX / screenWidth * 60000).toLong().coerceIn(0, 120000)
-            val totalSeek = direction * seekMs.coerceAtLeast(SEEK_STEP_MS)
-            player?.let { p ->
-                val newPos = (p.currentPosition + totalSeek).coerceIn(0, p.duration)
-                p.seekTo(newPos)
-                showGestureTip("${if (direction > 0) "+" else ""}${totalSeek / 1000}s")
-            }
+        // 首次 MOVE：根据方向锁定手势类型
+        if (gestureDirection == 0) {
+            if (absX < 15 && absY < 15) return // 忽略微小移动
+            gestureDirection = if (absX >= absY) GESTURE_DIR_HORIZONTAL else GESTURE_DIR_VERTICAL
+            // 锁定方向后重置起始位置，避免累计误差
             longPressStartX = event.x
-        } else if (absY > absX && absY > 20) {
-            // 垂直滑动：亮度/音量
-            val ratio = deltaY / screenHeight
-            if (event.x < screenWidth / 2) {
-                // 左半屏：亮度
-                adjustBrightness(ratio)
-            } else {
-                // 右半屏：音量
-                adjustVolume(ratio)
-            }
             longPressStartY = event.y
+            seekBaseMs = player?.currentPosition ?: 0L
+            seekTargetMs = seekBaseMs
+            Log.d(TAG, "手势方向锁定: ${if (gestureDirection == GESTURE_DIR_HORIZONTAL) "水平(快进)" else "垂直(亮度/音量)"}")
+            return
         }
+
+        when (gestureDirection) {
+            GESTURE_DIR_HORIZONTAL -> {
+                // 水平：快进/快退预览（不真正 seek，只更新 UI）
+                // 滑动距离占屏幕宽度比例 → 最大偏移 90 秒
+                val maxSeekMs = 90_000L
+                val offsetMs = (deltaX / screenWidth * maxSeekMs).toLong()
+                seekTargetMs = (seekBaseMs + offsetMs).coerceIn(0L, player?.duration ?: 0L)
+                val diffSec = (seekTargetMs - seekBaseMs) / 1000
+                val currentSec = seekTargetMs / 1000
+                val totalSec = (player?.duration ?: 0L) / 1000
+                val sign = if (diffSec >= 0) "+" else ""
+                showGestureTip("$sign${diffSec}s / ${currentSec}s (共${totalSec}s)")
+            }
+            GESTURE_DIR_VERTICAL -> {
+                // 垂直：亮度/音量（连续平滑调节，每次增量计算）
+                val ratio = (event.y - longPressStartY) / screenHeight
+                if (event.x < screenWidth / 2) {
+                    adjustBrightness(ratio)
+                } else {
+                    adjustVolume(ratio)
+                }
+                // 更新起始 Y，使下次 MOVE 基于当前位置计算增量
+                longPressStartY = event.y
+            }
+        }
+    }
+
+    /**
+     * 长按手势结束（手指抬起）：
+     * - 水平方向：真正 seek 到预览位置
+     * - 垂直方向：清除提示
+     */
+    private fun finishLongPressGesture() {
+        if (gestureDirection == GESTURE_DIR_HORIZONTAL) {
+            player?.let { p ->
+                val finalMs = seekTargetMs.coerceIn(0L, p.duration)
+                p.seekTo(finalMs)
+                Log.d(TAG, "快进/快退完成: seekTo=${finalMs}ms")
+            }
+        }
+        isLongPressing = false
+        gestureDirection = 0
+        seekBaseMs = 0L
+        seekTargetMs = 0L
+        hideGestureTip()
     }
 
     private fun adjustBrightness(ratio: Float) {
@@ -903,50 +1043,56 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         danmakuSearchJob = uiScope.launch {
-            val candidates = danmakuRepository.searchCandidates(title)
-            Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
+            try {
+                val candidates = danmakuRepository.searchCandidates(title)
+                Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
 
-            if (candidates.isEmpty()) {
-                danmakuSpinner.visibility = View.GONE
-                return@launch
-            }
-
-            candidateList = candidates
-            val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
-            val adapter = object : ArrayAdapter<String>(
-                this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
-            ) {
-                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                    val v = super.getView(position, convertView, parent) as TextView
-                    v.setTextColor(Color.WHITE)
-                    v.textSize = 13f
-                    return v
+                if (candidates.isEmpty()) {
+                    danmakuSpinner.visibility = View.GONE
+                    return@launch
                 }
-                override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                    val v = super.getDropDownView(position, convertView, parent) as TextView
-                    v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
-                    v.setTextColor(Color.WHITE)
-                    v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
-                    v.setPadding(24, 20, 24, 20)
-                    v.textSize = 13f
-                    return v
-                }
-            }
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            danmakuSpinner.adapter = adapter
 
-            // 选中已保存的弹幕源
-            if (savedAnimeId > 0L) {
-                val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
-                if (savedIndex >= 0) {
-                    danmakuSpinner.setSelection(savedIndex)
-                    Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
+                candidateList = candidates
+                val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
+                val adapter = object : ArrayAdapter<String>(
+                    this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
+                ) {
+                    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                        val v = super.getView(position, convertView, parent) as TextView
+                        v.setTextColor(Color.WHITE)
+                        v.textSize = 13f
+                        return v
+                    }
+                    override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                        val v = super.getDropDownView(position, convertView, parent) as TextView
+                        v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
+                        v.setTextColor(Color.WHITE)
+                        v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
+                        v.setPadding(24, 20, 24, 20)
+                        v.textSize = 13f
+                        return v
+                    }
+                }
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                danmakuSpinner.adapter = adapter
+
+                // 选中已保存的弹幕源
+                if (savedAnimeId > 0L) {
+                    val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
+                    if (savedIndex >= 0) {
+                        danmakuSpinner.setSelection(savedIndex)
+                        Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
+                    } else {
+                        Log.w(TAG, "保存的弹幕源不在搜索结果中: savedAnimeId=$savedAnimeId")
+                        danmakuSpinner.setSelection(0)
+                    }
                 } else {
-                    Log.w(TAG, "保存的弹幕源不在搜索结果中: savedAnimeId=$savedAnimeId")
                     danmakuSpinner.setSelection(0)
                 }
-            } else {
-                danmakuSpinner.setSelection(0)
+            } catch (e: Exception) {
+                Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
+                danmakuSpinner.visibility = View.GONE
+                Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             }
         }
     }

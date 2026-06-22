@@ -55,6 +55,7 @@ class DownloadActivity : AppCompatActivity() {
         CompletedAdapter(
             onPlay = { task -> onTaskPlay(task) },
             onDelete = { task -> onTaskDelete(task) },
+            onDanmakuDownload = { task -> onTaskDanmakuDownload(task) },
             onSelectionChanged = { selectedIds -> onSelectionChanged(selectedIds) }
         )
     }
@@ -249,6 +250,13 @@ class DownloadActivity : AppCompatActivity() {
         viewModel.retryDanmaku(task)
         Toast.makeText(this, "正在重试弹幕下载", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "弹幕重试: ${task.taskId}")
+    }
+
+    private fun onTaskDanmakuDownload(task: DownloadTaskEntity) {
+        // 弹幕下载：重试弹幕下载
+        viewModel.retryDanmaku(task)
+        Toast.makeText(this, "正在下载弹幕", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "弹幕下载: ${task.taskId}")
     }
 
     // ======================== 已完成操作 ========================

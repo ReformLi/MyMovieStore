@@ -20,6 +20,7 @@ import java.text.DecimalFormat
 class CompletedAdapter(
     private val onPlay: (DownloadTaskEntity) -> Unit,
     private val onDelete: (DownloadTaskEntity) -> Unit,
+    private val onDanmakuDownload: (DownloadTaskEntity) -> Unit,
     private val onSelectionChanged: (Set<String>) -> Unit
 ) : RecyclerView.Adapter<CompletedAdapter.CompletedViewHolder>() {
 
@@ -110,6 +111,21 @@ class CompletedAdapter(
                     selectedIds.remove(task.taskId)
                 }
                 onSelectionChanged(selectedIds.toSet())
+            }
+
+            // 弹幕下载按钮：弹幕失败/未下载时显示
+            val showDanmakuBtn = task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
+                    task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED
+            binding.btnDanmakuDownload.visibility = if (showDanmakuBtn) View.VISIBLE else View.GONE
+            
+            if (showDanmakuBtn) {
+                binding.btnDanmakuDownload.setOnClickListener {
+                    if (isMultiSelectMode) {
+                        toggleSelection(task)
+                    } else {
+                        onDanmakuDownload(task)
+                    }
+                }
             }
 
             // 播放按钮
