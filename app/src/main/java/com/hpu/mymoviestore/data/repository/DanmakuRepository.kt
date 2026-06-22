@@ -26,8 +26,8 @@ import kotlinx.coroutines.withContext
  *  - 后续获取其他集时，搜索和分集缓存跟随已有缓存的剩余时间
  *
  * 重试策略：
- *  - 网络失败时自动重试，最多 5 次
- *  - 每次重试间隔 1 分钟（60 秒）
+ *  - 网络失败时自动重试，最多 3 次
+ *  - 每次重试间隔 10 秒
  *  - 成功/最终失败时通过回调通知 UI
  */
 class DanmakuRepository(
@@ -39,8 +39,8 @@ class DanmakuRepository(
 
     companion object {
         private const val TAG = "DanmakuRepo"
-        private const val MAX_RETRY = 10
-        private const val RETRY_INTERVAL_MS = 10_000L  // 1分钟
+        private const val MAX_RETRY = 3
+        private const val RETRY_INTERVAL_MS = 10_000L  // 10秒
     }
 
     /** 切换 Base URL */
