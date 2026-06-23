@@ -2,6 +2,8 @@ package com.hpu.mymoviestore.presentation.activity
 
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
@@ -9,6 +11,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.BatteryManager
 import android.util.Log
 import android.view.GestureDetector
 import android.graphics.Rect
@@ -24,11 +27,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import android.net.ConnectivityManager
+import android.net.NetworkInfo
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.database.MovieDatabase
@@ -55,6 +58,12 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlin.math.roundToInt
 
 /**
@@ -130,6 +139,12 @@ class PlayerActivity : AppCompatActivity() {
 
     // 屏幕锁定
     private var isScreenLocked = false
+
+    // 状态信息显示（时间、电量、网络）
+    private var batteryReceiver: BroadcastReceiver? = null
+    private var networkReceiver: BroadcastReceiver? = null
+    private var timeUpdateHandler: Handler? = null
+    private var timeUpdateRunnable: Runnable? = null
 
     companion object {
         private const val TAG = "PlayerActivity"
@@ -681,12 +696,16 @@ class PlayerActivity : AppCompatActivity() {
         val listener = object : androidx.media3.ui.PlayerView.ControllerVisibilityListener {
             override fun onVisibilityChanged(visibility: Int) {
                 binding.topControls.visibility = visibility
+                binding.statusContainer.visibility = visibility
                 if (!isScreenLocked) {
                     binding.btnLock.visibility = if (visibility == View.VISIBLE) View.VISIBLE else View.GONE
                 }
             }
         }
         binding.playerView.setControllerVisibilityListener(listener)
+
+        // 初始化状态信息显示（时间、电量、网络）
+        initStatusInfo()
     }
 
     // ================== 弹幕 UI ==================
@@ -1264,6 +1283,7 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
         danmakuManager?.release()
+        unregisterStatusReceivers()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
@@ -1311,5 +1331,120 @@ class PlayerActivity : AppCompatActivity() {
         enterImmersiveMode()
         screenWidth = resources.displayMetrics.widthPixels
         screenHeight = resources.displayMetrics.heightPixels
+    }
+
+    // ================== 状态信息显示（时间、电量、网络） ==================
+
+    /**
+     * 初始化状态信息显示（时间、电量、网络）
+     * 在播放器控制栏显示时同步显示
+     */
+    private fun initStatusInfo() {
+        // 初始更新
+        updateTime()
+        updateNetwork()
+
+        // 注册电池状态广播接收器
+        batteryReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                updateBattery(intent)
+            }
+        }
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+        // 注册网络状态广播接收器
+        networkReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                updateNetwork()
+            }
+        }
+        registerReceiver(networkReceiver, IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION))
+
+        // 启动时间更新（每30秒更新一次）
+        timeUpdateHandler = Handler(Looper.getMainLooper())
+        timeUpdateRunnable = object : Runnable {
+            override fun run() {
+                updateTime()
+                timeUpdateHandler?.postDelayed(this, 30_000L) // 30秒
+            }
+        }
+        timeUpdateHandler?.postDelayed(timeUpdateRunnable!!, 30_000L)
+    }
+
+    /**
+     * 更新时间显示（格式：HH:mm）
+     */
+    private fun updateTime() {
+        val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        binding.tvTime.text = currentTime
+    }
+
+    /**
+     * 更新电量显示
+     */
+    private fun updateBattery(intent: Intent) {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        if (level >= 0 && scale > 0) {
+            val batteryPct = (level * 100 / scale.toFloat()).toInt()
+            binding.tvBattery.text = "$batteryPct%"
+        }
+    }
+
+    /**
+     * 更新网络状态显示
+     */
+    private fun updateNetwork() {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkInfo: NetworkInfo? = connectivityManager.activeNetworkInfo
+        val isConnected = networkInfo?.isConnected == true
+
+        if (!isConnected) {
+            // 无网络
+            binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
+            binding.ivNetwork.alpha = 0.5f
+        } else {
+            binding.ivNetwork.alpha = 1.0f
+            when (networkInfo?.type) {
+                ConnectivityManager.TYPE_WIFI -> {
+                    binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
+                }
+                ConnectivityManager.TYPE_MOBILE -> {
+                    binding.ivNetwork.setImageResource(R.drawable.ic_mobile_network)
+                }
+                else -> {
+                    binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
+                }
+            }
+        }
+    }
+
+    /**
+     * 注销状态信息相关的广播接收器，并停止时间更新
+     */
+    private fun unregisterStatusReceivers() {
+        try {
+            batteryReceiver?.let {
+                unregisterReceiver(it)
+                batteryReceiver = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注销电池广播接收器失败: ${e.message}")
+        }
+
+        try {
+            networkReceiver?.let {
+                unregisterReceiver(it)
+                networkReceiver = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注销网络广播接收器失败: ${e.message}")
+        }
+
+        timeUpdateRunnable?.let {
+            timeUpdateHandler?.removeCallbacks(it)
+        }
+        timeUpdateHandler = null
+        timeUpdateRunnable = null
     }
 }

@@ -13,7 +13,7 @@
     <!-- 底部渐变遮罩 -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="120dp"
+        android:layout_height="80dp"
         android:layout_gravity="bottom"
         android:background="@drawable/bg_player_top_gradient" />
 
@@ -66,7 +66,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:paddingBottom="8dp">
+        android:paddingBottom="4dp">
 
         <!-- 进度条行 -->
         <LinearLayout
@@ -113,7 +113,7 @@
             android:orientation="horizontal"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
-            android:paddingTop="4dp">
+            android:paddingTop="2dp">
 
             <!-- 弹幕控制：置于设置按钮左侧 -->
             <Spinner

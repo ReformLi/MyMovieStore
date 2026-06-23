@@ -98,6 +98,50 @@
                 tools:visibility="visible" />
         </LinearLayout>
 
+        <!-- 状态信息容器（时间 + 电量 + 网络） -->
+        <LinearLayout
+            android:id="@+id/statusContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginEnd="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                tools:text="21:45" />
+
+            <ImageView
+                android:id="@+id/ivBattery"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:src="@drawable/ic_battery" />
+
+            <TextView
+                android:id="@+id/tvBattery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="2dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="10sp"
+                tools:text="85%" />
+
+            <ImageView
+                android:id="@+id/ivNetwork"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:src="@drawable/ic_wifi" />
+
+        </LinearLayout>
+
         <ImageButton
             android:id="@+id/btnRotate"
             android:layout_width="44dp"
