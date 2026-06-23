@@ -17,6 +17,7 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URLEncoder
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -169,23 +170,39 @@ abstract class CrawlerVideoSource(
      * 根据网页搜索页获取分页搜索结果。
      */
     override suspend fun searchVideos(keyword: String, page: Int): Result<SearchPageResult> = withContext(Dispatchers.IO) {
+        val cleanKeyword = keyword.trim()
+        if (cleanKeyword.isBlank()) {
+            return@withContext Result.success(
+                SearchPageResult("", 1, 1, hasPrev = false, hasNext = false, items = emptyList())
+            )
+        }
+        val safePage = page.coerceAtLeast(1)
+        val cacheKey = searchCacheKey(cleanKeyword, safePage)
+        val firstPageCacheKey = searchCacheKey(cleanKeyword, 1)
         try {
-            val cleanKeyword = keyword.trim()
-            if (cleanKeyword.isBlank()) {
-                return@withContext Result.success(
-                    SearchPageResult("", 1, 1, hasPrev = false, hasNext = false, items = emptyList())
-                )
-            }
-
-            val safePage = page.coerceAtLeast(1)
-            val cacheKey = searchCacheKey(cleanKeyword, safePage)
-            val firstPageCacheKey = searchCacheKey(cleanKeyword, 1)
             val url = buildSearchUrl(cleanKeyword, safePage)
             Log.d(
                 logTag,
                 "搜索请求准备: keyword='$cleanKeyword', page=$safePage, url=$url, cacheKey=$cacheKey"
             )
             cacheRepository?.get(cacheKey)?.let { cachedJson ->
+                // 负缓存命中：跳过该源，不发网络请求
+                if (cachedJson.startsWith(NEG_CACHE_PREFIX)) {
+                    val negType = cachedJson.removePrefix(NEG_CACHE_PREFIX)
+                    Log.w(
+                        logTag,
+                        "负缓存命中，跳过该源: keyword=$cleanKeyword, page=$safePage, type=$negType"
+                    )
+                    return@withContext when (negType) {
+                        NEG_TYPE_EMPTY -> Result.success(
+                            SearchPageResult("", 1, 1, hasPrev = false, hasNext = false, items = emptyList())
+                        )
+                        else -> Result.failure(
+                            CrawlError(CrawlErrorType.UNKNOWN, sourceName, "负缓存命中: $negType")
+                        )
+                    }
+                }
+                // 正常缓存命中
                 try {
                     val cached = searchPageAdapter.fromJson(cachedJson)
                     if (cached != null) {
@@ -246,12 +263,44 @@ abstract class CrawlerVideoSource(
                     )
                 }
             } else {
-                Log.w(logTag, "搜索结果为空，本次不写入缓存，避免空结果挡住后续请求: url=$url")
+                // 空结果：写入负缓存（1 天），下次直接跳过该源
+                Log.w(logTag, "搜索结果为空，写入负缓存（1天）: keyword=$cleanKeyword, url=$url")
+                cacheRepository?.put(
+                    cacheKey,
+                    "$NEG_CACHE_PREFIX$NEG_TYPE_EMPTY",
+                    ApiCacheEntity.TTL_ONE_DAY
+                )
             }
             Result.success(result)
         } catch (e: Exception) {
             Log.e(logTag, "搜索视频失败", e)
-            Result.failure((e as? CrawlError) ?: e.toCrawlError(source = sourceName))
+            // 根据错误类型写入对应 TTL 的负缓存，避免反复发网络请求
+            val crawlError = (e as? CrawlError) ?: e.toCrawlError(source = sourceName)
+            val (negType, negTtl) = when (crawlError.type) {
+                CrawlErrorType.SERVER_ERROR ->
+                    NEG_TYPE_SERVER_ERROR to ApiCacheEntity.TTL_ONE_HOUR
+                CrawlErrorType.CLIENT_ERROR, CrawlErrorType.FORBIDDEN ->
+                    NEG_TYPE_CLIENT_ERROR to ApiCacheEntity.TTL_ONE_DAY
+                CrawlErrorType.TIMEOUT, CrawlErrorType.NETWORK_ERROR, CrawlErrorType.DNS_FAILURE ->
+                    NEG_TYPE_TIMEOUT to ApiCacheEntity.TTL_ONE_HOUR
+                else -> null to 0L
+            }
+            if (negType != null && negTtl > 0) {
+                try {
+                    cacheRepository?.put(
+                        cacheKey,
+                        "$NEG_CACHE_PREFIX$negType",
+                        negTtl
+                    )
+                    Log.w(
+                        logTag,
+                        "写入负缓存: keyword=$keyword, type=$negType, ttl=${negTtl}s"
+                    )
+                } catch (cacheEx: Exception) {
+                    Log.w(logTag, "写入负缓存失败（不影响主流程）: ${cacheEx.message}")
+                }
+            }
+            Result.failure(crawlError)
         }
     }
 
@@ -422,6 +471,23 @@ abstract class CrawlerVideoSource(
 
         /** 搜索结果页：缓存 30 分钟；v3 用于刷新旧 1 天分页缓存 */
         private const val cachePrefixSearch = ":search:v3"
+
+        // ── 负缓存（Negative Cache）──────────────────────────────────────────
+        /** 负缓存 payload 前缀，用于与正常 JSON 区分 */
+        private const val NEG_CACHE_PREFIX = "__NEG__:"
+
+        /** 负缓存类型：搜索结果为空（TTL 1 天） */
+        private const val NEG_TYPE_EMPTY = "EMPTY"
+
+        /** 负缓存类型：HTTP 5xx 服务器错误（TTL 1 小时） */
+        private const val NEG_TYPE_SERVER_ERROR = "SERVER_ERROR"
+
+        /** 负缓存类型：HTTP 4xx 客户端错误（TTL 1 天） */
+        private const val NEG_TYPE_CLIENT_ERROR = "CLIENT_ERROR"
+
+        /** 负缓存类型：连接超时 / 网络不可达（TTL 1 小时） */
+        private const val NEG_TYPE_TIMEOUT = "TIMEOUT"
+        // ────────────────────────────────────────────────────────────────────
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
