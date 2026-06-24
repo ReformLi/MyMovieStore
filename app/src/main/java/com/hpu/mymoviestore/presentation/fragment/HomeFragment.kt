@@ -250,6 +250,14 @@ class HomeFragment : Fragment() {
         viewModel.homeMovieHasMore.observe(viewLifecycleOwner) { hasMore ->
             adapter.setShowLoadMore(isDoubanPagedCategory(currentMainCategory) && hasMore == true)
         }
+        // 观察 loading 状态，控制加载覆盖层显示/隐藏
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            if (isLoading == true) {
+                showLoading()
+            } else {
+                hideLoading()
+            }
+        }
         viewModel.error.observe(viewLifecycleOwner) { error ->
             if (error != null) {
                 Log.w(TAG, "首页加载错误: ${error.userFacingMessage}")
@@ -275,6 +283,18 @@ class HomeFragment : Fragment() {
     private fun openDetail(video: VideoItem) {
         Log.d(TAG, "首页点击内容发现项，跳转搜索: id=${video.id}, title=${video.title}")
         (activity as? MainActivity)?.navigateToSearchWithKeyword(video.title)
+    }
+
+    // ======================== 加载动画 ========================
+
+    /** 显示加载覆盖层 */
+    private fun showLoading() {
+        binding.loadingOverlay.root.visibility = View.VISIBLE
+    }
+
+    /** 隐藏加载覆盖层 */
+    private fun hideLoading() {
+        binding.loadingOverlay.root.visibility = View.GONE
     }
 
     override fun onDestroyView() {

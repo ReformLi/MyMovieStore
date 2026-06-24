@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    通用加载覆盖层
+    使用方式：在需要加载动画的页面布局中 include 此布局，
+    通过 View visibility 控制显示/隐藏。
+
+    动画效果：
+    - 中心：旋转的胶片图标（自定义旋转动画）
+    - 下方：加载提示文字
+    - 背景：半透明遮罩，阻挡用户操作
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#CC0D0D0D"
+    android:clickable="true"
+    android:focusable="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp">
+
+        <!-- 旋转胶片动画 -->
+        <ImageView
+            android:id="@+id/ivLoadingIcon"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@drawable/anim_loading_rotate"
+            android:contentDescription="加载中" />
+
+        <!-- 加载提示文字 -->
+        <TextView
+            android:id="@+id/tvLoadingText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="加载中..."
+            android:textColor="@color/colorOnSurface"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <!-- 副提示文字（可选，由代码动态设置） -->
+        <TextView
+            android:id="@+id/tvLoadingSubText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="正在为您准备精彩内容"
+            android:textColor="@color/colorOnSurfaceSecondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</FrameLayout>

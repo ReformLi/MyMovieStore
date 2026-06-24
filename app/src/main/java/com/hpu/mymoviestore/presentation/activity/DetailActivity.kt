@@ -180,6 +180,7 @@ class DetailActivity : AppCompatActivity() {
         val needFetch = director.isEmpty() || actors.isEmpty() || description.isEmpty() || videoUrl.isEmpty()
         if (needFetch) {
             Log.d(TAG, "部分字段缺失，从 JSON 挡板回查视频详情 (videoId=$videoId)")
+            showLoading("正在加载详情...")
             fetchVideoDetail()
         } else {
             Log.d(TAG, "Intent 已提供全部字段，跳过回查")
@@ -207,6 +208,7 @@ class DetailActivity : AppCompatActivity() {
                 val detail = MovieApplication.get().videoRepository.getCrawlerVideoDetail(detailUrl)
                 if (detail != null) {
                     applyCrawlerDetail(detail)
+                    hideLoading()
                     return@launch
                 } else {
                     Log.w(TAG, "爬虫获取详情失败，尝试本地 JSON 回查")
@@ -220,6 +222,7 @@ class DetailActivity : AppCompatActivity() {
                 if (binding.tvDirector.text == "加载中...") binding.tvDirector.text = "暂无导演信息"
                 if (binding.tvActors.text == "加载中...") binding.tvActors.text = "暂无主演信息"
                 if (binding.tvDescription.text == "加载中...") binding.tvDescription.text = "暂无简介"
+                hideLoading()
                 return@launch
             }
             Log.d(TAG, "本地回查成功: director=${video.director}, actors=${video.actors}")
@@ -257,6 +260,7 @@ class DetailActivity : AppCompatActivity() {
             }
             binding.btnPlay.isEnabled = videoUrl.isNotEmpty()
             binding.btnDownload.isEnabled = videoUrl.isNotEmpty() || playLines.isNotEmpty()
+            hideLoading()
         }
     }
 
@@ -774,5 +778,18 @@ class DetailActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    // ======================== 加载动画 ========================
+
+    /** 显示加载覆盖层 */
+    private fun showLoading(message: String = "加载中...") {
+        binding.loadingOverlay.root.visibility = View.VISIBLE
+        binding.loadingOverlay.tvLoadingText.text = message
+    }
+
+    /** 隐藏加载覆盖层 */
+    private fun hideLoading() {
+        binding.loadingOverlay.root.visibility = View.GONE
     }
 }
