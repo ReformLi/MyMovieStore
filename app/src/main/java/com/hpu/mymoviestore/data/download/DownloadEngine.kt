@@ -6,6 +6,7 @@ import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.*
@@ -99,17 +100,14 @@ class DownloadEngine(context: Context) {
         /** 最大并发任务数 */
         private const val MAX_CONCURRENT_TASKS = 3
 
-        /** 每个任务最大并发分片数（降低并发以保护 CDN） */
+        /** 每个任务最大并发分片数 */
         private const val MAX_CONCURRENT_SEGMENTS = 3
 
         /** 分片下载最大重试次数 */
         private const val MAX_SEGMENT_RETRIES = 3
 
-        /** 分片间延迟（毫秒），降低瞬间峰值带宽 */
-        private const val SEGMENT_GAP_MS = 2000L
-
-        /** 下载速度限制（字节/秒），约 2MB/s */
-        private const val MAX_DOWNLOAD_SPEED_BPS = 2L * 1024 * 1024
+        /** 分片间延迟（毫秒） */
+        private const val SEGMENT_GAP_MS = 1000L
 
         /** 重试间隔（毫秒）：5s, 15s, 30s */
         private val RETRY_DELAYS = longArrayOf(5000L, 15000L, 30000L)
@@ -135,6 +133,7 @@ class DownloadEngine(context: Context) {
     private val appContext: Context = context.applicationContext
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
         .connectTimeout(DOWNLOAD_TIMEOUT, TimeUnit.SECONDS)
         .readTimeout(DOWNLOAD_TIMEOUT, TimeUnit.SECONDS)
         .followRedirects(true)
@@ -539,12 +538,10 @@ class DownloadEngine(context: Context) {
 
                 // 追加写入（断点续传时 append=true）
                 val outputStream = FileOutputStream(segmentFile, startByte > 0 && segmentFile.exists())
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(65536)
 
                 try {
                     var bytesRead: Int
-                    var bytesSinceLastThrottle: Long = 0
-                    var throttleStartMs = System.currentTimeMillis()
 
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         // 检查中断状态
@@ -553,18 +550,6 @@ class DownloadEngine(context: Context) {
                         }
 
                         outputStream.write(buffer, 0, bytesRead)
-
-                        // 速度限制：每读取约 64KB 检查一次是否需要限速
-                        bytesSinceLastThrottle += bytesRead
-                        if (bytesSinceLastThrottle >= 65536) {
-                            val elapsedMs = System.currentTimeMillis() - throttleStartMs
-                            val expectedMs = bytesSinceLastThrottle * 1000 / MAX_DOWNLOAD_SPEED_BPS
-                            if (elapsedMs < expectedMs) {
-                                Thread.sleep(expectedMs - elapsedMs)
-                            }
-                            bytesSinceLastThrottle = 0
-                            throttleStartMs = System.currentTimeMillis()
-                        }
 
                         // 更新该分片的已下载字节数
                         val currentSize = segmentFile.length()
@@ -609,7 +594,7 @@ class DownloadEngine(context: Context) {
                     }
 
                     segmentFile.inputStream().use { sis ->
-                        val buffer = ByteArray(8192)
+                        val buffer = ByteArray(524288)
                         var bytesRead: Int
                         while (sis.read(buffer).also { bytesRead = it } != -1) {
                             fos.write(buffer, 0, bytesRead)
