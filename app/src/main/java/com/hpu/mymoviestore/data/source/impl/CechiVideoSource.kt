@@ -20,8 +20,6 @@ class CechiVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_cechi"
-    override val sourceName = "策驰影视"
-    override val baseUrl = "https://www.******.com"
     override val cachePrefix = "cechi"
     override val rateLimiterTag = "CC"
     override val logTag = "CechiVideoSource"

@@ -11,8 +11,8 @@ interface VideoSource {
     /** 源的唯一标识 */
     val sourceId: String
 
-    /** 源的显示名称（如"剧集屋"、"樱花动漫"） */
-    val sourceName: String
+    /** 源的显示名称（如"剧集屋"、"樱花动漫"），支持远程配置动态更新 */
+    var sourceName: String
 
     /** 源是否启用 */
     var enabled: Boolean

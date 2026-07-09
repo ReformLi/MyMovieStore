@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
  */
 abstract class CrawlerVideoSource(
     private val client: OkHttpClient = defaultClient(),
-    private val cacheRepository: ApiCacheRepository? = null,
+    cacheRepository: ApiCacheRepository? = null,
     /**
      * 单源限流器：搜索/详情/播放页统一排队，最大 3 个，最小间隔 3 秒。
      * 同源内不同类型请求共享该队列，符合"内容播放层独立限流"的约束。
@@ -40,6 +40,10 @@ abstract class CrawlerVideoSource(
         maxQueueSize = 3
     )
 ) : VideoSource {
+
+    /** 缓存仓库，由 VideoSourceConfigManager 反射实例化后注入 */
+    var cacheRepository: ApiCacheRepository? = cacheRepository
+        internal set
 
     override var enabled: Boolean = true
 
@@ -53,8 +57,13 @@ abstract class CrawlerVideoSource(
     // ========== 子类必须实现的抽象属性 ==========
 
     abstract override val sourceId: String
-    abstract override val sourceName: String
-    abstract val baseUrl: String
+
+    /** 源显示名称，由 [VideoSourceConfigManager] 从远程配置设置 */
+    override var sourceName: String = ""
+
+    /** 源基础 URL，由 [VideoSourceConfigManager] 从远程配置设置 */
+    open var baseUrl: String = ""
+
     abstract val cachePrefix: String
     abstract val rateLimiterTag: String
     abstract val logTag: String
@@ -220,12 +229,12 @@ abstract class CrawlerVideoSource(
                             return@withContext Result.success(fixed)
                         } else {
                             Log.w(logTag, "搜索缓存为空结果，强制失效并重新请求: key=$cacheKey, url=$url")
-                            cacheRepository.invalidate(cacheKey)
+                            cacheRepository?.invalidate(cacheKey)
                         }
                     }
                 } catch (t: Throwable) {
                     Log.w(logTag, "搜索结果缓存解析失败，重新请求: ${t.message}")
-                    cacheRepository.invalidate(cacheKey)
+                    cacheRepository?.invalidate(cacheKey)
                 }
             }
 

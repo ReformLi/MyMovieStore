@@ -20,8 +20,6 @@ class DoujiaoVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_dj"
-    override val sourceName = "豆角网"
-    override val baseUrl = "https://m.******.cn"
     override val cachePrefix = "doujiao"
     override val rateLimiterTag = "DJ"
     override val logTag = "DoujiaoVideoSource"

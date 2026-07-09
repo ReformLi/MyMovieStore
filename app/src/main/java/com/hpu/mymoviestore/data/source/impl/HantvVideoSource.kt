@@ -20,8 +20,6 @@ class HantvVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_hantv"
-    override val sourceName = "韩剧tv"
-    override val baseUrl = "https://www.*****.com"
     override val cachePrefix = "hantv"
     override val rateLimiterTag = "HTV"
     override val logTag = "HantvVideoSource"

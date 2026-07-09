@@ -13,16 +13,8 @@ import com.hpu.mymoviestore.data.repository.SearchPermissionRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
+import com.hpu.mymoviestore.data.source.VideoSourceConfigManager
 import com.hpu.mymoviestore.data.source.VideoSourceManager
-import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
-import com.hpu.mymoviestore.data.source.impl.DadatuVideoSource
-import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
-import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
-import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
-import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
-import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
-import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
-import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,11 +41,12 @@ class MovieApplication : Application(), ImageLoaderFactory {
     lateinit var videoRepository: VideoRepository
         private set
 
-    /** 所有视频源列表，供 ProfileFragment 等外部模块访问 */
+    /** 所有视频源列表，由 VideoSourceConfigManager 从远程配置动态构建，供 ProfileFragment 等外部模块访问 */
     val allVideoSources: List<VideoSource>
         get() = _allVideoSources
 
-    private lateinit var _allVideoSources: List<VideoSource>
+    @Volatile
+    private var _allVideoSources: List<VideoSource> = emptyList()
 
     lateinit var playHistoryRepository: PlayHistoryRepository
         private set
@@ -69,6 +62,22 @@ class MovieApplication : Application(), ImageLoaderFactory {
 
     lateinit var searchPermissionRepository: SearchPermissionRepository
         private set
+
+    /** 视频源远程配置管理器（播放源名称/URL 的远程动态配置） */
+    lateinit var videoSourceConfigManager: VideoSourceConfigManager
+        private set
+
+    /**
+     * 更新视频源列表（由 VideoSourceConfigManager 在远程配置加载/更新后调用）。
+     * 同时更新 VideoRepository 内部的源列表引用。
+     */
+    fun updateVideoSources(sources: List<VideoSource>) {
+        _allVideoSources = sources
+        if (::videoRepository.isInitialized) {
+            videoRepository.updateVideoSources(sources)
+        }
+        Log.d(TAG, "视频源列表已更新: ${sources.size} 个源")
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -91,24 +100,13 @@ class MovieApplication : Application(), ImageLoaderFactory {
         val sourceManager = VideoSourceManager(this, apiCacheRepository)
         Log.d(TAG, "VideoSourceManager 初始化完成（JSON 挡板 + ApiCache TTL 缓存）")
 
-        // 新增：初始化多个爬虫源，并接入 ApiCacheRepository 做分类型 TTL 缓存
-        // - 首页/详情页播放入口：1 天
-        // - 真实播放地址（m3u8/mp4）：30 分钟
-        val crawlerSource = JujiwuVideoSource(cacheRepository = apiCacheRepository)
-        val yinghuaSource = YinghuaVideoSource(cacheRepository = apiCacheRepository)
-        val tiantangSource = TiantangVideoSource(cacheRepository = apiCacheRepository)
-        val hantvVideoSource = HantvVideoSource(cacheRepository = apiCacheRepository)
-        val doujiaoVideoSource = DoujiaoVideoSource(cacheRepository = apiCacheRepository)
-        val nongmingVideoSource = NongmingVideoSource(cacheRepository = apiCacheRepository)
-        val cechiVideoSource = CechiVideoSource(cacheRepository = apiCacheRepository)
-        val nongminTvVideoSource = NongminTvVideoSource(cacheRepository = apiCacheRepository)
-        val dadatuVideoSource = DadatuVideoSource(cacheRepository = apiCacheRepository)
+        // 豆瓣发现源（非爬虫源，始终可用，不受远程配置控制）
         val doubanDiscoverySource = DoubanDiscoverySource()
-        _allVideoSources = listOf(dadatuVideoSource,nongminTvVideoSource,nongmingVideoSource,cechiVideoSource,doujiaoVideoSource,hantvVideoSource, tiantangSource,crawlerSource,yinghuaSource)
 
-        // 从 SharedPreferences 恢复视频源启用状态
-        restoreSourceEnabledStates()
+        // 视频源列表初始为空，由 VideoSourceConfigManager 从远程配置动态构建
+        // _allVideoSources 已初始化为 emptyList()
 
+        // 先创建 VideoRepository（初始源列表为空，后续由 ConfigManager 更新）
         videoRepository = VideoRepository(
             localSource = sourceManager,
             videoSources = _allVideoSources,
@@ -116,6 +114,11 @@ class MovieApplication : Application(), ImageLoaderFactory {
             cacheRepository = apiCacheRepository,
             preferCrawler = true   // 暂时开启爬虫优先，上线前可改为 false 或通过配置控制
         )
+
+        // 视频源远程配置管理器：同步加载缓存（毫秒级）或首次远程获取（重试 5 次）
+        videoSourceConfigManager = VideoSourceConfigManager(this, apiCacheRepository)
+        videoSourceConfigManager.initConfig()
+        Log.d(TAG, "VideoSourceConfigManager 初始化完成")
 
         // 启动时顺手清理过期的爬虫缓存（避免数据库增长）
         val app = this
@@ -155,19 +158,6 @@ class MovieApplication : Application(), ImageLoaderFactory {
             } catch (e: Exception) {
                 Log.w(TAG, "搜索权限后台检查触发失败: ${e.message}")
             }
-        }
-    }
-
-    /**
-     * 从 SharedPreferences 恢复视频源启用状态。
-     * 在 Application.onCreate 和 ProfileFragment.onViewCreated 中都会调用。
-     */
-    private fun restoreSourceEnabledStates() {
-        val prefs = getSharedPreferences("video_sources", MODE_PRIVATE)
-        _allVideoSources.forEach { source ->
-            val enabled = prefs.getBoolean("enabled_${source.sourceId}", true)
-            source.enabled = enabled
-            Log.d(TAG, "恢复视频源状态: ${source.sourceName} enabled=$enabled")
         }
     }
 

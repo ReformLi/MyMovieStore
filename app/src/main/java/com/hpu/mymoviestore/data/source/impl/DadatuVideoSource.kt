@@ -25,8 +25,6 @@ class DadatuVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_dadatu"
-    override val sourceName = "达达兔影视"
-    override val baseUrl = "https://www.******.com"
     override val cachePrefix = "dadatu"
     override val rateLimiterTag = "DDT"
     override val logTag = "DadatuVideoSource"

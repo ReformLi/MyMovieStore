@@ -22,12 +22,21 @@ import kotlinx.coroutines.coroutineScope
 
 class VideoRepository(
     private val localSource: VideoSourceManager,
-    private val videoSources: List<VideoSource> = emptyList(),
+    private var videoSources: List<VideoSource> = emptyList(),
     private val discoverySource: DoubanDiscoverySource? = null,
     private val cacheRepository: ApiCacheRepository? = null,
     private val preferCrawler: Boolean = false
 ) {
     private val TAG = "VideoRepository"
+
+    /**
+     * 动态更新视频源列表（由 VideoSourceConfigManager 在远程配置更新后调用）。
+     * 正在进行的搜索操作仍使用旧列表引用，下一次搜索自动使用新列表。
+     */
+    fun updateVideoSources(newSources: List<VideoSource>) {
+        Log.d(TAG, "视频源列表更新: ${videoSources.size} → ${newSources.size} 个源")
+        videoSources = newSources
+    }
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()

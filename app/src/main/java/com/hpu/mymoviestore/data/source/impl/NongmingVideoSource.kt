@@ -19,8 +19,6 @@ class NongmingVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_nm"
-    override val sourceName = "农民影视"
-    override val baseUrl = "https://wwww.******.com"
     override val cachePrefix = "nongming"
     override val rateLimiterTag = "NM"
     override val logTag = "NongmingVideoSource"

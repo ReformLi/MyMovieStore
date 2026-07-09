@@ -20,8 +20,6 @@ class TiantangVideoSource(
 ) : CrawlerVideoSource(client, cacheRepository, rateLimiter) {
 
     override val sourceId = "crawler_tiantang"
-    override val sourceName = "电影天堂"
-    override val baseUrl = "http://www.******.cc"
     override val cachePrefix = "tiantang"
     override val rateLimiterTag = "TT"
     override val logTag = "TiantangVideoSource"
