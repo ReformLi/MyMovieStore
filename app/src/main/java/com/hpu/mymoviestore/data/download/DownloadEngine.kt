@@ -179,29 +179,37 @@ class DownloadEngine(context: Context) {
     ): String {
         val finalTaskId = taskId ?: UUID.randomUUID().toString().replace("-", "").substring(0, 16)
 
-        // 如果引擎中已存在同 ID 的旧任务，先取消其协程 Job，防止重复执行
-        tasks[finalTaskId]?.let { oldTask ->
-            Log.w(TAG, "提交任务时发现旧任务仍存在，先取消: taskId=$finalTaskId, oldStatus=${oldTask.status}")
-            oldTask.job?.cancel()
-            // 释放旧任务的信号量 permit（如果持有）
-            if (oldTask.hasPermit.compareAndSet(true, false)) {
-                taskSemaphore.release()
+        // 原子操作：检查旧任务 + 创建新任务 + 启动协程，防止并发竞态
+        tasks.compute(finalTaskId) { _, existing ->
+            existing?.let { oldTask ->
+                Log.w(TAG, "提交任务时发现旧任务仍存在，先取消: taskId=$finalTaskId, oldStatus=${oldTask.status}")
+                oldTask.job?.cancel()
+                // 先取消旧任务的 OkHttp Call
+                oldTask.activeCalls.values.forEach { call ->
+                    try { call.cancel() } catch (_: Exception) {}
+                }
+                oldTask.activeCalls.clear()
+                // 释放旧任务的信号量 permit（如果持有）
+                if (oldTask.hasPermit.compareAndSet(true, false)) {
+                    taskSemaphore.release()
+                }
             }
-        }
 
-        val task = DownloadTask(
-            taskId = finalTaskId,
-            m3u8Url = m3u8Url,
-            videoTitle = videoTitle,
-            episodeTitle = episodeTitle,
-            callback = callback
-        )
-        tasks[finalTaskId] = task
+            val task = DownloadTask(
+                taskId = finalTaskId,
+                m3u8Url = m3u8Url,
+                videoTitle = videoTitle,
+                episodeTitle = episodeTitle,
+                callback = callback
+            )
 
-        Log.d(TAG, "提交下载任务: taskId=$finalTaskId, video=$videoTitle, episode=$episodeTitle")
+            Log.d(TAG, "提交下载任务: taskId=$finalTaskId, video=$videoTitle, episode=$episodeTitle")
 
-        task.job = scope.launch {
-            executeTask(task)
+            task.job = scope.launch {
+                executeTask(task)
+            }
+
+            task
         }
 
         return finalTaskId

@@ -242,50 +242,51 @@ class SearchPermissionRepository(
                 .get()
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                throw Exception("HTTP ${response.code}")
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw Exception("HTTP ${response.code}")
+                }
+
+                val bodyString = response.body?.string()
+                    ?: throw Exception("响应体为空")
+
+                Log.d(TAG, "原始响应: ${bodyString.take(500)}")
+
+                // 尝试解析 JSON
+                val json = try {
+                    JSONObject(bodyString)
+                } catch (e: Exception) {
+                    Log.w(TAG, "响应不是有效 JSON: ${e.message}")
+                    Log.w(TAG, "原始响应内容: $bodyString")
+                    return@withContext false
+                }
+
+                // 提取字段
+                val switchesObj = json.optJSONObject("switches")
+                val metadataObj = json.optJSONObject("metadata")
+
+                Log.d(TAG, "JSON 结构: switches=${switchesObj != null}, metadata=${metadataObj != null}")
+                Log.d(TAG, "metadata 内容: ${metadataObj?.toString() ?: "null"}")
+
+                val myapp = switchesObj?.optBoolean("myapp", false) ?: false
+                val remoteAppName = metadataObj?.optString("app_name", "") ?: ""
+                val remoteVersion = metadataObj?.optString("version", "") ?: ""
+
+                Log.d(TAG, "远程配置: myapp=$myapp, app_name='$remoteAppName', version='$remoteVersion'")
+                Log.d(TAG, "本地配置: app_name='$LOCAL_APP_NAME', version='$LOCAL_VERSION'")
+
+                // 条件判断：
+                // 1. myapp 必须为 true
+                // 2. app_name 必须匹配
+                // 3. version 必须匹配
+                // 三个条件同时满足才放行
+                val nameMatch = remoteAppName == LOCAL_APP_NAME
+                val versionMatch = remoteVersion == LOCAL_VERSION
+
+                Log.d(TAG, "条件判断: myapp=$myapp, nameMatch=$nameMatch(name='$remoteAppName' vs '$LOCAL_APP_NAME'), versionMatch=$versionMatch(version='$remoteVersion' vs '$LOCAL_VERSION')")
+
+                myapp && nameMatch && versionMatch
             }
-
-            val bodyString = response.body?.string()
-                ?: throw Exception("响应体为空")
-
-            Log.d(TAG, "原始响应: ${bodyString.take(500)}")
-
-            // 尝试解析 JSON
-            val json = try {
-                JSONObject(bodyString)
-            } catch (e: Exception) {
-                Log.w(TAG, "响应不是有效 JSON: ${e.message}")
-                Log.w(TAG, "原始响应内容: $bodyString")
-                return@withContext false
-            }
-
-            // 提取字段
-            val switchesObj = json.optJSONObject("switches")
-            val metadataObj = json.optJSONObject("metadata")
-
-            Log.d(TAG, "JSON 结构: switches=${switchesObj != null}, metadata=${metadataObj != null}")
-            Log.d(TAG, "metadata 内容: ${metadataObj?.toString() ?: "null"}")
-
-            val myapp = switchesObj?.optBoolean("myapp", false) ?: false
-            val remoteAppName = metadataObj?.optString("app_name", "") ?: ""
-            val remoteVersion = metadataObj?.optString("version", "") ?: ""
-
-            Log.d(TAG, "远程配置: myapp=$myapp, app_name='$remoteAppName', version='$remoteVersion'")
-            Log.d(TAG, "本地配置: app_name='$LOCAL_APP_NAME', version='$LOCAL_VERSION'")
-
-            // 条件判断：
-            // 1. myapp 必须为 true
-            // 2. app_name 必须匹配
-            // 3. version 必须匹配
-            // 三个条件同时满足才放行
-            val nameMatch = remoteAppName == LOCAL_APP_NAME
-            val versionMatch = remoteVersion == LOCAL_VERSION
-
-            Log.d(TAG, "条件判断: myapp=$myapp, nameMatch=$nameMatch(name='$remoteAppName' vs '$LOCAL_APP_NAME'), versionMatch=$versionMatch(version='$remoteVersion' vs '$LOCAL_VERSION')")
-
-            myapp && nameMatch && versionMatch
         }
     }
 }

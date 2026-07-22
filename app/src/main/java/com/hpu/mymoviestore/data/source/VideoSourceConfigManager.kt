@@ -253,25 +253,26 @@ class VideoSourceConfigManager(
                 .header("Accept", "application/json")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "远程配置获取失败: HTTP ${response.code}")
-                return@withContext null
-            }
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "远程配置获取失败: HTTP ${response.code}")
+                    return@withContext null
+                }
 
-            val json = response.body?.string()
-            if (json.isNullOrBlank()) {
-                Log.w(TAG, "远程配置响应体为空")
-                return@withContext null
-            }
+                val json = response.body?.string()
+                if (json.isNullOrBlank()) {
+                    Log.w(TAG, "远程配置响应体为空")
+                    return@withContext null
+                }
 
-            val configs = parseConfig(json)
-            if (configs.isEmpty()) {
-                Log.w(TAG, "远程配置解析结果为空")
-                return@withContext null
-            }
+                val configs = parseConfig(json)
+                if (configs.isEmpty()) {
+                    Log.w(TAG, "远程配置解析结果为空")
+                    return@withContext null
+                }
 
-            ParsedConfig(configs = configs, rawJson = json)
+                ParsedConfig(configs = configs, rawJson = json)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "远程配置获取异常: ${e.message}")
             null
