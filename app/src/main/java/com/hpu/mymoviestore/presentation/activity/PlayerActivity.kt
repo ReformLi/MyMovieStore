@@ -282,8 +282,10 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             // ========== 在线播放模式 ==========
             viewModel.getHistoryByVideoId(videoId) { history ->
-                val canResume = history != null && history.playProgressSeconds > 0 &&
-                    (videoUrl.isBlank() || history.playUrl == videoUrl || true)
+                val playPageUrl = intent.getStringExtra(EXTRA_PLAY_PAGE_URL) ?: ""
+                val sameEpisode = playPageUrl.isNotEmpty() && history?.playPageUrl == playPageUrl
+                val sameUrl = history?.playUrl == videoUrl && videoUrl.isNotEmpty()
+                val canResume = history != null && history.playProgressSeconds > 0 && (sameEpisode || sameUrl)
                 resumeFromMs = if (canResume) history.playProgressSeconds * 1000 else 0L
                 if (resumeFromMs > 0) {
                     Log.d(TAG, "上次进度 ${history!!.playProgressSeconds}s → seekTo $resumeFromMs ms")
