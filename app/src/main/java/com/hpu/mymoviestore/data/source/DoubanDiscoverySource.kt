@@ -155,7 +155,6 @@ class DoubanDiscoverySource {
                     "豆瓣首页-$pageName 接口 HTTP 非成功: status=${response.statusCode()}, " +
                         "url=$url, body='${body.take(1000)}'"
                 )
-                (response as java.io.Closeable).close()
                 val crawlError = CrawlError(
                     type = when (response.statusCode()) {
                         403 -> {
@@ -234,7 +233,6 @@ class DoubanDiscoverySource {
                 "豆瓣首页-$pageName 解析完成: type=$safeType, start=$safeStart, " +
                     "items=${items.size}, total=$total, hasMore=${result.hasMore}"
             )
-            (response as java.io.Closeable).close()
             Result.success(result)
         } catch (t: Throwable) {
             Log.e(
@@ -310,7 +308,6 @@ class DoubanDiscoverySource {
         val subjects = JSONObject(body).optJSONArray("subjects")
         if (subjects == null) {
             Log.w(TAG, "豆瓣最近热门$categoryName 解析失败: subjects 为空")
-            (response as java.io.Closeable).close()
             return emptyList()
         }
 
@@ -351,7 +348,6 @@ class DoubanDiscoverySource {
         }
 
         Log.d(TAG, "豆瓣最近热门$categoryName 解析完成: count=${result.size}")
-        (response as java.io.Closeable).close()
         return result
     }
 
