@@ -32,9 +32,11 @@ import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * 视频详情页 Activity
@@ -592,15 +594,24 @@ class DetailActivity : AppCompatActivity() {
      * - 确认后调用 startDownloadForEpisodes 创建下载任务
      */
     private fun showEpisodeSelectDialog(episodes: List<PlayEpisode>) {
-        // 查询该视频已有的下载任务
-        val existingTasks = runBlocking {
-            try {
+        // 查询该视频已有的下载任务（通过 lifecycleScope 异步获取）
+        lifecycleScope.launch(Dispatchers.IO) {
+            val existingTasks = try {
                 MovieApplication.get().downloadRepository.getTasksByVideoId(videoId)
             } catch (e: Exception) {
                 Log.w(TAG, "查询已有下载任务失败: ${e.message}")
-                emptyList()
+                emptyList<com.hpu.mymoviestore.data.entity.DownloadTaskEntity>()
+            }
+            withContext(Dispatchers.Main) {
+                showEpisodeSelectDialogInner(episodes, existingTasks)
             }
         }
+    }
+
+    private fun showEpisodeSelectDialogInner(
+        episodes: List<PlayEpisode>,
+        existingTasks: List<com.hpu.mymoviestore.data.entity.DownloadTaskEntity>
+    ) {
         // 用 playPageUrl 匹配已有任务（避免索引不一致问题）
         val existingUrls = existingTasks.map { it.playUrl }.toSet()
 
@@ -779,20 +790,19 @@ class DetailActivity : AppCompatActivity() {
                             downloadScope.launch {
                                 try {
                                     app.downloadRepository.markCompleted(taskId, localFilePath, fileSize)
+                                    // 视频下载完成后触发弹幕下载
+                                    danmakuManager.startDanmakuDownload(
+                                        taskId = taskId,
+                                        title = videoTitle,
+                                        episodeTitle = episode.title,
+                                        dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                                    )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "同步下载完成到数据库失败: ${e.message}")
                                 }
                             }
                         }
                     }
-                )
-
-                // 启动弹幕下载
-                danmakuManager.startDanmakuDownload(
-                    taskId = taskId,
-                    title = videoTitle,
-                    episodeTitle = episode.title,
-                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
                 )
 
                 Log.d(TAG, "已提交下载: taskId=$taskId, episode=${episode.title}, m3u8=${m3u8Url.take(60)}")

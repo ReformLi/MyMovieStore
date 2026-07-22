@@ -122,7 +122,7 @@ class DownloadRepository(
     }
 
     suspend fun cancelTask(taskId: String) {
-        taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_FAILED, "用户取消")
+        taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_CANCELLED, "用户取消")
     }
 
     suspend fun retryTask(taskId: String) {

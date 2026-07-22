@@ -110,6 +110,9 @@ data class DownloadTaskEntity(
         /** 失败 */
         const val STATUS_FAILED = 4
 
+        /** 已取消（用户主动取消） */
+        const val STATUS_CANCELLED = 5
+
         /** 合并中（分片下载完成，正在合并为 mp4） */
         const val STATUS_MERGING = 6
 
@@ -141,6 +144,7 @@ data class DownloadTaskEntity(
             STATUS_PAUSED -> "已暂停"
             STATUS_COMPLETED -> "已完成"
             STATUS_FAILED -> "下载失败"
+            STATUS_CANCELLED -> "已取消"
             STATUS_MERGING -> "合并中"
             else -> "未知状态"
         }

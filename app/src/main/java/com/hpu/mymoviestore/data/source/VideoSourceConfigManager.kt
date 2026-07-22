@@ -44,7 +44,8 @@ import java.util.concurrent.TimeUnit
  */
 class VideoSourceConfigManager(
     private val context: Context,
-    private val cacheRepository: ApiCacheRepository
+    private val cacheRepository: ApiCacheRepository,
+    private val scope: CoroutineScope
 ) {
 
     /** 配置加载状态 */
@@ -124,7 +125,7 @@ class VideoSourceConfigManager(
                     Log.d(TAG, "缓存配置加载完成，${sources.size} 个源")
 
                     // 异步进行每天更新
-                    CoroutineScope(Dispatchers.IO).launch {
+                    scope.launch {
                         maybeDailyUpdate()
                     }
                 } else {
@@ -158,7 +159,7 @@ class VideoSourceConfigManager(
      */
     private fun startFirstLaunchFetch() {
         _state.value = ConfigState.LOADING
-        CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             val result = fetchWithRetries()
             if (result != null) {
                 // 成功：缓存 + 构建源 + 标记今天已获取

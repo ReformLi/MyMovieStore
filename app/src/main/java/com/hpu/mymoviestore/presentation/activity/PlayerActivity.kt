@@ -29,6 +29,7 @@ import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
+import androidx.lifecycle.lifecycleScope
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,7 +54,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
@@ -64,6 +64,8 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlin.math.roundToInt
 
 /**
@@ -105,7 +107,7 @@ class PlayerActivity : AppCompatActivity() {
         private var danmakuLoadJob: Job? = null
         private var danmakuSearchJob: Job? = null
         private var lastLoadedAnimeId: Long = 0L
-        private val uiScope = CoroutineScope(Dispatchers.Main)
+        private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // PlayerView 内部的弹幕控件引用（在自定义控制栏中）
     private val danmakuSwitch: android.widget.Switch get() =
@@ -271,49 +273,8 @@ class PlayerActivity : AppCompatActivity() {
             if (localFile.exists()) {
                 val localUri = Uri.fromFile(localFile)
                 Log.d(TAG, "本地文件存在，使用 Uri: $localUri")
-
-                // 读取离线播放进度
-                val app = MovieApplication.get()
-                val task = runBlocking { app.downloadRepository.getTaskById(offlineTaskId) }
-                if (task != null && task.playProgressPercent >= 100) {
-                    // 已看完，重新观看
-                    Log.d(TAG, "离线播放：已看完，从头开始")
-                    resumeFromMs = 0L
-                } else if (task != null && task.playPositionMs > 0) {
-                    resumeFromMs = task.playPositionMs
-                    Log.d(TAG, "离线播放：续播 ${task.playPositionMs}ms")
-                }
-
                 initializePlayerWithLocalFile(localUri)
-
-                // 弹幕重试逻辑：如果弹幕下载失败或未下载，且弹幕总开关开启，则后台重试下载弹幕
-                if (task != null) {
-                    val masterEnabled = DanmakuPrefs(this@PlayerActivity).isMasterEnabled()
-                    if (masterEnabled && (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
-                            task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED)) {
-                        Log.d(TAG, "离线播放：弹幕状态=${task.danmakuStatus}，触发后台重试下载")
-                        DanmakuDownloadManager.getInstance(this@PlayerActivity).retryDanmaku(
-                            taskId = offlineTaskId,
-                            title = task.title,
-                            episodeTitle = task.episodeTitle,
-                            dao = MovieDatabase.getInstance(this@PlayerActivity).downloadTaskDao()
-                        )
-                    }
-                }
-
-                // 如果有本地弹幕文件，直接加载
-                if (!danmakuFilePath.isNullOrEmpty()) {
-                    val danmakuFile = File(danmakuFilePath)
-                    if (danmakuFile.exists()) {
-                        loadDanmakuFromLocalFile(danmakuFile)
-                    } else {
-                        Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath，尝试在线搜索弹幕")
-                        launchDanmakuSearch(videoTitle, episodeTitle)
-                    }
-                } else {
-                    // 没有本地弹幕文件，尝试在线搜索弹幕
-                    launchDanmakuSearch(videoTitle, episodeTitle)
-                }
+                startOfflinePlayback(offlineTaskId, danmakuFilePath)
             } else {
                 Log.e(TAG, "本地文件不存在: $localFilePath")
                 Toast.makeText(this, "本地文件不存在: $localFilePath", Toast.LENGTH_LONG).show()
@@ -1282,6 +1243,7 @@ class PlayerActivity : AppCompatActivity() {
         releasePlayer()
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
+        uiScope.cancel()
         danmakuManager?.release()
         unregisterStatusReceivers()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1446,5 +1408,41 @@ class PlayerActivity : AppCompatActivity() {
         }
         timeUpdateHandler = null
         timeUpdateRunnable = null
+    }
+
+    private fun startOfflinePlayback(taskId: String, danmakuFilePath: String?) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val task = MovieApplication.get().downloadRepository.getTaskById(taskId)
+            if (task != null) {
+                if (task.playProgressPercent >= 100) {
+                    Log.d(TAG, "离线播放：已看完，从头开始")
+                } else if (task.playPositionMs > 0) {
+                    resumeFromMs = task.playPositionMs
+                    Log.d(TAG, "离线播放：续播 ${task.playPositionMs}ms")
+                }
+                val masterEnabled = DanmakuPrefs(this@PlayerActivity).isMasterEnabled()
+                if (masterEnabled && (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
+                        task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED)) {
+                    Log.d(TAG, "离线播放：弹幕状态=${task.danmakuStatus}，触发后台重试下载")
+                    DanmakuDownloadManager.getInstance(this@PlayerActivity).retryDanmaku(
+                        taskId = taskId,
+                        title = task.title,
+                        episodeTitle = task.episodeTitle,
+                        dao = MovieDatabase.getInstance(this@PlayerActivity).downloadTaskDao()
+                    )
+                }
+            }
+        }
+        if (!danmakuFilePath.isNullOrEmpty()) {
+            val danmakuFile = File(danmakuFilePath)
+            if (danmakuFile.exists()) {
+                loadDanmakuFromLocalFile(danmakuFile)
+            } else {
+                Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath，尝试在线搜索弹幕")
+                launchDanmakuSearch(videoTitle, episodeTitle)
+            }
+        } else {
+            launchDanmakuSearch(videoTitle, episodeTitle)
+        }
     }
 }

@@ -116,7 +116,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
         )
 
         // 视频源远程配置管理器：同步加载缓存（毫秒级）或首次远程获取（重试 5 次）
-        videoSourceConfigManager = VideoSourceConfigManager(this, apiCacheRepository)
+        videoSourceConfigManager = VideoSourceConfigManager(this, apiCacheRepository, applicationScope)
         videoSourceConfigManager.initConfig()
         Log.d(TAG, "VideoSourceConfigManager 初始化完成")
 

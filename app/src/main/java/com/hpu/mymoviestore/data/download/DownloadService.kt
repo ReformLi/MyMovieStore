@@ -1,15 +1,18 @@
 package com.hpu.mymoviestore.data.download
 
+import android.Manifest
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import kotlinx.coroutines.*
@@ -113,7 +116,7 @@ class DownloadService : Service() {
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "MyMovieStore:DownloadWakeLock"
-        ).apply { acquire() }
+        ).apply { acquire(30 * 60 * 1000L) }
         Log.d(TAG, "已获取 PARTIAL_WAKE_LOCK")
 
         // 注册广播接收器（暂停全部 / 继续全部），Android 14+ 需要指定 RECEIVER_NOT_EXPORTED
@@ -134,14 +137,20 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "DownloadService onStartCommand")
 
-        // 启动前台通知
-        val initialNotification = notificationManager.buildProgressNotification(
-            progress = 0,
-            speed = "0 B/s",
-            taskCount = getActiveTaskCount(),
-            isDownloading = true
-        )
-        startForeground(NOTIFICATION_ID, initialNotification)
+        // 启动前台通知（Android 13+ 需要检查 POST_NOTIFICATIONS 权限）
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ) {
+            val initialNotification = notificationManager.buildProgressNotification(
+                progress = 0,
+                speed = "0 B/s",
+                taskCount = getActiveTaskCount(),
+                isDownloading = true
+            )
+            startForeground(NOTIFICATION_ID, initialNotification)
+        } else {
+            Log.w(TAG, "缺少 POST_NOTIFICATIONS 权限，无法启动前台通知")
+        }
 
         return START_STICKY
     }

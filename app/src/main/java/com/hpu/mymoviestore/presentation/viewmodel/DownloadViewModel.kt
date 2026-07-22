@@ -118,32 +118,38 @@ class DownloadViewModel : ViewModel() {
     /** 恢复任务 */
     fun resumeTask(taskId: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            val entity = repository.getTaskById(taskId)
+            if (entity == null) {
+                Log.w(TAG, "恢复失败：找不到任务 $taskId")
+                return@launch
+            }
+            // 如果任务已完成，不重新提交
+            if (entity.status == DownloadTaskEntity.STATUS_COMPLETED) {
+                Log.w(TAG, "恢复失败：任务已完成，无需重新下载 taskId=$taskId")
+                return@launch
+            }
+
             repository.resumeTask(taskId)
             // 如果 DownloadEngine 中没有该任务（应用重启后），需要重新提交
             if (DownloadEngine.getInstance(app).getTask(taskId) == null) {
-                val entity = repository.getTaskById(taskId)
-                if (entity != null) {
-                    // playUrl 可能是播放页 URL（非 m3u8），需要重新解析
-                    val m3u8Url = resolveM3u8Url(entity)
-                    if (m3u8Url.isNullOrBlank()) {
-                        Log.w(TAG, "恢复失败：无法解析 m3u8 URL, taskId=$taskId")
-                        repository.markFailed(taskId, "无法解析播放地址")
-                        return@launch
-                    }
-                    // 确保前台服务已启动（重启后服务可能已停止）
-                    ensureDownloadServiceRunning()
-                    // 重新提交到 DownloadEngine，并绑定完整回调以更新数据库进度和状态
-                    DownloadEngine.getInstance(app).submitTask(
-                        m3u8Url = m3u8Url,
-                        videoTitle = entity.title,
-                        episodeTitle = entity.episodeTitle,
-                        taskId = entity.taskId,
-                        callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
-                    )
-                    Log.d(TAG, "恢复任务：重新提交到 DownloadEngine: $taskId")
-                } else {
-                    Log.w(TAG, "恢复失败：找不到任务 $taskId")
+                // playUrl 可能是播放页 URL（非 m3u8），需要重新解析
+                val m3u8Url = resolveM3u8Url(entity)
+                if (m3u8Url.isNullOrBlank()) {
+                    Log.w(TAG, "恢复失败：无法解析 m3u8 URL, taskId=$taskId")
+                    repository.markFailed(taskId, "无法解析播放地址")
+                    return@launch
                 }
+                // 确保前台服务已启动（重启后服务可能已停止）
+                ensureDownloadServiceRunning()
+                // 重新提交到 DownloadEngine，并绑定完整回调以更新数据库进度和状态
+                DownloadEngine.getInstance(app).submitTask(
+                    m3u8Url = m3u8Url,
+                    videoTitle = entity.title,
+                    episodeTitle = entity.episodeTitle,
+                    taskId = entity.taskId,
+                    callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
+                )
+                Log.d(TAG, "恢复任务：重新提交到 DownloadEngine: $taskId")
             } else {
                 // 确保前台服务已启动（可能因所有任务暂停后服务已停止）
                 ensureDownloadServiceRunning()
