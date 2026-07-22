@@ -15,6 +15,7 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -77,7 +78,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
     private val jobMap = ConcurrentHashMap<String, Job>()
 
     /** 回调列表（支持多个监听者） */
-    private val callbacks = mutableListOf<DanmakuDownloadCallback>()
+    private val callbacks = CopyOnWriteArrayList<DanmakuDownloadCallback>()
 
     // ======================== 回调管理 ========================
 

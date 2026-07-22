@@ -292,6 +292,7 @@ class ProfileFragment : Fragment() {
         cacheItems: List<CacheItem>,
         onComplete: (String) -> Unit
     ) {
+        val ctx = requireContext()
         lifecycleScope.launch(Dispatchers.IO) {
             val app = MovieApplication.get()
             val cacheRepo = app.apiCacheRepository
@@ -327,8 +328,8 @@ class ProfileFragment : Fragment() {
 
             // 5. 清理弹幕缓存（包括弹幕源选择记录）
             if (5 in selectedItems || 4 in selectedItems) {
-                DanmakuCache(requireContext()).clearAll()
-                DanmakuPrefs(requireContext()).clearSavedAnimeChoices()
+                DanmakuCache(ctx).clearAll()
+                DanmakuPrefs(ctx).clearSavedAnimeChoices()
                 results.add("弹幕缓存及弹幕源选择记录")
             }
 
@@ -353,13 +354,14 @@ class ProfileFragment : Fragment() {
      */
     private suspend fun calculateTotalCacheSize(): Long {
         var total = 0L
+        val ctx = requireContext()
         withContext(Dispatchers.IO) {
             // 1. Room 数据库文件大小
-            val dbFile = requireContext().getDatabasePath("movie_database")
+            val dbFile = ctx.getDatabasePath("movie_database")
             if (dbFile.exists()) total += dbFile.length()
 
             // 2. SharedPreferences 文件大小（弹幕缓存等）
-            val prefsDir = java.io.File(requireContext().applicationInfo.dataDir, "shared_prefs")
+            val prefsDir = java.io.File(ctx.applicationInfo.dataDir, "shared_prefs")
             if (prefsDir.exists() && prefsDir.isDirectory) {
                 prefsDir.listFiles()?.forEach { file ->
                     total += file.length()
@@ -367,13 +369,13 @@ class ProfileFragment : Fragment() {
             }
 
             // 3. Coil 图片缓存
-            val cacheDir = requireContext().cacheDir
+            val cacheDir = ctx.cacheDir
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 total += calculateDirSize(cacheDir)
             }
 
             // 4. WebView 缓存
-            val webViewCache = java.io.File(requireContext().cacheDir, "WebView")
+            val webViewCache = java.io.File(ctx.cacheDir, "WebView")
             if (webViewCache.exists()) {
                 total += calculateDirSize(webViewCache)
             }

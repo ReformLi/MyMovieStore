@@ -388,13 +388,16 @@ class DownloadEngine(context: Context) {
             updateStatus(task, DownloadStatus.MERGING)
             val outputFile = mergeSegments(task, taskTempDir)
 
-            // 7. 完成
+            // 7. 合并后再检查一次取消状态（避免取消后被标记为完成）
+            if (task.isCancelled.get() || task.isPaused.get()) return
+
+            // 8. 完成
             val fileSize = outputFile.length()
             task.status = DownloadStatus.COMPLETED
             task.callback?.onCompleted(task.taskId, outputFile.absolutePath, fileSize)
             Log.d(TAG, "下载完成: taskId=${task.taskId}, file=${outputFile.absolutePath}, size=$fileSize")
 
-            // 8. 清理临时文件
+            // 9. 清理临时文件
             cleanupTempFiles(task.taskId)
             tasks.remove(task.taskId)
 
@@ -410,6 +413,7 @@ class DownloadEngine(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "任务执行异常: taskId=${task.taskId}, error=${e.message}", e)
             updateStatus(task, DownloadStatus.FAILED, e.message)
+            cleanupTempFiles(task.taskId)
         }
     }
 
@@ -582,7 +586,7 @@ class DownloadEngine(context: Context) {
      */
     private suspend fun mergeSegments(task: DownloadTask, taskTempDir: File): File {
         return withContext(Dispatchers.IO) {
-            val fileName = sanitizeFileName("${task.videoTitle}_${task.episodeTitle}.mp4")
+            val fileName = sanitizeFileName("${task.videoTitle}_${task.episodeTitle}_${task.taskId}.mp4")
             val outputFile = File(downloadDir, fileName)
 
             // 如果目标文件已存在，先删除

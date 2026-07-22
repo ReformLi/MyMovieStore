@@ -22,4 +22,10 @@
 
 # 视频源反射发现：保留 impl 包下所有类的类名和无参构造函数，
 # 使 DexFile 扫描 + getDeclaredConstructor().newInstance() 在 Release 构建中正常工作
--keep class com.hpu.mymoviestore.data.source.impl.** { <init>(); }
+-keep class com.hpu.mymoviestore.data.source.impl.** {
+    <init>();
+}
+# Kotlin 合成的默认构造器（所有参数都有默认值时生成），R8 可能 strip 掉
+-keepclassmembers class com.hpu.mymoviestore.data.source.impl.** {
+    synthetic <init>(...);
+}

@@ -9,6 +9,8 @@ import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 视频数据源管理器
@@ -38,6 +40,9 @@ class VideoSourceManager(
     @Volatile
     private var cachedVideos: List<VideoItem>? = null
 
+    /** 初始化互斥锁，防止并发竞态重复读取解析 */
+    private val initMutex = Mutex()
+
     /**
      * 获取全量视频列表
      * 步骤：内存缓存 → Room api_cache 缓存 → assets JSON（重新抓取）
@@ -50,62 +55,68 @@ class VideoSourceManager(
             return memory
         }
 
-        // 2) Room api_cache 缓存（TTL 生效）
-        if (cacheRepository != null) {
-            val cachedJson = cacheRepository.get(CACHE_KEY_ALL_VIDEOS)
-            if (cachedJson != null) {
-                val list = try {
-                    val resp = adapter.fromJson(cachedJson) ?: RemoteVideoResponse()
-                    resp.list.toVideoItemList()
-                } catch (t: Throwable) {
-                    Log.w(TAG, "缓存 JSON 解析失败，回退到 assets 读取: ${t.message}")
-                    emptyList()
+        // 互斥锁，确保只有一个协程执行初始化流程
+        initMutex.withLock {
+            // 双重检查：持有锁后再次检查内存缓存
+            cachedVideos?.let { return it }
+
+            // 2) Room api_cache 缓存（TTL 生效）
+            if (cacheRepository != null) {
+                val cachedJson = cacheRepository.get(CACHE_KEY_ALL_VIDEOS)
+                if (cachedJson != null) {
+                    val list = try {
+                        val resp = adapter.fromJson(cachedJson) ?: RemoteVideoResponse()
+                        resp.list.toVideoItemList()
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "缓存 JSON 解析失败，回退到 assets 读取: ${t.message}")
+                        emptyList()
+                    }
+                    if (list.isNotEmpty()) {
+                        Log.d(TAG, "api_cache 命中并解析成功: ${list.size} 条")
+                        cachedVideos = list
+                        return list
+                    }
                 }
-                if (list.isNotEmpty()) {
-                    Log.d(TAG, "api_cache 命中并解析成功: ${list.size} 条")
-                    cachedVideos = list
-                    return list
-                }
+            } else {
+                Log.d(TAG, "未启用 api_cache（cacheRepository 为 null）")
             }
-        } else {
-            Log.d(TAG, "未启用 api_cache（cacheRepository 为 null）")
-        }
 
-        // 3) 真正读取 assets JSON（解析 + 写入 api_cache）
-        Log.d(TAG, "从 assets 读取视频源: $DEFAULT_ASSET_FILE")
-        val jsonString = readJsonFromAssets(DEFAULT_ASSET_FILE)
-        Log.d(TAG, "读取 JSON 成功: ${jsonString.length} 字符")
+            // 3) 真正读取 assets JSON（解析 + 写入 api_cache）
+            Log.d(TAG, "从 assets 读取视频源: $DEFAULT_ASSET_FILE")
+            val jsonString = readJsonFromAssets(DEFAULT_ASSET_FILE)
+            Log.d(TAG, "读取 JSON 成功: ${jsonString.length} 字符")
 
-        val response = parseJson(jsonString)
-        Log.d(TAG, "解析结果: page=${response.page}, total=${response.total}, list=${response.list.size}")
+            val response = parseJson(jsonString)
+            Log.d(TAG, "解析结果: page=${response.page}, total=${response.total}, list=${response.list.size}")
 
-        val list = response.list.toVideoItemList()
-        Log.d(TAG, "映射为 VideoItem，共 ${list.size} 条")
-        list.forEachIndexed { idx, it ->
-            Log.d(
-                TAG,
-                "  [${idx + 1}] id=${it.id}, title=${it.title}, " +
-                    "category=${it.category}, " +
-                    "playUrl=${if (it.playUrl.isNotEmpty()) it.playUrl.take(40) + "..." else "(空)"}"
-            )
-        }
-
-        // 写入 api_cache（TTL = 1 天）
-        if (cacheRepository != null) {
-            try {
-                cacheRepository.put(
-                    CACHE_KEY_ALL_VIDEOS,
-                    jsonString,
-                    ApiCacheEntity.TTL_ONE_DAY
+            val list = response.list.toVideoItemList()
+            Log.d(TAG, "映射为 VideoItem，共 ${list.size} 条")
+            list.forEachIndexed { idx, it ->
+                Log.d(
+                    TAG,
+                    "  [${idx + 1}] id=${it.id}, title=${it.title}, " +
+                        "category=${it.category}, " +
+                        "playUrl=${if (it.playUrl.isNotEmpty()) it.playUrl.take(40) + "..." else "(空)"}"
                 )
-            } catch (t: Throwable) {
-                Log.w(TAG, "写入 api_cache 失败（不影响功能）: ${t.message}")
             }
-        }
 
-        cachedVideos = list
-        Log.d(TAG, "========== 数据源加载完成，已写入内存 + Room 缓存 ==========\n")
-        return list
+            // 写入 api_cache（TTL = 1 天）
+            if (cacheRepository != null) {
+                try {
+                    cacheRepository.put(
+                        CACHE_KEY_ALL_VIDEOS,
+                        jsonString,
+                        ApiCacheEntity.TTL_ONE_DAY
+                    )
+                } catch (t: Throwable) {
+                    Log.w(TAG, "写入 api_cache 失败（不影响功能）: ${t.message}")
+                }
+            }
+
+            cachedVideos = list
+            Log.d(TAG, "========== 数据源加载完成，已写入内存 + Room 缓存 ==========\n")
+            return list
+        }
     }
 
     /** 按分类过滤视频列表（分类判断完全来自内存缓存，不另存） */

@@ -71,6 +71,10 @@ class DetailActivity : AppCompatActivity() {
     private var hasSelectedEpisodeHistory: Boolean = false
 
     companion object {
+        private const val SAVED_SELECTED_LINE_INDEX = "saved_selected_line_index"
+        private const val SAVED_SELECTED_EPISODE_URL = "saved_selected_episode_url"
+        private const val SAVED_HAS_SELECTED_EPISODE_HISTORY = "saved_has_selected_episode_history"
+
         private const val TAG = "DetailActivity"
 
         // —— Intent extra key ——
@@ -177,7 +181,7 @@ class DetailActivity : AppCompatActivity() {
         }
 
         // 4. 若关键字段（导演/主演/简介/playUrl）缺失，走回查补全
-        val needFetch = director.isEmpty() || actors.isEmpty() || description.isEmpty() || videoUrl.isEmpty()
+        val needFetch = director.isEmpty() || actors.isEmpty() || description.isEmpty() || videoUrl.isEmpty() || (playLines.isEmpty() && detailUrl.isNotBlank())
         if (needFetch) {
             Log.d(TAG, "部分字段缺失，从 JSON 挡板回查视频详情 (videoId=$videoId)")
             showLoading("正在加载详情...")
@@ -188,6 +192,26 @@ class DetailActivity : AppCompatActivity() {
 
         // 5. 读取并显示播放进度（从播放历史）
         loadProgressFromHistory()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(SAVED_SELECTED_LINE_INDEX, selectedLineIndex)
+        outState.putString(SAVED_SELECTED_EPISODE_URL, selectedEpisode?.playPageUrl)
+        outState.putBoolean(SAVED_HAS_SELECTED_EPISODE_HISTORY, hasSelectedEpisodeHistory)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        selectedLineIndex = savedInstanceState.getInt(SAVED_SELECTED_LINE_INDEX, 0)
+        savedInstanceState.getString(SAVED_SELECTED_EPISODE_URL)?.let { url ->
+            selectedEpisode = playLines.flatMap { it.episodes }.firstOrNull { it.playPageUrl == url }
+        }
+        hasSelectedEpisodeHistory = savedInstanceState.getBoolean(SAVED_HAS_SELECTED_EPISODE_HISTORY, false)
+        if (playLines.isNotEmpty()) {
+            renderPlayLines()
+            updatePlayButtonText()
+        }
     }
 
     private fun applySystemBarInsets() {
@@ -768,7 +792,7 @@ class DetailActivity : AppCompatActivity() {
                     taskId = taskId,
                     title = videoTitle,
                     episodeTitle = episode.title,
-                    dao = MovieDatabase.getInstance(this@DetailActivity).downloadTaskDao()
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
                 )
 
                 Log.d(TAG, "已提交下载: taskId=$taskId, episode=${episode.title}, m3u8=${m3u8Url.take(60)}")
