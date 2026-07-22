@@ -28,13 +28,6 @@ class PlayerViewModel : ViewModel() {
     private val _videoTitle = MutableLiveData<String>()
     val videoTitle: LiveData<String> = _videoTitle
 
-    private val _playStatus = MutableLiveData<String>()
-    val playStatus: LiveData<String> = _playStatus
-
-    /**
-     * 设置视频信息：写入播放历史
-     * 注意：videoId / title / coverUrl / category / playUrl 都必须提供
-     */
     fun setVideoInfo(
         videoId: Long,
         title: String,
@@ -100,11 +93,6 @@ class PlayerViewModel : ViewModel() {
             Log.d(TAG, "getVideoInfoById: videoId=$videoId, item=${item?.title}")
             onResult(item)
         }
-    }
-
-    /** 播放状态更新（从 Activity 回调） */
-    fun updatePlayStatus(status: String) {
-        _playStatus.postValue(status)
     }
 
     companion object {

@@ -2,7 +2,6 @@ package com.hpu.mymoviestore.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hpu.mymoviestore.MovieApplication
@@ -19,9 +18,6 @@ import kotlinx.coroutines.launch
 class HistoryViewModel : ViewModel() {
 
     private val repository = MovieApplication.get().playHistoryRepository
-
-    private val _clearStatus = MutableLiveData<Boolean>()
-    val clearStatus: LiveData<Boolean> = _clearStatus
 
     fun getAllHistory(): LiveData<List<PlayHistoryEntity>> = repository.getAllHistory()
 
@@ -48,7 +44,6 @@ class HistoryViewModel : ViewModel() {
         viewModelScope.launch {
             repository.clearAllHistory()
             Log.d(TAG, "clearAllHistory: 清空完成")
-            _clearStatus.postValue(true)
         }
     }
 

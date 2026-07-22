@@ -121,27 +121,22 @@ class MovieApplication : Application(), ImageLoaderFactory {
         Log.d(TAG, "VideoSourceConfigManager 初始化完成")
 
         // 启动时顺手清理过期的爬虫缓存（避免数据库增长）
-        val app = this
-        Thread {
+        applicationScope.launch {
             try {
-                // 这里走 DAO 的阻塞查询：cleanExpired 是 suspend 函数，
-                // 在子线程中通过 runBlocking 执行不会阻塞 UI
-                kotlinx.coroutines.runBlocking {
-                    val deleted = app.apiCacheRepository.cleanExpiredInner()
-                    if (deleted > 0) {
-                        Log.d(TAG, "启动时清理过期 api_cache: 共删除 $deleted 行")
-                    }
+                val deleted = apiCacheRepository.cleanExpiredInner()
+                if (deleted > 0) {
+                    Log.d(TAG, "启动时清理过期 api_cache: 共删除 $deleted 行")
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "清理过期缓存失败（非致命）: ${t.message}")
             }
-        }.start()
+        }
 
         Log.d(TAG, "========== MovieApplication.onCreate 结束 ==========\n")
 
         // 应用重启后，将数据库中"下载中/等待中"的任务重置为"暂停"
         // 因为 DownloadEngine 是内存态的，重启后任务已丢失，需要让用户手动恢复
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch {
             try {
                 downloadRepository.pauseAll()
                 Log.d(TAG, "已将所有活跃任务重置为暂停状态（应用重启）")
@@ -151,7 +146,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
         }
 
         // 应用启动时异步触发搜索权限检查（后台静默执行，不阻塞）
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch {
             try {
                 searchPermissionRepository.fetchPermissionAsync()
                 Log.d(TAG, "应用启动时搜索权限后台检查已触发")
