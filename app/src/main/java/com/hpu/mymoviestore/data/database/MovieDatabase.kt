@@ -44,6 +44,8 @@ abstract class MovieDatabase : RoomDatabase() {
     abstract fun downloadedVideoIndexDao(): DownloadedVideoIndexDao
 
     companion object {
+        private const val DATABASE_NAME = "movie_database"
+
         @Volatile
         private var INSTANCE: MovieDatabase? = null
 
@@ -52,7 +54,7 @@ abstract class MovieDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     MovieDatabase::class.java,
-                    "movie_database"
+                    DATABASE_NAME
                 )
                     .build()
                 INSTANCE = instance

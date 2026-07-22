@@ -6,7 +6,6 @@ import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumiResponse
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuCommentResponse
-import com.hpu.mymoviestore.data.model.danmaku.DanmakuEpisode
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuSearchResponse
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory

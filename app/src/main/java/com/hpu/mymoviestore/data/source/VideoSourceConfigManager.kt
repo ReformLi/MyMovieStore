@@ -338,9 +338,9 @@ class VideoSourceConfigManager(
         val result = mutableListOf<Class<out CrawlerVideoSource>>()
         val prefix = "com.hpu.mymoviestore.data.source.impl."
 
+        val sourceDir = context.applicationInfo.sourceDir
+        val dexFile = DexFile(sourceDir)
         try {
-            val sourceDir = context.applicationInfo.sourceDir
-            val dexFile = DexFile(sourceDir)
             val entries = dexFile.entries()
             while (entries.hasMoreElements()) {
                 val className = entries.nextElement()
@@ -357,9 +357,13 @@ class VideoSourceConfigManager(
                     // 跳过无法加载的类
                 }
             }
-            dexFile.close()
         } catch (e: Exception) {
             Log.e(TAG, "DexFile 扫描失败", e)
+        } finally {
+            try {
+                dexFile.close()
+            } catch (_: Exception) {
+            }
         }
 
         return result

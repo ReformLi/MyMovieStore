@@ -161,26 +161,24 @@ data class DownloadTaskEntity(
             else -> "未知状态"
         }
 
+        private val ACTIVE_STATUSES = setOf(STATUS_PENDING, STATUS_DOWNLOADING, STATUS_PAUSED, STATUS_FAILED)
+
+        private val DANMAKU_NEED_DOWNLOAD_STATUSES = setOf(DANMAKU_NOT_DOWNLOADED, DANMAKU_FAILED, DANMAKU_RETRYING)
+
         /**
          * 判断当前状态是否为活跃状态（可恢复下载）
          */
-        fun isActiveStatus(status: Int): Boolean {
-            return status in listOf(STATUS_PENDING, STATUS_DOWNLOADING, STATUS_PAUSED, STATUS_FAILED)
-        }
+        fun isActiveStatus(status: Int): Boolean = status in ACTIVE_STATUSES
 
         /**
          * 判断当前状态是否为终态（不可再变更）
          */
-        fun isTerminalStatus(status: Int): Boolean {
-            return status == STATUS_COMPLETED
-        }
+        fun isTerminalStatus(status: Int): Boolean = status == STATUS_COMPLETED
 
         /**
          * 判断弹幕是否需要下载
          */
-        fun needsDanmakuDownload(status: Int): Boolean {
-            return status in listOf(DANMAKU_NOT_DOWNLOADED, DANMAKU_FAILED, DANMAKU_RETRYING)
-        }
+        fun needsDanmakuDownload(status: Int): Boolean = status in DANMAKU_NEED_DOWNLOAD_STATUSES
 
         /**
          * 将播放进度百分比转换为显示文字

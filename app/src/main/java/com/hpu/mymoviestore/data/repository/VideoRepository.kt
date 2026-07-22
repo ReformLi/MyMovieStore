@@ -368,11 +368,7 @@ class VideoRepository(
     private fun findSourceForPlayPageUrl(playPageUrl: String): VideoSource? {
         val enabledSources = videoSources.filter { it.enabled }
         for (source in enabledSources) {
-            val baseUrl = try {
-                (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
-            } catch (_: Throwable) {
-                null
-            }
+            val baseUrl = (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
             if (baseUrl != null && playPageUrl.startsWith(baseUrl)) {
                 return source
             }
@@ -389,11 +385,7 @@ class VideoRepository(
         val enabledSources = videoSources.filter { it.enabled }
         // 优先尝试根据 baseUrl 匹配
         for (source in enabledSources) {
-            val baseUrl = try {
-                (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
-            } catch (_: Throwable) {
-                null
-            }
+            val baseUrl = (source as? com.hpu.mymoviestore.data.source.CrawlerVideoSource)?.baseUrl
             if (baseUrl != null && detailUrl.startsWith(baseUrl)) {
                 return source
             }

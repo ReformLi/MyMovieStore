@@ -20,7 +20,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
-import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -58,7 +57,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.okhttp.OkHttpDataSource

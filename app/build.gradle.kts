@@ -48,14 +48,11 @@ dependencies {
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.cardview)
     implementation(libs.androidx.swiperefreshlayout)
-    implementation("androidx.viewpager2:viewpager2:1.1.0")
+    implementation(libs.androidx.viewpager2)
 
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-
-    implementation(libs.androidx.navigation.fragment.ktx)
-    implementation(libs.androidx.navigation.ui.ktx)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -87,10 +84,6 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 
-    // 网络请求库
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // HTML 解析库
-    implementation("org.jsoup:jsoup:1.17.2")
-    // Kotlin 协程库 (用于处理异步任务)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation(libs.jsoup)
 }

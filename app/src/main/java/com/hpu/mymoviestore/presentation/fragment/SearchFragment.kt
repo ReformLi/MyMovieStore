@@ -18,6 +18,7 @@ import android.widget.Toast
 import androidx.core.content.res.ResourcesCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
@@ -28,10 +29,8 @@ import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.adapter.SearchResultAdapter
 import com.hpu.mymoviestore.presentation.viewmodel.SearchHistoryViewModel
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 搜索页 Fragment
@@ -235,7 +234,7 @@ class SearchFragment : Fragment() {
         }
 
         // 后台异步触发权限检查（fetchPermissionAsync 内部会判断缓存，有效则跳过）
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             MovieApplication.get().searchPermissionRepository.fetchPermissionAsync()
         }
 

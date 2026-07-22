@@ -63,6 +63,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
         .add(KotlinJsonAdapterFactory())
         .build()
 
+    @Suppress("UNCHECKED_CAST")
     private val danmakuListAdapter = moshi.adapter<List<DanmakuComment>>(
         List::class.java as Class<List<DanmakuComment>>
     )

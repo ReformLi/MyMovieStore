@@ -459,8 +459,6 @@ class DownloadEngine(context: Context) {
             return
         }
 
-        var lastRetry = 0
-
         repeat(MAX_SEGMENT_RETRIES + 1) { retry ->
             // 每次重试前检查中断状态
             if (task.isCancelled.get() || task.isPaused.get() || !coroutineContext.isActive) {
@@ -496,7 +494,6 @@ class DownloadEngine(context: Context) {
                     Log.d(TAG, "分片 $index 下载被中断（暂停/取消）")
                     return
                 }
-                lastRetry = retry
                 Log.w(TAG, "分片下载失败 (index=$index, retry=$retry/${MAX_SEGMENT_RETRIES}): ${e.message}")
 
                 if (retry < MAX_SEGMENT_RETRIES) {
@@ -537,44 +534,46 @@ class DownloadEngine(context: Context) {
             val request = requestBuilder.build()
             val call = okHttpClient.newCall(request)
             task.activeCalls[index] = call
-            val response = call.execute()
-            task.activeCalls.remove(index)
-
             try {
-                if (!response.isSuccessful && response.code != 206) {
-                    throw IOException("HTTP ${response.code}: ${response.message}")
-                }
-
-                val body = response.body ?: throw IOException("响应体为空")
-                val inputStream: InputStream = body.byteStream()
-
-                // 追加写入（断点续传时 append=true）
-                val outputStream = FileOutputStream(segmentFile, startByte > 0 && segmentFile.exists())
-                val buffer = ByteArray(65536)
-
+                val response = call.execute()
                 try {
-                    var bytesRead: Int
-
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        // 检查中断状态
-                        if (task.isCancelled.get() || task.isPaused.get()) {
-                            throw CancellationException("下载被中断")
-                        }
-
-                        outputStream.write(buffer, 0, bytesRead)
-
-                        // 更新该分片的已下载字节数
-                        val currentSize = segmentFile.length()
-                        task.segmentDownloadedBytes[index] = currentSize
+                    if (!response.isSuccessful && response.code != 206) {
+                        throw IOException("HTTP ${response.code}: ${response.message}")
                     }
 
-                    outputStream.flush()
+                    val body = response.body ?: throw IOException("响应体为空")
+                    val inputStream: InputStream = body.byteStream()
+
+                    // 追加写入（断点续传时 append=true）
+                    val outputStream = FileOutputStream(segmentFile, startByte > 0 && segmentFile.exists())
+                    val buffer = ByteArray(65536)
+
+                    try {
+                        var bytesRead: Int
+
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            // 检查中断状态
+                            if (task.isCancelled.get() || task.isPaused.get()) {
+                                throw CancellationException("下载被中断")
+                            }
+
+                            outputStream.write(buffer, 0, bytesRead)
+
+                            // 更新该分片的已下载字节数
+                            val currentSize = segmentFile.length()
+                            task.segmentDownloadedBytes[index] = currentSize
+                        }
+
+                        outputStream.flush()
+                    } finally {
+                        outputStream.close()
+                        inputStream.close()
+                    }
                 } finally {
-                    outputStream.close()
-                    inputStream.close()
+                    response.close()
                 }
             } finally {
-                response.close()
+                task.activeCalls.remove(index)
             }
         }
     }

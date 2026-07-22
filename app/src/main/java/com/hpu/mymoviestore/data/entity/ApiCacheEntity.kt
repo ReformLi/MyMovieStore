@@ -22,10 +22,16 @@ data class ApiCacheEntity(
     @PrimaryKey
     val cacheKey: String,         // 直接用 cacheKey 作为主键，保证唯一性，便于 @Insert(onConflict=REPLACE) 实现 upsert
     val jsonPayload: String,
-    val ttlSeconds: Long = 86400,
+    val ttlSeconds: Long = TTL_ONE_DAY,
     val createdAt: Long = System.currentTimeMillis(),
     val expiredAt: Long = System.currentTimeMillis() + ttlSeconds * 1000
 ) {
+    init {
+        require(expiredAt == createdAt + ttlSeconds * 1000) {
+            "expiredAt($expiredAt) != createdAt($createdAt) + ttlSeconds($ttlSeconds) * 1000"
+        }
+    }
+
     companion object {
         /** 常用 TTL：1 天 */
         const val TTL_ONE_DAY: Long = 86400

@@ -41,11 +41,11 @@ interface DownloadTaskDao {
     fun getAll(): Flow<List<DownloadTaskEntity>>
 
     /** 活跃任务（等待、下载中、暂停、失败、合并中） */
-    @Query("SELECT * FROM download_task WHERE status IN (0, 1, 2, 4, 6) ORDER BY createTime DESC")
+    @Query("SELECT * FROM download_task WHERE status IN (${DownloadTaskEntity.STATUS_PENDING}, ${DownloadTaskEntity.STATUS_DOWNLOADING}, ${DownloadTaskEntity.STATUS_PAUSED}, ${DownloadTaskEntity.STATUS_FAILED}, ${DownloadTaskEntity.STATUS_MERGING}) ORDER BY createTime DESC")
     fun getDownloading(): Flow<List<DownloadTaskEntity>>
 
     /** 已完成任务 */
-    @Query("SELECT * FROM download_task WHERE status = 3 ORDER BY updateTime DESC")
+    @Query("SELECT * FROM download_task WHERE status = ${DownloadTaskEntity.STATUS_COMPLETED} ORDER BY updateTime DESC")
     fun getCompleted(): Flow<List<DownloadTaskEntity>>
 
     /** 按 videoId 查询 */
@@ -86,9 +86,9 @@ interface DownloadTaskDao {
     @Query("UPDATE download_task SET playProgressPercent = :percent, playPositionMs = :positionMs, playDurationMs = :durationMs, updateTime = :updateTime WHERE taskId = :taskId")
     suspend fun updatePlayProgress(taskId: String, percent: Int, positionMs: Long, durationMs: Long, updateTime: Long = System.currentTimeMillis())
 
-    @Query("SELECT COALESCE(SUM(fileSize), 0) FROM download_task WHERE status = 3")
+    @Query("SELECT COALESCE(SUM(fileSize), 0) FROM download_task WHERE status = ${DownloadTaskEntity.STATUS_COMPLETED}")
     suspend fun getTotalFileSize(): Long
 
-    @Query("SELECT COUNT(*) FROM download_task WHERE status = 3")
+    @Query("SELECT COUNT(*) FROM download_task WHERE status = ${DownloadTaskEntity.STATUS_COMPLETED}")
     suspend fun getCompletedCount(): Int
 }

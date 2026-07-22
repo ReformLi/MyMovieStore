@@ -17,7 +17,6 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URLEncoder
-import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 /**
