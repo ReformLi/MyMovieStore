@@ -1,18 +1,25 @@
 package com.hpu.mymoviestore.presentation.activity
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
 import android.graphics.Color
+import android.graphics.drawable.Icon
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.BatteryManager
 import android.util.Log
+import android.util.Rational
 import android.view.GestureDetector
 import android.graphics.Rect
 import android.view.MotionEvent
@@ -28,6 +35,7 @@ import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
+import androidx.annotation.OptIn
 import androidx.lifecycle.lifecycleScope
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,6 +67,7 @@ import java.io.File
 import kotlin.math.abs
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -147,10 +156,17 @@ class PlayerActivity : AppCompatActivity() {
     private var timeUpdateHandler: Handler? = null
     private var timeUpdateRunnable: Runnable? = null
 
+    // PiP 相关
+    private var pipReceiver: BroadcastReceiver? = null
+
     companion object {
         private const val TAG = "PlayerActivity"
         private const val LONG_PRESS_THRESHOLD_MS = 500L  // 拉长到 500ms，避免误触发
         private const val SEEK_STEP_MS = 10_000L
+        private const val PIP_ACTION_REWIND = "pip_action_rewind"
+        private const val PIP_ACTION_PLAY_PAUSE = "pip_action_play_pause"
+        private const val PIP_ACTION_FORWARD = "pip_action_forward"
+        private const val PIP_REQUEST_CODE = 1001
         private const val GESTURE_DIR_HORIZONTAL = 1
         private const val GESTURE_DIR_VERTICAL = 2
 
@@ -217,6 +233,7 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    @UnstableApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -261,6 +278,7 @@ class PlayerActivity : AppCompatActivity() {
         setupDanmakuUi()
         setupGestures()
         setupLockButton()
+        setupPiP()
 
         if (!localFilePath.isNullOrEmpty()) {
             // ========== 离线播放模式 ==========
@@ -412,6 +430,7 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "离线播放 - 播放器 prepare() 完成，playWhenReady=true")
 
                 exoPlayer.addListener(object : Player.Listener {
+                    @OptIn(UnstableApi::class)
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         when (playbackState) {
                             Player.STATE_READY -> {
@@ -737,6 +756,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // ================== 屏幕锁定 ==================
 
+    @UnstableApi
     private fun setupLockButton() {
         binding.btnLock.setOnClickListener {
             if (isScreenLocked) {
@@ -769,6 +789,106 @@ class PlayerActivity : AppCompatActivity() {
         binding.tvLockedDuration.text = formatTime(durationMs)
         val percent = if (durationMs > 0) ((currentMs * 100) / durationMs).toInt() else 0
         binding.progressBarLocked.progress = percent
+    }
+
+    // ================== 画中画 (PiP) ==================
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun setupPiP() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        pipReceiver?.let { unregisterReceiver(it) }
+        pipReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    PIP_ACTION_REWIND -> {
+                        player?.let { p ->
+                            val newPos = (p.currentPosition - 10_000).coerceAtLeast(0)
+                            p.seekTo(newPos)
+                            danmakuManager?.seekTo(newPos)
+                        }
+                    }
+                    PIP_ACTION_PLAY_PAUSE -> togglePlayPause()
+                    PIP_ACTION_FORWARD -> {
+                        player?.let { p ->
+                            val newPos = (p.currentPosition + 10_000).coerceAtMost(p.duration)
+                            p.seekTo(newPos)
+                            danmakuManager?.seekTo(newPos)
+                        }
+                    }
+                }
+            }
+        }
+        val pipFilter = IntentFilter().apply {
+            addAction(PIP_ACTION_REWIND)
+            addAction(PIP_ACTION_PLAY_PAUSE)
+            addAction(PIP_ACTION_FORWARD)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, pipFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, pipFilter)
+        }
+    }
+
+    private fun updatePiPParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        player?.let { p ->
+            val aspectRatio = Rational(p.videoSize.width, p.videoSize.height)
+            val rewindIntent = Intent(PIP_ACTION_REWIND).setPackage(packageName)
+            val playPauseIntent = Intent(PIP_ACTION_PLAY_PAUSE).setPackage(packageName)
+            val forwardIntent = Intent(PIP_ACTION_FORWARD).setPackage(packageName)
+
+            val actions = listOf(
+                RemoteAction(
+                    Icon.createWithResource(this, R.drawable.ic_player_rewind_10),
+                    "后退10秒", "后退10秒",
+                    PendingIntent.getBroadcast(this, PIP_REQUEST_CODE, rewindIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                ),
+                RemoteAction(
+                    Icon.createWithResource(this,
+                        if (p.isPlaying) R.drawable.ic_player_pause else R.drawable.ic_player_play),
+                    if (p.isPlaying) "暂停" else "播放",
+                    if (p.isPlaying) "暂停" else "播放",
+                    PendingIntent.getBroadcast(this, PIP_REQUEST_CODE + 1, playPauseIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                ),
+                RemoteAction(
+                    Icon.createWithResource(this, R.drawable.ic_player_forward_10),
+                    "快进10秒", "快进10秒",
+                    PendingIntent.getBroadcast(this, PIP_REQUEST_CODE + 2, forwardIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                )
+            )
+
+            setPictureInPictureParams(
+                PictureInPictureParams.Builder()
+                    .setAspectRatio(aspectRatio)
+                    .setActions(actions)
+                    .build()
+            )
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && player?.isPlaying == true) {
+            updatePiPParams()
+            enterPictureInPictureMode()
+        }
+    }
+
+    @UnstableApi
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        Log.d(TAG, "画中画模式: isInPictureInPictureMode=$isInPictureInPictureMode")
+        if (isInPictureInPictureMode) {
+            binding.playerView.hideController()
+            binding.playerView.useController = false
+        } else {
+            binding.playerView.useController = true
+            binding.playerView.showController()
+        }
     }
 
     // ================== 手势控制 ==================
@@ -1225,6 +1345,11 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode) {
+            Log.d(TAG, "onPause → PiP 模式，保持播放")
+            saveCurrentProgress(true)
+            return
+        }
         Log.d(TAG, "onPause → 暂停播放器并保存进度")
         player?.pause()
         danmakuManager?.pause()
@@ -1234,6 +1359,10 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode) {
+            Log.d(TAG, "onResume → PiP 模式，不主动恢复")
+            return
+        }
         Log.d(TAG, "onResume → 恢复播放")
         enterImmersiveMode()
         player?.play()
@@ -1252,6 +1381,7 @@ class PlayerActivity : AppCompatActivity() {
         uiScope.cancel()
         danmakuManager?.release()
         unregisterStatusReceivers()
+        unregisterPipReceiver()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
@@ -1390,6 +1520,17 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * 注销状态信息相关的广播接收器，并停止时间更新
      */
+    private fun unregisterPipReceiver() {
+        try {
+            pipReceiver?.let {
+                unregisterReceiver(it)
+                pipReceiver = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注销 PiP 广播接收器失败: ${e.message}")
+        }
+    }
+
     private fun unregisterStatusReceivers() {
         try {
             batteryReceiver?.let {

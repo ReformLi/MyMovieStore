@@ -38,6 +38,7 @@
             android:exported="false"
             android:parentActivityName=".presentation.activity.DetailActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
         <activity
             android:name=".presentation.activity.HistoryActivity"
