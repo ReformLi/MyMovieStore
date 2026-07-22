@@ -105,6 +105,7 @@ class PlayerActivity : AppCompatActivity() {
         private var danmakuLoadJob: Job? = null
         private var danmakuSearchJob: Job? = null
         private var lastLoadedAnimeId: Long = 0L
+        private var isRestoringSelection: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // PlayerView 内部的弹幕控件引用（在自定义控制栏中）
@@ -717,6 +718,7 @@ class PlayerActivity : AppCompatActivity() {
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (isRestoringSelection) return
                 if (position < 0 || position >= candidateList.size) return
                 val anime = candidateList[position]
                 Log.d(TAG, "用户选择弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
@@ -1087,9 +1089,11 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+
+                // 设置适配器和选中位置时不触发 onItemSelected 保存偏好
+                isRestoringSelection = true
                 danmakuSpinner.adapter = adapter
 
-                // 选中已保存的弹幕源
                 if (savedAnimeId > 0L) {
                     val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
                     if (savedIndex >= 0) {
@@ -1097,11 +1101,13 @@ class PlayerActivity : AppCompatActivity() {
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
                     } else {
                         Log.w(TAG, "保存的弹幕源不在搜索结果中: savedAnimeId=$savedAnimeId")
+                        // 不覆盖偏好，仅 UI 选中第一个
                         danmakuSpinner.setSelection(0)
                     }
                 } else {
                     danmakuSpinner.setSelection(0)
                 }
+                isRestoringSelection = false
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
                 danmakuSpinner.visibility = View.GONE
