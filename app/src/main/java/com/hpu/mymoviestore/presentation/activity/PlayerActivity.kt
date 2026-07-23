@@ -105,6 +105,7 @@ class PlayerActivity : AppCompatActivity() {
     private var lastSavedProgressMs: Long = -1L
     private var lastSyncPositionMs: Long = -1L
     private val progressSaveIntervalMs: Long = 30_000L
+    private var maxPositionSeenMs: Long = 0L
 
     // 弹幕相关
     private var danmakuManager: DanmakuManager? = null
@@ -117,8 +118,8 @@ class PlayerActivity : AppCompatActivity() {
         private var isRestoringSelection: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    // PlayerView 内部的弹幕控件引用（在自定义控制栏中）
-    private val danmakuSwitch: android.widget.Switch get() =
+    // PlayerView 内部的弹幕控件引用
+    private val switchDanmaku: android.widget.Switch get() =
         binding.playerView.findViewById(R.id.switchDanmaku)!!
     private val danmakuSpinner: android.widget.Spinner get() =
         binding.playerView.findViewById(R.id.spinnerDanmakuSource)!!
@@ -362,6 +363,8 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "设置 MediaItem: ${url.take(80)}")
                 exoPlayer.prepare()
                 if (resumeFromMs > 0) {
+                    maxPositionSeenMs = resumeFromMs
+                    effectivePositionMs = resumeFromMs
                     exoPlayer.seekTo(resumeFromMs)
                     Log.d(TAG, "续播: seekTo ${resumeFromMs}ms")
                 }
@@ -390,6 +393,17 @@ class PlayerActivity : AppCompatActivity() {
                         danmakuManager?.setPaused(!isPlaying)
                         // 更新播放/暂停按钮图标
                         updatePlayPauseIcon(isPlaying)
+                    }
+
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int
+                    ) {
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                            maxPositionSeenMs = newPosition.positionMs
+                            effectivePositionMs = newPosition.positionMs
+                        }
                     }
 
                     // 添加错误监听
@@ -438,6 +452,8 @@ class PlayerActivity : AppCompatActivity() {
                                 // 续播：seek 到上次进度（只执行一次）
                                 if (!hasSeekedResume && resumeFromMs > 0 && exoPlayer.duration > 0) {
                                     hasSeekedResume = true
+                                    maxPositionSeenMs = resumeFromMs
+                                    effectivePositionMs = resumeFromMs
                                     exoPlayer.seekTo(resumeFromMs)
                                     Log.d(TAG, "离线播放续播: seekTo ${resumeFromMs}ms")
                                 }
@@ -460,6 +476,17 @@ class PlayerActivity : AppCompatActivity() {
                         updatePlayPauseIcon(isPlaying)
                     }
 
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int
+                    ) {
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                            maxPositionSeenMs = newPosition.positionMs
+                            effectivePositionMs = newPosition.positionMs
+                        }
+                    }
+
                     // 添加错误监听
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                         Log.e(TAG, "离线播放错误: ${error.message}", error)
@@ -479,18 +506,26 @@ class PlayerActivity : AppCompatActivity() {
      * 如果是音频时间戳不连续，尝试 seek 跳过问题片段
      */
     private fun tryRecoverFromError(exoPlayer: ExoPlayer, error: androidx.media3.common.PlaybackException) {
-        val isAudioError = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+        val isAdRelatedError = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
                 error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
                 error.message?.contains("discontinuity", ignoreCase = true) == true ||
                 error.message?.contains("timestamp", ignoreCase = true) == true
 
-        if (isAudioError && exoPlayer.playbackState != Player.STATE_IDLE) {
-            Log.w(TAG, "检测到音频错误，尝试恢复播放: ${error.errorCodeName}")
+        if (isAdRelatedError && exoPlayer.playbackState != Player.STATE_IDLE) {
+            Log.w(TAG, "检测到广告相关错误，尝试恢复播放: ${error.errorCodeName}, " +
+                    "maxPositionSeenMs=$maxPositionSeenMs")
             Toast.makeText(this@PlayerActivity, "广告已跳过", Toast.LENGTH_SHORT).show()
 
-            // seek 到当前位置之后 2 秒，跳过广告片段
+            // 优先使用 maxPositionSeenMs 跳过广告，否则向后跳 30s
             val currentPos = exoPlayer.currentPosition
-            val seekTo = (currentPos + 2000).coerceAtMost(exoPlayer.duration)
+            val seekTo = if (maxPositionSeenMs > currentPos + 10_000) {
+                maxPositionSeenMs.coerceAtMost(exoPlayer.duration - 1000)
+            } else {
+                (currentPos + 30_000).coerceAtMost(exoPlayer.duration)
+            }
+            maxPositionSeenMs = seekTo
+            effectivePositionMs = seekTo
+
             Log.d(TAG, "恢复播放: seekTo ${seekTo}ms (当前位置: ${currentPos}ms)")
 
             try {
@@ -548,18 +583,16 @@ class PlayerActivity : AppCompatActivity() {
             if (comments.isEmpty()) {
                 Log.w(TAG, "本地弹幕列表为空")
                 danmakuManager?.loadDanmaku(null)
-                // 弹幕为空时，显示 Spinner 让用户可以搜索在线弹幕源
-                danmakuSpinner.visibility = View.VISIBLE
+                danmakuSpinner.visibility = View.GONE
             } else {
                 Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
                 danmakuManager?.loadDanmaku(comments)
                 player?.let { p ->
                     danmakuManager?.syncTo(p.currentPosition)
-                    if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
+                    if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
                 }
-                // 离线播放且有本地弹幕时，隐藏弹幕源 Spinner（不需要切换源）
                 danmakuSpinner.visibility = View.GONE
-                Log.d(TAG, "本地弹幕加载成功，隐藏弹幕源 Spinner")
+                Log.d(TAG, "本地弹幕加载成功")
             }
         }
     }
@@ -571,6 +604,30 @@ class PlayerActivity : AppCompatActivity() {
             val p = player
             if (p != null) {
                 val currentMs = p.currentPosition
+
+                // 跟踪最大播放位置（用于检测广告导致的时间戳回滚）
+                if (currentMs > maxPositionSeenMs) {
+                    maxPositionSeenMs = currentMs
+                }
+
+                // 检测广告时间戳回滚：已播放较长时间后位置突然跳回接近 0
+                if (maxPositionSeenMs > 30_000L && currentMs < 5_000L &&
+                    lastSyncPositionMs > 30_000L && lastSyncPositionMs - currentMs > 15_000L
+                ) {
+                    Log.w(TAG, "检测到广告时间戳回滚: maxSeen=${maxPositionSeenMs}ms, " +
+                            "current=${currentMs}ms, lastSync=${lastSyncPositionMs}ms")
+                    // 准备跳过广告：seek 到已知的最大位置
+                    val skipTo = maxPositionSeenMs.coerceAtMost(p.duration - 1000)
+                    if (skipTo > currentMs + 10_000) {
+                        Log.d(TAG, "跳过广告区间: seekTo ${skipTo}ms")
+                        p.seekTo(skipTo)
+                        Toast.makeText(this@PlayerActivity, "广告已跳过", Toast.LENGTH_SHORT).show()
+                    }
+                    effectivePositionMs = maxPositionSeenMs
+                } else {
+                    effectivePositionMs = currentMs
+                }
+
                 val timeDiff = kotlin.math.abs(currentMs - lastSyncPositionMs)
                 if (timeDiff > 3000L && lastSyncPositionMs >= 0) {
                     danmakuManager?.seekTo(currentMs)
@@ -594,6 +651,10 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** 用于进度显示的"有效位置"（排除广告回滚后的实际位置） */
+    @Volatile
+    private var effectivePositionMs: Long = 0L
+
     private fun startProgressSyncRunnable() {
         binding.playerView.removeCallbacks(progressSyncRunnable)
         binding.playerView.postDelayed(progressSyncRunnable, 1000)
@@ -605,25 +666,25 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun saveCurrentProgress(force: Boolean) {
         val p = player ?: return
-        val currentMs = p.currentPosition
-        val currentSec = currentMs / 1000
+        val displayMs = effectivePositionMs.coerceAtLeast(p.currentPosition)
+        val currentSec = displayMs / 1000
         val durMs = p.duration
         val durSec = if (durMs > 0) durMs / 1000 else 0L
 
         if (isOfflineMode && offlineTaskId.isNotEmpty()) {
             // 离线播放：保存进度到下载任务，不记录历史
-            val percent = if (durMs > 0) ((currentMs * 100) / durMs).toInt() else -1
+            val percent = if (durMs > 0) ((displayMs * 100) / durMs).toInt() else -1
             val app = MovieApplication.get()
             uiScope.launch(Dispatchers.IO) {
                 try {
                     app.downloadRepository.updateOfflinePlayProgress(
-                        offlineTaskId, percent, currentMs, durMs
+                        offlineTaskId, percent, displayMs, durMs
                     )
                 } catch (e: Exception) {
                     Log.w(TAG, "保存离线播放进度失败: ${e.message}")
                 }
             }
-            if (force) Log.d(TAG, "离线进度: ${currentMs}ms / ${durMs}ms ($percent%)")
+            if (force) Log.d(TAG, "离线进度: ${displayMs}ms / ${durMs}ms ($percent%)")
         } else {
             // 在线播放：保存到历史记录
             viewModel.updateProgress(videoId, currentSec, durSec)
@@ -706,18 +767,17 @@ class PlayerActivity : AppCompatActivity() {
         val prefs = DanmakuPrefs(this)
         val masterEnabled = prefs.isMasterEnabled()
         val subEnabled = masterEnabled
-        danmakuSwitch.isChecked = subEnabled
+        switchDanmaku.isChecked = subEnabled
         dm.setDanmakuEnabled(subEnabled)
         Log.d(TAG, "弹幕子开关初始状态: $subEnabled (总开关=$masterEnabled)")
 
-        danmakuSwitch.setOnCheckedChangeListener { _, isChecked ->
+        switchDanmaku.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "弹幕子开关切换: $isChecked")
             dm.setDanmakuEnabled(isChecked)
         }
 
-        val initialTitles = listOf("搜索弹幕源中…")
-        val adapter = object : ArrayAdapter<String>(
-            this, android.R.layout.simple_spinner_item, initialTitles
+        val initialAdapter = object : ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_item, listOf("搜索弹幕源中…")
         ) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val v = super.getView(position, convertView, parent) as TextView
@@ -734,8 +794,9 @@ class PlayerActivity : AppCompatActivity() {
                 return v
             }
         }
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        danmakuSpinner.adapter = adapter
+        initialAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        danmakuSpinner.adapter = initialAdapter
+        danmakuSpinner.visibility = View.GONE
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -744,9 +805,7 @@ class PlayerActivity : AppCompatActivity() {
                 val anime = candidateList[position]
                 Log.d(TAG, "用户选择弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
                 DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
-                // 强制重新加载，不使用 lastLoadedAnimeId 跳过
                 lastLoadedAnimeId = 0L
-                // 提取集数数字，兼容不同源的集数格式
                 val epNum = extractEpisodeNumber(episodeTitle)
                 loadDanmakuForAnime(anime.animeId, epNum)
             }
@@ -783,11 +842,11 @@ class PlayerActivity : AppCompatActivity() {
     /** 更新锁定状态下的只读进度条 */
     private fun updateLockedProgress() {
         val p = player ?: return
-        val currentMs = p.currentPosition
+        val displayMs = effectivePositionMs.coerceAtLeast(p.currentPosition)
         val durationMs = p.duration
-        binding.tvLockedPosition.text = formatTime(currentMs)
+        binding.tvLockedPosition.text = formatTime(displayMs)
         binding.tvLockedDuration.text = formatTime(durationMs)
-        val percent = if (durationMs > 0) ((currentMs * 100) / durationMs).toInt() else 0
+        val percent = if (durationMs > 0) ((displayMs * 100) / durationMs).toInt() else 0
         binding.progressBarLocked.progress = percent
     }
 
@@ -1211,25 +1270,21 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-
-                // 设置适配器和选中位置时不触发 onItemSelected 保存偏好
                 isRestoringSelection = true
                 danmakuSpinner.adapter = adapter
+                danmakuSpinner.visibility = View.VISIBLE
 
+                val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
                 if (savedAnimeId > 0L) {
                     val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
                     if (savedIndex >= 0) {
                         danmakuSpinner.setSelection(savedIndex)
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
-                    } else {
-                        Log.w(TAG, "保存的弹幕源不在搜索结果中: savedAnimeId=$savedAnimeId")
-                        // 不覆盖偏好，仅 UI 选中第一个
-                        danmakuSpinner.setSelection(0)
                     }
-                } else {
-                    danmakuSpinner.setSelection(0)
                 }
                 isRestoringSelection = false
+
+                Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
                 danmakuSpinner.visibility = View.GONE
@@ -1281,7 +1336,7 @@ class PlayerActivity : AppCompatActivity() {
             danmakuManager?.loadDanmaku(comments)
             player?.let { p ->
                 danmakuManager?.syncTo(p.currentPosition)
-                if (danmakuSwitch.isChecked) danmakuManager?.ensureStarted()
+                if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
             }
 
             // 保存弹幕到本地文件
@@ -1433,16 +1488,10 @@ class PlayerActivity : AppCompatActivity() {
 
     // ================== 状态信息显示（时间、电量、网络） ==================
 
-    /**
-     * 初始化状态信息显示（时间、电量、网络）
-     * 在播放器控制栏显示时同步显示
-     */
     private fun initStatusInfo() {
-        // 初始更新
         updateTime()
         updateNetwork()
 
-        // 注册电池状态广播接收器
         batteryReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 updateBattery(intent)
@@ -1450,7 +1499,6 @@ class PlayerActivity : AppCompatActivity() {
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
-        // 注册网络状态广播接收器
         networkReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 updateNetwork()
@@ -1458,54 +1506,39 @@ class PlayerActivity : AppCompatActivity() {
         }
         registerReceiver(networkReceiver, IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION))
 
-        // 启动时间更新（每30秒更新一次）
         timeUpdateHandler = Handler(Looper.getMainLooper())
         timeUpdateRunnable = object : Runnable {
             override fun run() {
                 updateTime()
-                timeUpdateHandler?.postDelayed(this, 30_000L) // 30秒
+                timeUpdateHandler?.postDelayed(this, 30_000L)
             }
         }
         timeUpdateHandler?.postDelayed(timeUpdateRunnable!!, 30_000L)
     }
 
-    /**
-     * 更新时间显示（格式：HH:mm）
-     */
     private fun updateTime() {
         val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.tvTime.text = currentTime
     }
 
-    /**
-     * 更新电量显示
-     */
     private fun updateBattery(intent: Intent) {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
         if (level >= 0 && scale > 0) {
             val batteryPct = (level * 100 / scale.toFloat()).toInt()
-            binding.tvBattery.text = "$batteryPct%"
+            Log.d(TAG, "电量: $batteryPct%")
         }
     }
 
-    /**
-     * 更新网络状态显示
-     */
     private fun updateNetwork() {
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val networkInfo: NetworkInfo? = connectivityManager.activeNetworkInfo
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkInfo: NetworkInfo? = cm.activeNetworkInfo
         val isConnected = networkInfo?.isConnected == true
-
-        if (!isConnected) {
-            // 无网络
-            binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
-            binding.ivNetwork.alpha = 0.5f
-        } else {
-            binding.ivNetwork.alpha = 1.0f
+        if (isConnected) {
             when (networkInfo?.type) {
                 ConnectivityManager.TYPE_WIFI -> {
                     binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
+                    binding.ivNetwork.alpha = 1.0f
                 }
                 ConnectivityManager.TYPE_MOBILE -> {
                     binding.ivNetwork.setImageResource(R.drawable.ic_mobile_network)
@@ -1514,20 +1547,9 @@ class PlayerActivity : AppCompatActivity() {
                     binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
                 }
             }
-        }
-    }
-
-    /**
-     * 注销状态信息相关的广播接收器，并停止时间更新
-     */
-    private fun unregisterPipReceiver() {
-        try {
-            pipReceiver?.let {
-                unregisterReceiver(it)
-                pipReceiver = null
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "注销 PiP 广播接收器失败: ${e.message}")
+        } else {
+            binding.ivNetwork.setImageResource(R.drawable.ic_wifi)
+            binding.ivNetwork.alpha = 0.5f
         }
     }
 
@@ -1557,6 +1579,19 @@ class PlayerActivity : AppCompatActivity() {
         timeUpdateRunnable = null
     }
 
+    // ================== PiP 广播接收器清理 ==================
+
+    private fun unregisterPipReceiver() {
+        try {
+            pipReceiver?.let {
+                unregisterReceiver(it)
+                pipReceiver = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注销 PiP 广播接收器失败: ${e.message}")
+        }
+    }
+
     private fun startOfflinePlayback(taskId: String, danmakuFilePath: String?) {
         lifecycleScope.launch(Dispatchers.IO) {
             val task = MovieApplication.get().downloadRepository.getTaskById(taskId)
@@ -1565,6 +1600,8 @@ class PlayerActivity : AppCompatActivity() {
                     Log.d(TAG, "离线播放：已看完，从头开始")
                 } else if (task.playPositionMs > 0) {
                     resumeFromMs = task.playPositionMs
+                    maxPositionSeenMs = resumeFromMs
+                    effectivePositionMs = resumeFromMs
                     Log.d(TAG, "离线播放：续播 ${task.playPositionMs}ms")
                 }
                 val masterEnabled = DanmakuPrefs(this@PlayerActivity).isMasterEnabled()

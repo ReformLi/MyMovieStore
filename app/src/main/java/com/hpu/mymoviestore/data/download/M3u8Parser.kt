@@ -38,6 +38,17 @@ class M3u8Parser(
 
         /** 加密标记（暂不支持加密流，仅做日志提示） */
         private const val ENCRYPTION_TAG = "#EXT-X-KEY"
+
+        /** 广告区间标记 */
+        private const val CUE_OUT_TAG = "#EXT-X-CUE-OUT"
+        private const val CUE_IN_TAG = "#EXT-X-CUE-IN"
+
+        /** 广告分片 URL 特征关键词 */
+        private val AD_URL_PATTERNS = listOf(
+            "/ad/", ".ad.", "adservice", "adserver",
+            "/ad_", "_ad_", "/ads/", ".ads.",
+            "advert", "ad-ts", "-ad.ts",
+        )
     }
 
     /**
@@ -160,26 +171,58 @@ class M3u8Parser(
     }
 
     /**
-     * 解析 Media Playlist，提取所有 ts 分片 URL。
+     * 解析 Media Playlist，提取所有 ts 分片 URL（跳过广告分片）。
+     *
+     * 广告检测策略：
+     * 1. #EXT-X-CUE-OUT / #EXT-X-CUE-IN 区间内的分片全部跳过
+     * 2. URL 包含广告关键词的分片跳过
      */
     private fun parseMediaPlaylist(lines: List<String>, baseUrl: String): List<String>? {
         val segments = mutableListOf<String>()
+        var inCueOut = false
+        var skippedAdCount = 0
 
         for (i in lines.indices) {
             val line = lines[i]
-            if (line.startsWith(SEGMENT_TAG)) {
-                // 下一行应该是 ts 分片 URL
-                if (i + 1 < lines.size) {
-                    val nextLine = lines[i + 1]
-                    // 跳过注释行和空行
-                    if (nextLine.startsWith("#") || nextLine.isBlank()) continue
-                    val segmentUrl = resolveUrl(nextLine, baseUrl)
-                    segments.add(segmentUrl)
+            when {
+                line.startsWith(CUE_OUT_TAG) -> {
+                    inCueOut = true
+                    Log.d(TAG, "检测到 #EXT-X-CUE-OUT，进入广告区间")
+                }
+                line.startsWith(CUE_IN_TAG) -> {
+                    inCueOut = false
+                    Log.d(TAG, "检测到 #EXT-X-CUE-IN，退出广告区间，跳过 $skippedAdCount 个广告分片")
+                    skippedAdCount = 0
+                }
+                line.startsWith(SEGMENT_TAG) -> {
+                    if (i + 1 < lines.size) {
+                        val nextLine = lines[i + 1]
+                        if (nextLine.startsWith("#") || nextLine.isBlank()) continue
+                        val segmentUrl = resolveUrl(nextLine, baseUrl)
+
+                        if (inCueOut || isAdSegmentUrl(segmentUrl)) {
+                            skippedAdCount++
+                            continue
+                        }
+
+                        segments.add(segmentUrl)
+                    }
                 }
             }
         }
 
+        if (skippedAdCount > 0) {
+            Log.d(TAG, "广告过滤完成: 保留 ${segments.size} 个分片, 跳过 $skippedAdCount 个广告分片")
+        }
         return if (segments.isNotEmpty()) segments else null
+    }
+
+    /**
+     * 检查分片 URL 是否为广告（基于关键词匹配）。
+     */
+    private fun isAdSegmentUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return AD_URL_PATTERNS.any { pattern -> lower.contains(pattern) }
     }
 
     /**

@@ -43,7 +43,7 @@ class DanmakuApi {
     private val commentAdapter = moshi.adapter(DanmakuCommentResponse::class.java)
 
     @Volatile
-    private var baseUrl: String = "http://192.168.1.1:4567"//http://192.168.1.1:4567
+    private var baseUrl: String = "https://my-movie-api.ccwu.cc"//http://192.168.1.1:4567
 
     fun setBaseUrl(url: String) {
         baseUrl = url

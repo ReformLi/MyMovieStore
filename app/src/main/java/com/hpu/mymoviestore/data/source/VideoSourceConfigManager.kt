@@ -70,7 +70,7 @@ class VideoSourceConfigManager(
 
         // ====== 远程配置 URL ======
         private const val CONFIG_URL_DEFAULT =
-            "https://www.******.json"
+            "https://cdn.jsdelivr.net/gh/ReformLi/tvbox@refs/heads/main/mytvsource.json"
 
         // ====== SharedPreferences 键 ======
         private const val PREFS_NAME = "video_source_config"
