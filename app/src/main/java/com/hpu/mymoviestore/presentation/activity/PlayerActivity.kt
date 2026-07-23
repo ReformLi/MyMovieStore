@@ -27,6 +27,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -761,6 +762,10 @@ class PlayerActivity : AppCompatActivity() {
             togglePlayPause()
         }
 
+        binding.playerView.findViewById<android.widget.ImageButton>(R.id.btnPlayerSettings)?.setOnClickListener { view ->
+            showCategoryPopup(view)
+        }
+
         // 弹幕控制条跟随播放器控制栏显示/隐藏
         val listener = object : androidx.media3.ui.PlayerView.ControllerVisibilityListener {
             override fun onVisibilityChanged(visibility: Int) {
@@ -775,6 +780,50 @@ class PlayerActivity : AppCompatActivity() {
 
         // 初始化状态信息显示（时间、电量、网络）
         initStatusInfo()
+    }
+
+    private fun showCategoryPopup(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 0, 0, "播放速度")
+            menu.add(0, 1, 0, "画质选择")
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    0 -> showSpeedPopup(anchor)
+                    1 -> Toast.makeText(this@PlayerActivity, "画质选择暂不可用", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+            show()
+        }
+    }
+
+    private fun showSpeedPopup(anchor: View) {
+        val speedOptions = arrayOf("0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x")
+        val speedValues = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+        val currentSpeed = player?.playbackParameters?.speed ?: 1.0f
+        val checkedIndex = speedValues.indexOfFirst { abs(it - currentSpeed) < 0.01f }.coerceAtLeast(2)
+
+        PopupMenu(this, anchor).apply {
+            speedOptions.forEachIndexed { i, label ->
+                menu.add(0, i, 0, label).apply {
+                    isCheckable = true
+                    isChecked = i == checkedIndex
+                }
+            }
+            menu.add(0, 99, 0, "← 返回").setOnMenuItemClickListener {
+                showCategoryPopup(anchor); true
+            }
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    in 0..5 -> {
+                        player?.setPlaybackSpeed(speedValues[item.itemId])
+                        Toast.makeText(this@PlayerActivity, "播放速度: ${speedOptions[item.itemId]}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                true
+            }
+            show()
+        }
     }
 
     // ================== 弹幕 UI ==================

@@ -141,6 +141,16 @@
                 android:contentDescription="全屏"
                 android:padding="6dp"
                 android:src="@drawable/ic_player_rotate" />
+
+            <ImageButton
+                android:id="@+id/btnPlayerSettings"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="播放设置"
+                android:padding="6dp"
+                android:src="@drawable/ic_player_settings" />
         </LinearLayout>
     </LinearLayout>
 
