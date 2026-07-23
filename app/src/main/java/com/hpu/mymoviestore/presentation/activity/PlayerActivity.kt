@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.BatteryManager
 import android.util.Log
 import android.util.Rational
@@ -153,6 +154,10 @@ class PlayerActivity : AppCompatActivity() {
     // 快进拖拽：记录长按触发时的播放位置，MOVE 时只更新预览偏移
     private var seekBaseMs = 0L     // 长按触发时的 currentPosition
     private var seekTargetMs = 0L    // 手指抬起时要 seek 到的位置
+
+    // 手势节流（避免每帧 IPC/重布局导致卡顿）
+    private val GESTURE_THROTTLE_MS = 50L
+    private var lastGestureApplyMs = 0L
 
     // 屏幕锁定
     private var isScreenLocked = false
@@ -1253,11 +1258,16 @@ class PlayerActivity : AppCompatActivity() {
                 val maxSeekMs = 90_000L
                 val offsetMs = (deltaX / screenWidth * maxSeekMs).toLong()
                 seekTargetMs = (seekBaseMs + offsetMs).coerceIn(0L, player?.duration ?: 0L)
-                val diffSec = (seekTargetMs - seekBaseMs) / 1000
-                val currentSec = seekTargetMs / 1000
-                val totalSec = (player?.duration ?: 0L) / 1000
-                val sign = if (diffSec >= 0) "+" else ""
-                showGestureTip("$sign${diffSec}s / ${currentSec}s (共${totalSec}s)")
+
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastGestureApplyMs >= GESTURE_THROTTLE_MS) {
+                    lastGestureApplyMs = now
+                    val diffSec = (seekTargetMs - seekBaseMs) / 1000
+                    val currentSec = seekTargetMs / 1000
+                    val totalSec = (player?.duration ?: 0L) / 1000
+                    val sign = if (diffSec >= 0) "+" else ""
+                    showGestureTip("$sign${diffSec}s / ${currentSec}s (共${totalSec}s)")
+                }
             }
             GESTURE_DIR_VERTICAL -> {
                 // 垂直：亮度/音量（传入本次 MOVE 的增量 deltaY，每次只调一点）
@@ -1310,9 +1320,13 @@ class PlayerActivity : AppCompatActivity() {
         }
         val change = -deltaY / 300f
         currentBrightness = (currentBrightness + change).coerceIn(0.05f, 1f)
-        layoutParams.screenBrightness = currentBrightness
-        window.attributes = layoutParams
-        showGestureTip("亮度 ${(currentBrightness * 100).roundToInt()}%")
+        val newPct = (currentBrightness * 100).roundToInt()
+        val oldPct = (layoutParams.screenBrightness * 100).roundToInt()
+        if (newPct != oldPct) {
+            layoutParams.screenBrightness = currentBrightness
+            window.attributes = layoutParams
+            showGestureTip("亮度 ${newPct}%")
+        }
     }
 
     /**
@@ -1325,13 +1339,16 @@ class PlayerActivity : AppCompatActivity() {
             currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             currentVolumeFloat = currentVolume.toFloat()
         }
-        // deltaY 每 100px 对应 1 档音量变化（更灵敏，和亮度一样连续）
+        // deltaY 每 100px 对应 1 档音量变化
         val change = -deltaY / 100f
         currentVolumeFloat = (currentVolumeFloat + change).coerceIn(0f, maxVolume.toFloat())
-        currentVolume = currentVolumeFloat.roundToInt()
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
-        Log.d(TAG, "音量调节: currentVolume=$currentVolume, change=$change, float=$currentVolumeFloat")
-        showGestureTip("音量 ${if (maxVolume > 0) (currentVolume * 100 / maxVolume) else 0}%")
+        val newVolume = currentVolumeFloat.roundToInt()
+        if (newVolume != currentVolume) {
+            currentVolume = newVolume
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
+            Log.d(TAG, "音量调节: currentVolume=$currentVolume, change=$change, float=$currentVolumeFloat")
+            showGestureTip("音量 ${if (maxVolume > 0) (currentVolume * 100 / maxVolume) else 0}%")
+        }
     }
 
     private fun togglePlayPause() {
