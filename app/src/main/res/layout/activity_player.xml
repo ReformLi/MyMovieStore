@@ -120,7 +120,7 @@
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:layout_marginStart="6dp"
-                android:src="@drawable/ic_battery" />
+                android:src="@drawable/ic_battery_5" />
 
             <ImageView
                 android:id="@+id/ivNetwork"

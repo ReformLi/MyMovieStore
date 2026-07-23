@@ -1488,13 +1488,39 @@ class PlayerActivity : AppCompatActivity() {
 
     // ================== 状态信息显示（时间、电量、网络） ==================
 
+    private fun updateBatteryDrawable(batteryPct: Int) {
+        val pct = batteryPct.coerceIn(0, 100)
+        Log.d(TAG, "更新电量图标: $pct%")
+        val res = when {
+            pct <= 10 -> R.drawable.ic_battery_bolt
+            pct <= 20 -> R.drawable.ic_battery_1
+            pct <= 40 -> R.drawable.ic_battery_2
+            pct <= 60 -> R.drawable.ic_battery_3
+            pct <= 80 -> R.drawable.ic_battery_4
+            else -> R.drawable.ic_battery_5
+        }
+        binding.ivBattery.setImageResource(res)
+    }
+
     private fun initStatusInfo() {
         updateTime()
         updateNetwork()
 
+        // 初始电量：直接从 BatteryManager 读取，不依赖粘性广播
+        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val initialPct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        Log.d(TAG, "BatteryManager 初始电量: $initialPct%")
+        if (initialPct in 0..100) updateBatteryDrawable(initialPct)
+
         batteryReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                updateBattery(intent)
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                Log.d(TAG, "电量广播: level=$level, scale=$scale")
+                if (level >= 0 && scale > 0) {
+                    val pct = (level * 100 / scale.toFloat()).toInt()
+                    updateBatteryDrawable(pct)
+                }
             }
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -1519,15 +1545,6 @@ class PlayerActivity : AppCompatActivity() {
     private fun updateTime() {
         val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.tvTime.text = currentTime
-    }
-
-    private fun updateBattery(intent: Intent) {
-        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-        if (level >= 0 && scale > 0) {
-            val batteryPct = (level * 100 / scale.toFloat()).toInt()
-            Log.d(TAG, "电量: $batteryPct%")
-        }
     }
 
     private fun updateNetwork() {
