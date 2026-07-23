@@ -25,8 +25,8 @@ class DanmakuPrefs(private val context: Context) {
 
     /** 保存指定视频选择的弹幕源 animeId */
     fun saveAnimeId(videoId: Long, animeId: Long) {
-        if (videoId <= 0L) {
-            Log.w(TAG, "保存弹幕源跳过: videoId=$videoId <= 0")
+        if (videoId == 0L) {
+            Log.w(TAG, "保存弹幕源跳过: videoId=$videoId == 0")
             return
         }
         Log.d(TAG, "保存弹幕源: videoId=$videoId, animeId=$animeId, key=danmaku_anime_$videoId")
@@ -35,8 +35,8 @@ class DanmakuPrefs(private val context: Context) {
 
     /** 读取指定视频保存的弹幕源 animeId，未保存返回 0 */
     fun getSavedAnimeId(videoId: Long): Long {
-        if (videoId <= 0L) {
-            Log.w(TAG, "读取弹幕源跳过: videoId=$videoId <= 0")
+        if (videoId == 0L) {
+            Log.w(TAG, "读取弹幕源跳过: videoId=$videoId == 0")
             return 0L
         }
         val result = prefs.getLong("danmaku_anime_$videoId", 0L)
