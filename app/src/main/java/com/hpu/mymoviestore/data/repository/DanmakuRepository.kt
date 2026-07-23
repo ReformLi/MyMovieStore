@@ -2,6 +2,7 @@ package com.hpu.mymoviestore.data.repository
 
 import android.content.Context
 import android.util.Log
+import java.io.IOException
 import com.hpu.mymoviestore.data.cache.DanmakuCache
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
@@ -82,16 +83,15 @@ class DanmakuRepository(
             )
         }
 
-        val success = result != null
-        val data = result ?: emptyList()
+        val data = result ?: throw IOException("弹幕搜索失败（网络错误）")
         val fromCache = false
 
-        if (success && data.isNotEmpty()) {
+        if (data.isNotEmpty()) {
             val expireAt = cache?.getUnifiedExpireAt(title, 0L) ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000)
             cache?.putSearchCache(title, data, expireAt)
         }
 
-        onResult?.invoke(success, data, fromCache)
+        onResult?.invoke(true, data, fromCache)
         return data
     }
 
@@ -202,6 +202,8 @@ class DanmakuRepository(
         for (attempt in 1..MAX_RETRY) {
             try {
                 return operation()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 lastException = e
                 if (attempt < MAX_RETRY) {

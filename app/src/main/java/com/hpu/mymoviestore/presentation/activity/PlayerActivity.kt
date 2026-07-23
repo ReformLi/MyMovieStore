@@ -118,6 +118,10 @@ class PlayerActivity : AppCompatActivity() {
         private var isRestoringSelection: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    private enum class DanmakuSourceState { IDLE, SEARCHING, SUCCESS, FAILED, NO_CANDIDATES }
+    private var danmakuSourceState = DanmakuSourceState.IDLE
+    private var statusAdapter: ArrayAdapter<String>? = null
+
     // PlayerView 内部的弹幕控件引用
     private val switchDanmaku: android.widget.Switch get() =
         binding.playerView.findViewById(R.id.switchDanmaku)!!
@@ -795,26 +799,6 @@ class PlayerActivity : AppCompatActivity() {
             dm.setDanmakuEnabled(isChecked)
         }
 
-        val initialAdapter = object : ArrayAdapter<String>(
-            this, android.R.layout.simple_spinner_item, listOf("搜索弹幕源中…")
-        ) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val v = super.getView(position, convertView, parent) as TextView
-                v.setTextColor(Color.WHITE)
-                v.textSize = 13f
-                return v
-            }
-            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val v = super.getDropDownView(position, convertView, parent) as TextView
-                v.setTextColor(Color.WHITE)
-                v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
-                v.setPadding(24, 20, 24, 20)
-                v.textSize = 13f
-                return v
-            }
-        }
-        initialAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        danmakuSpinner.adapter = initialAdapter
         danmakuSpinner.visibility = View.GONE
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
@@ -822,6 +806,18 @@ class PlayerActivity : AppCompatActivity() {
                 if (isRestoringSelection) {
                     Log.d(TAG, "弹幕源 onItemSelected 跳过（恢复中）: position=$position")
                     return
+                }
+                when (danmakuSourceState) {
+                    DanmakuSourceState.FAILED -> {
+                        Log.d(TAG, "弹幕源 onItemSelected 触发重试")
+                        retryDanmakuSearch()
+                        return
+                    }
+                    DanmakuSourceState.SEARCHING, DanmakuSourceState.IDLE, DanmakuSourceState.NO_CANDIDATES -> {
+                        Log.d(TAG, "弹幕源 onItemSelected 跳过（非 SUCCESS 状态）: state=$danmakuSourceState")
+                        return
+                    }
+                    DanmakuSourceState.SUCCESS -> { /* 继续执行下方选择逻辑 */ }
                 }
                 if (position < 0 || position >= candidateList.size) {
                     Log.w(TAG, "弹幕源 onItemSelected 越界: position=$position, size=${candidateList.size}")
@@ -836,6 +832,67 @@ class PlayerActivity : AppCompatActivity() {
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
+
+        danmakuSpinner.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP && danmakuSourceState == DanmakuSourceState.FAILED) {
+                Log.d(TAG, "弹幕源触摸触发重试")
+                retryDanmakuSearch()
+                return@setOnTouchListener true
+            }
+            false
+        }
+    }
+
+    private fun updateDanmakuSourceUI() {
+        when (danmakuSourceState) {
+            DanmakuSourceState.IDLE -> danmakuSpinner.visibility = View.GONE
+            DanmakuSourceState.SEARCHING -> updateStatusText("弹幕搜索中...")
+            DanmakuSourceState.SUCCESS -> danmakuSpinner.visibility = View.VISIBLE
+            DanmakuSourceState.FAILED -> updateStatusText("弹幕加载失败")
+            DanmakuSourceState.NO_CANDIDATES -> danmakuSpinner.visibility = View.GONE
+        }
+    }
+
+    private fun updateStatusText(text: String) {
+        if (statusAdapter != null && danmakuSpinner.adapter === statusAdapter) {
+            statusAdapter!!.clear()
+            statusAdapter!!.add(text)
+            statusAdapter!!.notifyDataSetChanged()
+        } else {
+            statusAdapter = object : ArrayAdapter<String>(
+                this@PlayerActivity, android.R.layout.simple_spinner_item, mutableListOf(text)
+            ) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val v = super.getView(position, convertView, parent) as TextView
+                    v.setTextColor(Color.WHITE)
+                    v.textSize = 13f
+                    return v
+                }
+                override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val v = super.getDropDownView(position, convertView, parent) as TextView
+                    v.setTextColor(Color.WHITE)
+                    v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
+                    v.setPadding(24, 20, 24, 20)
+                    v.textSize = 13f
+                    return v
+                }
+            }
+            statusAdapter!!.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            isRestoringSelection = true
+            danmakuSpinner.adapter = statusAdapter
+            danmakuSpinner.visibility = View.VISIBLE
+            isRestoringSelection = false
+        }
+    }
+
+    private fun retryDanmakuSearch() {
+        if (danmakuSourceState == DanmakuSourceState.SEARCHING) {
+            Log.d(TAG, "弹幕搜索重试跳过: 已在搜索中")
+            return
+        }
+        Log.d(TAG, "弹幕搜索重试: videoId=$videoId")
+        lastLoadedAnimeId = 0L
+        launchDanmakuSearch(videoTitle, episodeTitle)
     }
 
     // ================== 屏幕锁定 ==================
@@ -1273,6 +1330,9 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        danmakuSourceState = DanmakuSourceState.SEARCHING
+        updateDanmakuSourceUI()
+
         danmakuSearchJob = uiScope.launch {
             Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title'")
             try {
@@ -1280,11 +1340,13 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
-                    danmakuSpinner.visibility = View.GONE
+                    danmakuSourceState = DanmakuSourceState.NO_CANDIDATES
+                    updateDanmakuSourceUI()
                     return@launch
                 }
 
                 candidateList = candidates
+                danmakuSourceState = DanmakuSourceState.SUCCESS
                 val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
                 val adapter = object : ArrayAdapter<String>(
                     this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
@@ -1323,7 +1385,8 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
-                danmakuSpinner.visibility = View.GONE
+                danmakuSourceState = DanmakuSourceState.FAILED
+                updateDanmakuSourceUI()
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             } finally {
                 isRestoringSelection = false
