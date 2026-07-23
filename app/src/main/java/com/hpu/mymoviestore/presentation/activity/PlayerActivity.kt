@@ -118,9 +118,10 @@ class PlayerActivity : AppCompatActivity() {
         private var isRestoringSelection: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private enum class DanmakuSourceState { IDLE, SEARCHING, SUCCESS, FAILED, NO_CANDIDATES }
+    private enum class DanmakuSourceState { IDLE, SEARCHING, SUCCESS, FAILED, NO_CANDIDATES, SHOWING_LOCAL }
     private var danmakuSourceState = DanmakuSourceState.IDLE
     private var statusAdapter: ArrayAdapter<String>? = null
+    private var hasLocalDanmaku = false
 
     // PlayerView 内部的弹幕控件引用
     private val switchDanmaku: android.widget.Switch get() =
@@ -596,6 +597,7 @@ class PlayerActivity : AppCompatActivity() {
             if (comments.isEmpty()) {
                 Log.w(TAG, "本地弹幕列表为空")
                 danmakuManager?.loadDanmaku(null)
+                hasLocalDanmaku = false
                 danmakuSpinner.visibility = View.GONE
             } else {
                 Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
@@ -604,7 +606,9 @@ class PlayerActivity : AppCompatActivity() {
                     danmakuManager?.syncTo(p.currentPosition)
                     if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
                 }
-                danmakuSpinner.visibility = View.GONE
+                hasLocalDanmaku = true
+                danmakuSourceState = DanmakuSourceState.SHOWING_LOCAL
+                updateDanmakuSourceUI()
                 Log.d(TAG, "本地弹幕加载成功")
             }
         }
@@ -813,7 +817,7 @@ class PlayerActivity : AppCompatActivity() {
                         retryDanmakuSearch()
                         return
                     }
-                    DanmakuSourceState.SEARCHING, DanmakuSourceState.IDLE, DanmakuSourceState.NO_CANDIDATES -> {
+                    DanmakuSourceState.SEARCHING, DanmakuSourceState.IDLE, DanmakuSourceState.NO_CANDIDATES, DanmakuSourceState.SHOWING_LOCAL -> {
                         Log.d(TAG, "弹幕源 onItemSelected 跳过（非 SUCCESS 状态）: state=$danmakuSourceState")
                         return
                     }
@@ -848,8 +852,9 @@ class PlayerActivity : AppCompatActivity() {
             DanmakuSourceState.IDLE -> danmakuSpinner.visibility = View.GONE
             DanmakuSourceState.SEARCHING -> updateStatusText("弹幕搜索中...")
             DanmakuSourceState.SUCCESS -> danmakuSpinner.visibility = View.VISIBLE
-            DanmakuSourceState.FAILED -> updateStatusText("弹幕加载失败")
+            DanmakuSourceState.FAILED -> updateStatusText("弹幕搜索失败，点击重试")
             DanmakuSourceState.NO_CANDIDATES -> danmakuSpinner.visibility = View.GONE
+            DanmakuSourceState.SHOWING_LOCAL -> updateStatusText("本地弹幕已加载")
         }
     }
 
@@ -1318,20 +1323,24 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
 
-        val prefs = DanmakuPrefs(this)
-        val savedAnimeId = prefs.getSavedAnimeId(videoId)
+        if (!hasLocalDanmaku) {
+            val prefs = DanmakuPrefs(this)
+            val savedAnimeId = prefs.getSavedAnimeId(videoId)
 
-        // 有保存的弹幕源时，提前直接加载（搜索完成前即可显示）
-        if (savedAnimeId > 0L) {
-            Log.d(TAG, "发现保存的弹幕源: videoId=$videoId, savedAnimeId=$savedAnimeId")
-            val epNum = extractEpisodeNumber(episode)
-            uiScope.launch {
-                loadDanmakuForAnime(savedAnimeId, epNum)
+            // 有保存的弹幕源时，提前直接加载（搜索完成前即可显示）
+            if (savedAnimeId > 0L) {
+                Log.d(TAG, "发现保存的弹幕源: videoId=$videoId, savedAnimeId=$savedAnimeId")
+                val epNum = extractEpisodeNumber(episode)
+                uiScope.launch {
+                    loadDanmakuForAnime(savedAnimeId, epNum)
+                }
             }
         }
 
-        danmakuSourceState = DanmakuSourceState.SEARCHING
-        updateDanmakuSourceUI()
+        if (!hasLocalDanmaku) {
+            danmakuSourceState = DanmakuSourceState.SEARCHING
+            updateDanmakuSourceUI()
+        }
 
         danmakuSearchJob = uiScope.launch {
             Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title'")
@@ -1340,8 +1349,10 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
-                    danmakuSourceState = DanmakuSourceState.NO_CANDIDATES
-                    updateDanmakuSourceUI()
+                    if (!hasLocalDanmaku) {
+                        danmakuSourceState = DanmakuSourceState.NO_CANDIDATES
+                        updateDanmakuSourceUI()
+                    }
                     return@launch
                 }
 
@@ -1385,8 +1396,10 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
-                danmakuSourceState = DanmakuSourceState.FAILED
-                updateDanmakuSourceUI()
+                if (!hasLocalDanmaku) {
+                    danmakuSourceState = DanmakuSourceState.FAILED
+                    updateDanmakuSourceUI()
+                }
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             } finally {
                 isRestoringSelection = false
@@ -1410,6 +1423,8 @@ class PlayerActivity : AppCompatActivity() {
             }
             if (bangumi == null) {
                 Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
+                danmakuSourceState = DanmakuSourceState.FAILED
+                updateDanmakuSourceUI()
                 return@launch
             }
             selectedBangumi = bangumi
@@ -1430,6 +1445,8 @@ class PlayerActivity : AppCompatActivity() {
             if (comments.isEmpty()) {
                 Log.w(TAG, "弹幕列表为空: animeId=$animeId")
                 danmakuManager?.loadDanmaku(null)
+                danmakuSourceState = DanmakuSourceState.FAILED
+                updateDanmakuSourceUI()
                 return@launch
             }
 
@@ -1439,6 +1456,8 @@ class PlayerActivity : AppCompatActivity() {
                 danmakuManager?.syncTo(p.currentPosition)
                 if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
             }
+
+            hasLocalDanmaku = true
 
             // 保存弹幕到本地文件
             saveDanmakuToLocalFile(animeId, episode, comments)
@@ -1749,10 +1768,8 @@ class PlayerActivity : AppCompatActivity() {
                 loadDanmakuFromLocalFile(danmakuFile)
             } else {
                 Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath，尝试在线搜索弹幕")
-                launchDanmakuSearch(videoTitle, episodeTitle)
             }
-        } else {
-            launchDanmakuSearch(videoTitle, episodeTitle)
         }
+        launchDanmakuSearch(videoTitle, episodeTitle)
     }
 }
