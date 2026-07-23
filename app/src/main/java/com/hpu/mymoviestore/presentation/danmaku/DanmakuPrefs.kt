@@ -1,6 +1,7 @@
 package com.hpu.mymoviestore.presentation.danmaku
 
 import android.content.Context
+import android.util.Log
 
 /**
  * 弹幕偏好管理
@@ -24,14 +25,23 @@ class DanmakuPrefs(private val context: Context) {
 
     /** 保存指定视频选择的弹幕源 animeId */
     fun saveAnimeId(videoId: Long, animeId: Long) {
-        if (videoId <= 0L) return
+        if (videoId <= 0L) {
+            Log.w(TAG, "保存弹幕源跳过: videoId=$videoId <= 0")
+            return
+        }
+        Log.d(TAG, "保存弹幕源: videoId=$videoId, animeId=$animeId, key=danmaku_anime_$videoId")
         prefs.edit().putLong("danmaku_anime_$videoId", animeId).apply()
     }
 
     /** 读取指定视频保存的弹幕源 animeId，未保存返回 0 */
     fun getSavedAnimeId(videoId: Long): Long {
-        if (videoId <= 0L) return 0L
-        return prefs.getLong("danmaku_anime_$videoId", 0L)
+        if (videoId <= 0L) {
+            Log.w(TAG, "读取弹幕源跳过: videoId=$videoId <= 0")
+            return 0L
+        }
+        val result = prefs.getLong("danmaku_anime_$videoId", 0L)
+        Log.d(TAG, "读取弹幕源: videoId=$videoId, key=danmaku_anime_$videoId → $result")
+        return result
     }
 
     /** 清除所有弹幕源选择记录 */
@@ -46,6 +56,7 @@ class DanmakuPrefs(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "DanmakuPrefs"
         private const val PREFS_NAME = "danmu_prefs"
         private const val KEY_MASTER_ENABLED = "master_enabled"
     }

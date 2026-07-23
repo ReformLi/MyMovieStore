@@ -133,15 +133,6 @@
                 android:layout_weight="1" />
 
             <ImageButton
-                android:id="@id/exo_settings"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="设置"
-                android:padding="6dp"
-                android:src="@drawable/ic_player_settings" />
-
-            <ImageButton
                 android:id="@id/exo_fullscreen"
                 android:layout_width="36dp"
                 android:layout_height="36dp"

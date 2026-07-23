@@ -132,6 +132,15 @@
         </LinearLayout>
 
         <ImageButton
+            android:id="@+id/btnPiP"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="画中画"
+            android:padding="8dp"
+            android:src="@drawable/ic_player_pip" />
+
+        <ImageButton
             android:id="@+id/btnRotate"
             android:layout_width="36dp"
             android:layout_height="36dp"

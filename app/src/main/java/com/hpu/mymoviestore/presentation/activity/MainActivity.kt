@@ -142,14 +142,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 从 ViewPager2 获取搜索 Fragment 实例
-     * FragmentStateAdapter 的 tag 格式为 "f{viewPagerId}:f{position}"
-     */
     private fun getSearchFragment(): SearchFragment? {
-        val position = tabIds.indexOf(R.id.nav_search)
-        val tag = "f${binding.viewPager.id}:f$position"
-        return supportFragmentManager.findFragmentByTag(tag) as? SearchFragment
+        return supportFragmentManager.fragments
+            .filterIsInstance<SearchFragment>()
+            .firstOrNull()
     }
 
     private fun deliverPendingSearchKeyword() {

@@ -159,6 +159,8 @@ class PlayerActivity : AppCompatActivity() {
 
     // PiP 相关
     private var pipReceiver: BroadcastReceiver? = null
+    private var pipExitFinishTask: Runnable? = null
+    private var returnedFromPip: Boolean = false
 
     companion object {
         private const val TAG = "PlayerActivity"
@@ -393,6 +395,10 @@ class PlayerActivity : AppCompatActivity() {
                         danmakuManager?.setPaused(!isPlaying)
                         // 更新播放/暂停按钮图标
                         updatePlayPauseIcon(isPlaying)
+                        // PiP 模式下刷新按钮图标
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
+                            updatePiPParams()
+                        }
                     }
 
                     override fun onPositionDiscontinuity(
@@ -474,6 +480,9 @@ class PlayerActivity : AppCompatActivity() {
                         Log.d(TAG, "离线播放 onIsPlayingChanged: isPlaying=$isPlaying")
                         danmakuManager?.setPaused(!isPlaying)
                         updatePlayPauseIcon(isPlaying)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
+                            updatePiPParams()
+                        }
                     }
 
                     override fun onPositionDiscontinuity(
@@ -704,7 +713,17 @@ class PlayerActivity : AppCompatActivity() {
             binding.tvPlayerEpisode.visibility = View.GONE
         }
 
-        binding.btnBack.setOnClickListener { finish() }
+        binding.btnBack.setOnClickListener {
+            finish()
+        }
+        binding.btnPiP.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                updatePiPParams()
+                enterPictureInPictureMode()
+            } else {
+                Toast.makeText(this, "Android 8.0 以下不支持画中画", Toast.LENGTH_SHORT).show()
+            }
+        }
         binding.btnRotate.setOnClickListener {
             val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
             requestedOrientation = if (isPortrait) {
@@ -800,10 +819,16 @@ class PlayerActivity : AppCompatActivity() {
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (isRestoringSelection) return
-                if (position < 0 || position >= candidateList.size) return
+                if (isRestoringSelection) {
+                    Log.d(TAG, "弹幕源 onItemSelected 跳过（恢复中）: position=$position")
+                    return
+                }
+                if (position < 0 || position >= candidateList.size) {
+                    Log.w(TAG, "弹幕源 onItemSelected 越界: position=$position, size=${candidateList.size}")
+                    return
+                }
                 val anime = candidateList[position]
-                Log.d(TAG, "用户选择弹幕源: animeId=${anime.animeId}, title=${anime.animeTitle}")
+                Log.d(TAG, "用户选择弹幕源: videoId=$videoId, position=$position, animeId=${anime.animeId}, title=${anime.animeTitle}")
                 DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
                 lastLoadedAnimeId = 0L
                 val epNum = extractEpisodeNumber(episodeTitle)
@@ -931,10 +956,6 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && player?.isPlaying == true) {
-            updatePiPParams()
-            enterPictureInPictureMode()
-        }
     }
 
     @UnstableApi
@@ -944,9 +965,23 @@ class PlayerActivity : AppCompatActivity() {
         if (isInPictureInPictureMode) {
             binding.playerView.hideController()
             binding.playerView.useController = false
+            pipExitFinishTask?.let { handler.removeCallbacks(it) }
+            pipExitFinishTask = null
         } else {
             binding.playerView.useController = true
             binding.playerView.showController()
+            returnedFromPip = true
+            if (hasWindowFocus()) {
+                Log.d(TAG, "PiP 退出但已有窗口焦点，用户返回全屏，不结束活动")
+                return
+            }
+            pipExitFinishTask = Runnable {
+                if (!isFinishing) {
+                    Log.d(TAG, "PiP 关闭，结束活动")
+                    finishAndRemoveTask()
+                }
+            }
+            handler.postDelayed(pipExitFinishTask!!, 800)
         }
     }
 
@@ -1239,9 +1274,10 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         danmakuSearchJob = uiScope.launch {
+            Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title'")
             try {
                 val candidates = danmakuRepository.searchCandidates(title)
-                Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条")
+                Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
                     danmakuSpinner.visibility = View.GONE
@@ -1275,20 +1311,22 @@ class PlayerActivity : AppCompatActivity() {
                 danmakuSpinner.visibility = View.VISIBLE
 
                 val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
+                Log.d(TAG, "弹幕源恢复: videoId=$videoId, savedAnimeId=$savedAnimeId, candidates.size=${candidates.size}")
                 if (savedAnimeId > 0L) {
                     val savedIndex = candidates.indexOfFirst { it.animeId == savedAnimeId }
+                    Log.d(TAG, "弹幕源恢复: savedIndex=$savedIndex")
                     if (savedIndex >= 0) {
                         danmakuSpinner.setSelection(savedIndex)
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
                     }
                 }
-                isRestoringSelection = false
-
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
                 danmakuSpinner.visibility = View.GONE
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
+            } finally {
+                isRestoringSelection = false
             }
         }
     }
@@ -1476,7 +1514,15 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersiveMode()
+        if (hasFocus) {
+            enterImmersiveMode()
+            pipExitFinishTask?.let { handler.removeCallbacks(it) }
+            pipExitFinishTask = null
+        }
+    }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
