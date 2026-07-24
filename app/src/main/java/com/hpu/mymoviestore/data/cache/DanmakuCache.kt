@@ -106,8 +106,8 @@ class DanmakuCache(context: Context) {
 
     /**
      * 获取当前缓存的统一过期时间。
-     * 如果已有缓存（搜索或分集或任意集弹幕），返回其剩余过期时间；
-     * 否则返回新的 1 天后过期时间。
+     * 只检查当前 keyword/animeId 相关的缓存键，不跨视频互相污染。
+     * 如果已有搜索或分集缓存，沿用其剩余过期时间；否则返回 1 天。
      */
     fun getUnifiedExpireAt(keyword: String, animeId: Long): Long {
         val now = System.currentTimeMillis()
@@ -115,12 +115,9 @@ class DanmakuCache(context: Context) {
             "search_$keyword",
             "bangumi_$animeId"
         )
-        // 也检查任意已缓存的集弹幕
-        val allKeys = prefs.all.keys.filter { it.endsWith("_expire") }
-        val candidateKeys = keys + allKeys
 
         var maxExpireAt = -1L
-        for (key in candidateKeys) {
+        for (key in keys) {
             val expireAt = prefs.getLong("${key}_expire", -1)
             if (expireAt > now && expireAt > maxExpireAt) {
                 maxExpireAt = expireAt

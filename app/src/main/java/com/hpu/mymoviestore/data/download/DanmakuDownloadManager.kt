@@ -356,8 +356,15 @@ class DanmakuDownloadManager private constructor(context: Context) {
         val json = serializeDanmakuToJson(comments)
         val danmakuFile = File(danmakuDir, "$taskId.json")
         danmakuFile.writeText(json)
-
         Log.d(TAG, "[$taskId] 弹幕已保存: ${danmakuFile.absolutePath}, size=${danmakuFile.length()}")
+
+        // 额外保存 {animeId}_{episode}.json，供 loadDanmakuForAnime 本地文件检查
+        val episodeNum = Regex("""(\d+)""").find(episodeTitle)?.value ?: episodeTitle
+        val sourceIndexFile = File(danmakuDir, "${anime.animeId}_${episodeNum}.json")
+        if (sourceIndexFile.absolutePath != danmakuFile.absolutePath) {
+            sourceIndexFile.writeText(json)
+            Log.d(TAG, "[$taskId] 弹幕源索引文件已保存: ${sourceIndexFile.absolutePath}")
+        }
 
         return DownloadResult(isSuccess = true, filePath = danmakuFile.absolutePath)
     }

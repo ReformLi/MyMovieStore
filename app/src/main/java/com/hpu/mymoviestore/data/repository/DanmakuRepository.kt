@@ -91,6 +91,7 @@ class DanmakuRepository(
         val data = result ?: throw IOException("弹幕搜索失败（网络错误）")
         val fromCache = false
 
+        Log.d(TAG, "搜索来自网络: '$title', ${data.size} 条")
         if (data.isNotEmpty()) {
             val expireAt = cache?.getUnifiedExpireAt(title, 0L) ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000)
             cache?.putSearchCache(title, data, expireAt)
@@ -131,6 +132,7 @@ class DanmakuRepository(
         val fromCache = false
 
         if (success && result != null) {
+            Log.d(TAG, "分集来自网络: animeId=$animeId, 标题=${result.animeTitle}")
             val expireAt = cache?.getUnifiedExpireAt(keyword, animeId) ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000)
             cache?.putBangumiCache(animeId, result, expireAt)
         }
@@ -187,6 +189,7 @@ class DanmakuRepository(
         val fromCache = false
 
         if (success) {
+            Log.d(TAG, "弹幕来自网络: episodeId=${episode.episodeId}, ${data.size} 条")
             val expireAt = cache?.getUnifiedExpireAt(keyword, bangumi.animeId)
                 ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000)
             cache?.putCommentsCache(episode.episodeId, data, expireAt)
