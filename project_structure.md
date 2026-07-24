@@ -81,9 +81,9 @@ app/src/main/
 `MovieApplication` 是应用级初始化入口：
 
 - 初始化 Room 数据库 `MovieDatabase`。
-- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`。
+- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`SearchPermissionRepository`。
 - 创建本地挡板源 `VideoSourceManager`。
-- 创建多个播放链路爬虫源（`JujiwuVideoSource`、`YinghuaVideoSource`、`TiantangVideoSource`），每个源内含独立的 `RequestRateLimiter` 限流器。
+- 爬虫源由 `VideoSourceConfigManager` **远程动态加载**（非硬编码），启动时同步缓存或异步重试最多 5 次获取源配置。
 - 创建首页发现源 `DoubanDiscoverySource`。
 - 创建 `VideoRepository`，供视频相关 ViewModel 使用。
 - 启动时清理过期的 `api_cache` 记录。
@@ -150,7 +150,13 @@ data/
     ├── VideoSource.kt
     ├── VideoSourceManager.kt
     └── impl/
+        ├── CechiVideoSource.kt
+        ├── DadatuVideoSource.kt
+        ├── DoujiaoVideoSource.kt
+        ├── HantvVideoSource.kt
         ├── JujiwuVideoSource.kt
+        ├── NongminTvVideoSource.kt
+        ├── NongmingVideoSource.kt
         ├── TiantangVideoSource.kt
         └── YinghuaVideoSource.kt
 ```
@@ -162,9 +168,9 @@ data/
 | 配置 | 当前值 |
 |------|--------|
 | 数据库名 | `movie_database` |
-| 当前版本 | `8` |
+| 当前版本 | `1` |
 | 表 | `play_history`、`search_history`、`api_cache`、`download_task`、`downloaded_video_index` |
-| 迁移策略 | `addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)` |
+| 迁移策略 | 无迁移，应用重装即重建 |
 | Schema 导出 | `exportSchema = false` |
 
 ### Entity
@@ -235,6 +241,7 @@ data/
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
 | `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
+| `SearchPermissionRepository` | 应用启动时后台静默检查搜索权限 |
 
 ### 弹幕缓存
 
@@ -410,6 +417,10 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 `VideoSourceManager` 读取本地 `assets/sample_video_source.json`，主要用于豆瓣或远程网络失败时的兜底展示，也提供本地搜索和按 ID 查询能力。
 
+### `VideoSourceConfigManager`
+
+`VideoSourceConfigManager` 负责从远程动态配置读取播放源名称和 URL，启动时先同步本地缓存（毫秒级），随后异步发起 HTTP 请求获取最新配置；失败最多重试 5 次，每次间隔 10 秒。加载成功后通过 `MovieApplication.updateVideoSources()` 更新全局源列表并注入到 `VideoRepository`。
+
 ## 缓存策略
 
 `api_cache` 只用于网络爬取结果。本地挡板回退结果不写入首页缓存。
@@ -471,7 +482,7 @@ presentation/
 |----------|------|
 | `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
 | `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示；**提供下载入口**，支持单集下载和批量下载 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录** |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录** |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 | `DownloadActivity` | **下载管理页面**，使用 ViewPager2 分"下载中"和"已完成"两个标签页；首次进入时若下载中列表为空自动切换到已完成；支持多选删除 |
 
@@ -886,17 +897,16 @@ Toast 提示清理结果
 - 注册 `DetailActivity`、`PlayerActivity`、`HistoryActivity`、`DownloadActivity`。
 - 注册 `DownloadService`（前台服务，`dataSync` 类型）。
 - `PlayerActivity` 使用无 ActionBar 主题，并处理方向和屏幕尺寸变化。
-- 声明 `INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS` 权限。
+- 声明 `INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK` 权限。
 
 ## 当前实现边界
 
 - 首页内容发现只适配豆瓣相关页面和接口；豆瓣失败时回退本地挡板。
-- 内容播放当前支持剧集屋、樱花动漫和电影天堂（框架已搭建）三个播放源，通过 `VideoSource` 接口可扩展更多源。
+- 内容播放当前支持 9 个爬虫播放源，通过 `VideoSource` 接口可扩展更多源；源配置由 `VideoSourceConfigManager` 远程动态加载。
 - 本地挡板不写入首页 `api_cache`。
 - 搜索结果、详情播放入口和真实播放地址有独立缓存周期，各源缓存前缀不同。
 - 爬虫限流器每个播放源独立，队列容量和间隔为固定值。
 - 下载管理功能已完整实现，支持 M3U8 分片下载、弹幕下载、前台通知、离线播放和降低影响策略。
 - 下载引擎已实现多层限流：并发限制、分片间延迟、速度限制、剧集间解析间隔。
 - 离线播放有独立进度体系，不记录到在线播放历史。
-- 电影天堂播放源解析逻辑待实现。
 - 收藏功能未实现。

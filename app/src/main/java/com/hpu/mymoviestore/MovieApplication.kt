@@ -2,6 +2,7 @@ package com.hpu.mymoviestore
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.hpu.mymoviestore.data.database.MovieDatabase
@@ -118,6 +119,11 @@ class MovieApplication : Application(), ImageLoaderFactory {
         // 视频源远程配置管理器：同步加载缓存（毫秒级）或首次远程获取（重试 5 次）
         videoSourceConfigManager = VideoSourceConfigManager(this, apiCacheRepository, applicationScope)
         videoSourceConfigManager.initConfig()
+        videoSourceConfigManager.state.observeForever { state ->
+            if (state == VideoSourceConfigManager.ConfigState.FAILED) {
+                Log.w(TAG, "视频源配置获取失败，播放功能可能不可用")
+            }
+        }
         Log.d(TAG, "VideoSourceConfigManager 初始化完成")
 
         // 启动时顺手清理过期的爬虫缓存（避免数据库增长）

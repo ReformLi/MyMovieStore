@@ -123,9 +123,19 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 | 手势           | 功能                            |
 | ------------ | ----------------------------- |
 | 双击屏幕         | 暂停/播放                         |
-| 长按 + 左右滑动    | 快进/快退（最小 10 秒，滑动距离越大 seek 越多） |
+| 长按 + 左右滑动    | 快进/快退（暂停播放，进度条和毫秒级时间实时跟随手指滑动） |
 | 长按 + 左半屏上下滑动 | 调节亮度                          |
 | 长按 + 右半屏上下滑动 | 调节音量                          |
+
+**手势机制**（`PlayerActivity` 内部 `dispatchTouchEvent` 实现）：
+
+- 长按 300ms 触发手势方向锁定，立即执行对应调节（不浪费 MOVE 事件）
+- 水平拖拽时自动暂停播放，进度条和数字（`mm:ss / mm:ss` 格式）实时跟随手指；
+  满屏滑动 = 视频总时长灵敏度，手指抬起后恢复播放（仅当拖拽前正在播放）
+- 垂直拖拽每 100px 对应 1 档音量，每 300px 对应 ±100% 亮度
+- 所有自定义控件（返回/标题/PiP/旋转/设置/状态栏/锁定按钮）在拖拽过程中隐藏，
+  复用屏幕锁定的只读进度条（`lockedProgressBar`，毫秒级精度随手指滑动）
+- 50ms 手势节流，避免每帧 IPC 卡顿
 
 **屏幕锁定**：左侧中间显示锁定按钮，点击后：
 
@@ -369,7 +379,7 @@ Room 当前持久化五张表：
 | `download_task`          | `DownloadTaskEntity`         | 下载任务状态、进度、本地文件路径、弹幕状态、离线播放进度   |
 | `downloaded_video_index` | `DownloadedVideoIndexEntity` | 已下载视频索引（预留）                    |
 
-数据库版本：`8`（含下载任务表和离线播放进度字段迁移）。
+数据库版本：`1`（无迁移，应用重装即重建）。
 
 ## 项目结构
 
@@ -433,6 +443,7 @@ app/build/outputs/apk/debug/app-debug.apk
 | `android.permission.FOREGROUND_SERVICE`           | 下载时保持前台服务运行          |
 | `android.permission.FOREGROUND_SERVICE_DATA_SYNC` | Android 14+ 前台服务类型声明 |
 | `android.permission.POST_NOTIFICATIONS`           | Android 13+ 下载通知权限   |
+| `android.permission.WAKE_LOCK`                    | 下载时保持 CPU 唤醒        |
 
 ## 当前版本说明
 

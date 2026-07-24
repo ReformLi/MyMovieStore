@@ -5,7 +5,15 @@ import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
-import dalvik.system.DexFile
+import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
+import com.hpu.mymoviestore.data.source.impl.DadatuVideoSource
+import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
+import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
+import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
+import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
+import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
+import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -14,8 +22,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.lang.reflect.Modifier
-import java.time.LocalDate
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -81,6 +90,19 @@ class VideoSourceConfigManager(
         // ====== 首次获取重试参数 ======
         private const val MAX_RETRIES = 5
         private const val RETRY_INTERVAL_MS = 10_000L
+
+        /** 所有已知视频源类，用于反射实例化（替代废弃的 DexFile 扫描） */
+        private val knownSourceClasses = listOf(
+            CechiVideoSource::class.java,
+            DadatuVideoSource::class.java,
+            DoujiaoVideoSource::class.java,
+            HantvVideoSource::class.java,
+            JujiwuVideoSource::class.java,
+            NongminTvVideoSource::class.java,
+            NongmingVideoSource::class.java,
+            TiantangVideoSource::class.java,
+            YinghuaVideoSource::class.java
+        )
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -165,7 +187,7 @@ class VideoSourceConfigManager(
                 // 成功：缓存 + 构建源 + 标记今天已获取
                 prefs.edit()
                     .putString(KEY_CACHED_JSON, result.rawJson)
-                    .putString(KEY_LAST_FETCH_DATE, LocalDate.now().toString())
+                    .putString(KEY_LAST_FETCH_DATE, SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()))
                     .apply()
 
                 val sources = discoverAndBuildSources(result.configs, cacheRepository)
@@ -207,7 +229,7 @@ class VideoSourceConfigManager(
      * - 失败 → 保持现有缓存不变
      */
     private suspend fun maybeDailyUpdate() {
-        val today = LocalDate.now().toString()
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
         val lastFetch = prefs.getString(KEY_LAST_FETCH_DATE, null)
 
         if (lastFetch == today) {
@@ -283,27 +305,20 @@ class VideoSourceConfigManager(
     // ===================== 内部工具 =====================
 
     /**
-     * 通过反射自动发现并实例化视频源。
+     * 显式注册所有已知视频源类，反射实例化后按配置匹配。
      *
-     * 1. 扫描 DEX 中 `impl` 包下所有 [CrawlerVideoSource] 子类
-     * 2. 反射调用无参构造函数实例化（所有构造参数均有默认值）
-     * 3. 注入 [cacheRepository]
-     * 4. 按 [configs] 中的 sourceId 匹配，设置 name/baseUrl
+     * 1. 遍历 [knownSourceClasses] 反射调用无参构造函数实例化
+     * 2. 注入 [cacheRepository]
+     * 3. 按 [configs] 中的 sourceId 匹配，设置 name/baseUrl
      *
      * 远程配置中有但代码中没有的 sourceId 自动跳过。
      */
-    @Suppress("DEPRECATION")
     private fun discoverAndBuildSources(
         configs: List<SourceConfig>,
         cacheRepository: ApiCacheRepository
     ): List<CrawlerVideoSource> {
-        // 1. 扫描 DEX 发现所有 CrawlerVideoSource 子类
-        val discoveredClasses = discoverSourceClasses()
-        Log.d(TAG, "DEX 扫描发现 ${discoveredClasses.size} 个视频源类")
-
-        // 2. 实例化并建立 sourceId → 实例 映射
         val availableSources = mutableMapOf<String, CrawlerVideoSource>()
-        for (clazz in discoveredClasses) {
+        for (clazz in knownSourceClasses) {
             try {
                 val instance = clazz.getDeclaredConstructor().newInstance() as CrawlerVideoSource
                 instance.cacheRepository = cacheRepository
@@ -314,7 +329,6 @@ class VideoSourceConfigManager(
             }
         }
 
-        // 3. 按远程配置顺序匹配，注入 name/baseUrl
         val result = mutableListOf<CrawlerVideoSource>()
         for (cfg in configs) {
             val source = availableSources[cfg.sourceId]
@@ -325,45 +339,6 @@ class VideoSourceConfigManager(
             source.sourceName = cfg.name
             source.baseUrl = cfg.baseUrl
             result.add(source)
-        }
-
-        return result
-    }
-
-    /**
-     * 扫描 APK 的 DEX 文件，查找 `impl` 包下所有 [CrawlerVideoSource] 的非抽象子类。
-     */
-    @Suppress("DEPRECATION")
-    private fun discoverSourceClasses(): List<Class<out CrawlerVideoSource>> {
-        val result = mutableListOf<Class<out CrawlerVideoSource>>()
-        val prefix = "com.hpu.mymoviestore.data.source.impl."
-
-        val sourceDir = context.applicationInfo.sourceDir
-        val dexFile = DexFile(sourceDir)
-        try {
-            val entries = dexFile.entries()
-            while (entries.hasMoreElements()) {
-                val className = entries.nextElement()
-                if (!className.startsWith(prefix)) continue
-                try {
-                    val clazz = Class.forName(className, false, context.classLoader)
-                    if (CrawlerVideoSource::class.java.isAssignableFrom(clazz) &&
-                        !Modifier.isAbstract(clazz.modifiers)
-                    ) {
-                        @Suppress("UNCHECKED_CAST")
-                        result.add(clazz as Class<out CrawlerVideoSource>)
-                    }
-                } catch (_: Throwable) {
-                    // 跳过无法加载的类
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "DexFile 扫描失败", e)
-        } finally {
-            try {
-                dexFile.close()
-            } catch (_: Exception) {
-            }
         }
 
         return result
