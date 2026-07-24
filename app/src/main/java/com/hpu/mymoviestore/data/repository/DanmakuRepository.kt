@@ -59,6 +59,7 @@ class DanmakuRepository(
      */
     suspend fun searchCandidates(
         title: String,
+        forceNetwork: Boolean = false,
         onResult: ((Boolean, List<DanmakuAnime>, Boolean) -> Unit)? = null
     ): List<DanmakuAnime> {
         if (title.isBlank()) {
@@ -67,10 +68,14 @@ class DanmakuRepository(
         }
 
         // 先读缓存
-        cache?.getSearchCache(title)?.let {
-            Log.d(TAG, "搜索缓存命中: $title, ${it.size} 条")
-            onResult?.invoke(true, it, true)
-            return it
+        if (!forceNetwork) {
+            cache?.getSearchCache(title)?.let {
+                Log.d(TAG, "搜索缓存命中: $title, ${it.size} 条")
+                onResult?.invoke(true, it, true)
+                return it
+            }
+        } else {
+            Log.d(TAG, "搜索强制网络刷新: $title")
         }
 
         // 网络请求（带重试）
@@ -144,6 +149,7 @@ class DanmakuRepository(
         bangumi: DanmakuBangumi,
         preferredEpisodeNumber: String? = null,
         keyword: String = "",
+        forceNetwork: Boolean = false,
         onResult: ((Boolean, List<DanmakuComment>, Boolean) -> Unit)? = null
     ): List<DanmakuComment> {
         val episode = pickEpisode(bangumi, preferredEpisodeNumber)
@@ -156,10 +162,14 @@ class DanmakuRepository(
         Log.d(TAG, "选中集数: episodeId=${episode.episodeId}, number=${episode.episodeNumber}")
 
         // 先读缓存
-        cache?.getCommentsCache(episode.episodeId)?.let {
-            Log.d(TAG, "弹幕缓存命中: episodeId=${episode.episodeId}, ${it.size} 条")
-            onResult?.invoke(true, it, true)
-            return it
+        if (!forceNetwork) {
+            cache?.getCommentsCache(episode.episodeId)?.let {
+                Log.d(TAG, "弹幕缓存命中: episodeId=${episode.episodeId}, ${it.size} 条")
+                onResult?.invoke(true, it, true)
+                return it
+            }
+        } else {
+            Log.d(TAG, "弹幕强制网络刷新: episodeId=${episode.episodeId}")
         }
 
         // 网络请求（带重试）

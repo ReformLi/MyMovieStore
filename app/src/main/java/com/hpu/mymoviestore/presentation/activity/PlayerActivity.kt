@@ -118,6 +118,7 @@ class PlayerActivity : AppCompatActivity() {
         private var danmakuSearchJob: Job? = null
         private var lastLoadedAnimeId: Long = 0L
         private var isRestoringSelection: Boolean = false
+        private var isRetrying: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private enum class DanmakuSourceState { IDLE, SEARCHING, SUCCESS, FAILED, NO_CANDIDATES, SHOWING_LOCAL }
@@ -870,6 +871,10 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 when (danmakuSourceState) {
                     DanmakuSourceState.FAILED -> {
+                        if (isRetrying) {
+                            Log.d(TAG, "弹幕源 onItemSelected 跳过（重试中）")
+                            return
+                        }
                         Log.d(TAG, "弹幕源 onItemSelected 触发重试")
                         retryDanmakuSearch()
                         return
@@ -889,7 +894,7 @@ class PlayerActivity : AppCompatActivity() {
                 DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
                 lastLoadedAnimeId = 0L
                 val epNum = extractEpisodeNumber(episodeTitle)
-                loadDanmakuForAnime(anime.animeId, epNum)
+                loadDanmakuForAnime(anime.animeId, epNum, forceNetwork = true)
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -948,13 +953,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun retryDanmakuSearch() {
-        if (danmakuSourceState == DanmakuSourceState.SEARCHING) {
-            Log.d(TAG, "弹幕搜索重试跳过: 已在搜索中")
+        if (isRetrying || danmakuSourceState == DanmakuSourceState.SEARCHING) {
+            Log.d(TAG, "弹幕搜索重试跳过: 已在重试中")
             return
         }
+        isRetrying = true
         Log.d(TAG, "弹幕搜索重试: videoId=$videoId")
         lastLoadedAnimeId = 0L
-        launchDanmakuSearch(videoTitle, episodeTitle)
+        launchDanmakuSearch(videoTitle, episodeTitle, forceNetwork = true)
     }
 
     // ================== 屏幕锁定 ==================
@@ -1416,23 +1422,9 @@ class PlayerActivity : AppCompatActivity() {
         return match?.value ?: title
     }
 
-    private fun launchDanmakuSearch(title: String, episode: String) {
+    private fun launchDanmakuSearch(title: String, episode: String, forceNetwork: Boolean = false) {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
-
-        if (!hasLocalDanmaku) {
-            val prefs = DanmakuPrefs(this)
-            val savedAnimeId = prefs.getSavedAnimeId(videoId)
-
-            // 有保存的弹幕源时，提前直接加载（搜索完成前即可显示）
-            if (savedAnimeId > 0L) {
-                Log.d(TAG, "发现保存的弹幕源: videoId=$videoId, savedAnimeId=$savedAnimeId")
-                val epNum = extractEpisodeNumber(episode)
-                uiScope.launch {
-                    loadDanmakuForAnime(savedAnimeId, epNum)
-                }
-            }
-        }
 
         if (!hasLocalDanmaku) {
             danmakuSourceState = DanmakuSourceState.SEARCHING
@@ -1440,9 +1432,9 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         danmakuSearchJob = uiScope.launch {
-            Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title'")
+            Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title', forceNetwork=$forceNetwork")
             try {
-                val candidates = danmakuRepository.searchCandidates(title)
+                val candidates = danmakuRepository.searchCandidates(title, forceNetwork)
                 Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
@@ -1488,6 +1480,11 @@ class PlayerActivity : AppCompatActivity() {
                     if (savedIndex >= 0) {
                         danmakuSpinner.setSelection(savedIndex)
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
+                        val animeId = candidateList[savedIndex].animeId
+                        val epNum = extractEpisodeNumber(episode)
+                        Handler(Looper.getMainLooper()).post {
+                            loadDanmakuForAnime(animeId, epNum, forceNetwork)
+                        }
                     }
                 }
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
@@ -1496,6 +1493,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (!hasLocalDanmaku) {
                     danmakuSourceState = DanmakuSourceState.FAILED
                     updateDanmakuSourceUI()
+                    Handler(Looper.getMainLooper()).postDelayed({ isRetrying = false }, 300)
                 }
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             } finally {
@@ -1504,7 +1502,7 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadDanmakuForAnime(animeId: Long, episode: String) {
+    private fun loadDanmakuForAnime(animeId: Long, episode: String, forceNetwork: Boolean = false) {
         if (animeId == lastLoadedAnimeId) {
             Log.d(TAG, "弹幕源已加载，跳过: animeId=$animeId")
             return
@@ -1520,20 +1518,19 @@ class PlayerActivity : AppCompatActivity() {
             }
             if (bangumi == null) {
                 Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
-                danmakuSourceState = DanmakuSourceState.FAILED
-                updateDanmakuSourceUI()
+                isRetrying = false
+                Toast.makeText(this@PlayerActivity, "该弹幕源暂时无法获取弹幕，请更换其他弹幕源", Toast.LENGTH_SHORT).show()
                 return@launch
             }
             selectedBangumi = bangumi
             Log.d(TAG, "获取 bangumi: title=${bangumi.animeTitle}, episodes=${bangumi.episodes.size}")
 
             val comments = danmakuRepository.fetchDanmakuComments(
-                bangumi = bangumi, preferredEpisodeNumber = episode, keyword = videoTitle
-            ) { success, data, fromCache ->
+                bangumi = bangumi, preferredEpisodeNumber = episode, keyword = videoTitle,
+                forceNetwork = forceNetwork
+            )             { success, data, fromCache ->
                 when {
-                    success && !fromCache -> {
-                        Toast.makeText(this@PlayerActivity, "弹幕已刷新", Toast.LENGTH_SHORT).show()
-                    }
+                    success && !fromCache -> Log.d(TAG, "弹幕从网络加载: ${data.size} 条")
                     success && fromCache -> Log.d(TAG, "弹幕从缓存加载: ${data.size} 条")
                     else -> Log.w(TAG, "弹幕获取最终失败")
                 }
@@ -1542,12 +1539,14 @@ class PlayerActivity : AppCompatActivity() {
             if (comments.isEmpty()) {
                 Log.w(TAG, "弹幕列表为空: animeId=$animeId")
                 danmakuManager?.loadDanmaku(null)
-                danmakuSourceState = DanmakuSourceState.FAILED
-                updateDanmakuSourceUI()
+                isRetrying = false
+                Toast.makeText(this@PlayerActivity, "该集暂无弹幕，请更换其他弹幕源", Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
             Log.d(TAG, "加载弹幕成功: ${comments.size} 条")
+            isRetrying = false
+            Toast.makeText(this@PlayerActivity, "弹幕加载成功", Toast.LENGTH_SHORT).show()
             danmakuManager?.loadDanmaku(comments)
             player?.let { p ->
                 danmakuManager?.syncTo(p.currentPosition)
