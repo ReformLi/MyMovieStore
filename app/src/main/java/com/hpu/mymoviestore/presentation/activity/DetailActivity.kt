@@ -789,19 +789,20 @@ class DetailActivity : AppCompatActivity() {
                             downloadScope.launch {
                                 try {
                                     app.downloadRepository.markCompleted(taskId, localFilePath, fileSize)
-                                    // 视频下载完成后触发弹幕下载
-                                    danmakuManager.startDanmakuDownload(
-                                        taskId = taskId,
-                                        title = videoTitle,
-                                        episodeTitle = episode.title,
-                                        dao = MovieDatabase.getInstance(app).downloadTaskDao()
-                                    )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "同步下载完成到数据库失败: ${e.message}")
                                 }
                             }
                         }
                     }
+                )
+
+                // 提交任务后立即开始弹幕下载，不等待视频下载完成
+                danmakuManager.startDanmakuDownload(
+                    taskId = taskId,
+                    title = videoTitle,
+                    episodeTitle = episode.title,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
                 )
 
                 Log.d(TAG, "已提交下载: taskId=$taskId, episode=${episode.title}, m3u8=${m3u8Url.take(60)}")

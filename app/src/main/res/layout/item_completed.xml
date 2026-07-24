@@ -80,6 +80,17 @@
                 android:textSize="12sp"
                 android:visibility="gone" />
 
+            <!-- 弹幕状态 -->
+            <TextView
+                android:id="@+id/tvDanmakuStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="弹幕未下载"
+                android:textColor="@color/colorOnSurfaceSecondary"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
             <!-- 操作按钮行 -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -97,7 +108,7 @@
                     android:layout_marginEnd="4dp"
                     android:minWidth="0dp"
                     android:paddingHorizontal="12dp"
-                    android:text="弹幕下载"
+                    android:text="弹幕重试"
                     android:textColor="@color/colorPrimary"
                     android:textSize="12sp"
                     android:visibility="gone" />

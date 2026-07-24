@@ -149,11 +149,23 @@ class DownloadViewModel : ViewModel() {
                     taskId = entity.taskId,
                     callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
                 )
+                DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                    taskId = entity.taskId,
+                    title = entity.title,
+                    episodeTitle = entity.episodeTitle,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                )
                 Log.d(TAG, "恢复任务：重新提交到 DownloadEngine: $taskId")
             } else {
                 // 确保前台服务已启动（可能因所有任务暂停后服务已停止）
                 ensureDownloadServiceRunning()
                 DownloadEngine.getInstance(app).resumeTask(taskId)
+                DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                    taskId = entity.taskId,
+                    title = entity.title,
+                    episodeTitle = entity.episodeTitle,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                )
             }
         }
     }
@@ -208,6 +220,12 @@ class DownloadViewModel : ViewModel() {
                     episodeTitle = entity.episodeTitle,
                     taskId = entity.taskId,
                     callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
+                )
+                DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                    taskId = entity.taskId,
+                    title = entity.title,
+                    episodeTitle = entity.episodeTitle,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
                 )
                 Log.d(TAG, "重试任务已重新提交到 DownloadEngine: $taskId")
             } else {
@@ -295,6 +313,12 @@ class DownloadViewModel : ViewModel() {
             // 优先恢复引擎中已有的任务，无法找到的则重新提交
             engine.getAllTasks().forEach {
                 engine.resumeTask(it.taskId)
+                DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                    taskId = it.taskId,
+                    title = it.videoTitle,
+                    episodeTitle = it.episodeTitle,
+                    dao = MovieDatabase.getInstance(app).downloadTaskDao()
+                )
             }
             // 处理引擎中不存在的任务（应用重启后）
             activeTasks.forEach { entity ->
@@ -307,6 +331,12 @@ class DownloadViewModel : ViewModel() {
                             episodeTitle = entity.episodeTitle,
                             taskId = entity.taskId,
                             callback = buildDownloadCallback(entity.taskId, entity.title, entity.episodeTitle)
+                        )
+                        DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
+                            taskId = entity.taskId,
+                            title = entity.title,
+                            episodeTitle = entity.episodeTitle,
+                            dao = MovieDatabase.getInstance(app).downloadTaskDao()
                         )
                         Log.d(TAG, "resumeAll：重新提交任务到 DownloadEngine: ${entity.taskId}")
                     } else {
@@ -356,7 +386,7 @@ class DownloadViewModel : ViewModel() {
      * 构建标准的 DownloadCallback，用于恢复/重试任务时将进度和状态同步到数据库。
      *
      * 使用 applicationScope 而非 viewModelScope，确保即使用户离开了 DownloadActivity，
-     * 下载回调仍能正常更新数据库并触发弹幕下载。
+     * 下载回调仍能正常更新数据库。
      */
     private fun buildDownloadCallback(taskId: String, videoTitle: String, episodeTitle: String): DownloadCallback {
         val scope = app.applicationScope
@@ -393,13 +423,6 @@ class DownloadViewModel : ViewModel() {
                 scope.launch(Dispatchers.IO) {
                     try {
                         repository.markCompleted(taskId, localFilePath, fileSize)
-                        // 下载完成后触发弹幕下载
-                        DanmakuDownloadManager.getInstance(app).startDanmakuDownload(
-                            taskId = taskId,
-                            title = videoTitle,
-                            episodeTitle = episodeTitle,
-                            dao = MovieDatabase.getInstance(app).downloadTaskDao()
-                        )
                     } catch (e: Exception) {
                         Log.w(TAG, "同步下载完成到数据库失败: ${e.message}")
                     }

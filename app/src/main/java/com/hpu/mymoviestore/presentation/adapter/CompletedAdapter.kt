@@ -101,6 +101,30 @@ class CompletedAdapter(
                 }
             )
 
+            // 弹幕状态
+            val danmakuStatusText = when (task.danmakuStatus) {
+                DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED -> "等待下载"
+                DownloadTaskEntity.DANMAKU_DOWNLOADING -> "弹幕下载中"
+                DownloadTaskEntity.DANMAKU_COMPLETED -> "弹幕已下载"
+                DownloadTaskEntity.DANMAKU_FAILED -> "弹幕未下载"
+                else -> "弹幕未知状态"
+            }
+            binding.tvDanmakuStatus.text = danmakuStatusText
+            binding.tvDanmakuStatus.visibility = View.VISIBLE
+
+            if (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED) {
+                binding.btnDanmakuDownload.visibility = View.VISIBLE
+                binding.btnDanmakuDownload.setOnClickListener {
+                    if (isMultiSelectMode) {
+                        toggleSelection(task)
+                    } else {
+                        onDanmakuDownload(task)
+                    }
+                }
+            } else {
+                binding.btnDanmakuDownload.visibility = View.GONE
+            }
+
             // 多选复选框
             binding.cbSelect.visibility = if (isMultiSelectMode) View.VISIBLE else View.GONE
             binding.cbSelect.isChecked = selectedIds.contains(task.taskId)
@@ -111,21 +135,6 @@ class CompletedAdapter(
                     selectedIds.remove(task.taskId)
                 }
                 onSelectionChanged(selectedIds.toSet())
-            }
-
-            // 弹幕下载按钮：弹幕失败/未下载时显示
-            val showDanmakuBtn = task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
-                    task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED
-            binding.btnDanmakuDownload.visibility = if (showDanmakuBtn) View.VISIBLE else View.GONE
-            
-            if (showDanmakuBtn) {
-                binding.btnDanmakuDownload.setOnClickListener {
-                    if (isMultiSelectMode) {
-                        toggleSelection(task)
-                    } else {
-                        onDanmakuDownload(task)
-                    }
-                }
             }
 
             // 播放按钮
