@@ -6,10 +6,12 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
+import com.hpu.mymoviestore.data.source.impl.ChongchongVideoSource
 import com.hpu.mymoviestore.data.source.impl.DadatuVideoSource
 import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
 import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.NiuerVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
@@ -77,9 +79,14 @@ class VideoSourceConfigManager(
     companion object {
         private const val TAG = "VideoSourceConfig"
 
+        // ====== 离线 Mock 开关 ======
+        private const val USE_MOCK_CONFIG = false   // 设为 true 则使用内置 JSON，不联网
+        private const val MOCK_JSON =
+            "{\n    \"video_sources\": [\n        {\n            \"source_id\": \"crawler_niuer\",\n            \"name\": \"九二电影网\",\n            \"base_url\": \"https://www.******.com\"\n        }\n    ]\n}"
+
         // ====== 远程配置 URL ======
         private const val CONFIG_URL_DEFAULT =
-            "https:www.******.json"
+            "https://www.******.json"
 
         // ====== SharedPreferences 键 ======
         private const val PREFS_NAME = "video_source_config"
@@ -93,6 +100,7 @@ class VideoSourceConfigManager(
 
         /** 所有已知视频源类，用于反射实例化（替代废弃的 DexFile 扫描） */
         private val knownSourceClasses = listOf(
+            ChongchongVideoSource::class.java,
             CechiVideoSource::class.java,
             DadatuVideoSource::class.java,
             DoujiaoVideoSource::class.java,
@@ -101,6 +109,7 @@ class VideoSourceConfigManager(
             NongminTvVideoSource::class.java,
             NongmingVideoSource::class.java,
             TiantangVideoSource::class.java,
+            NiuerVideoSource::class.java,
             YinghuaVideoSource::class.java
         )
     }
@@ -135,6 +144,28 @@ class VideoSourceConfigManager(
      * - 无缓存 → 启动首次获取（重试 5 次），成功则缓存并构建，失败则标记 FAILED
      */
     fun initConfig() {
+
+        // Mock 优先
+        if (USE_MOCK_CONFIG) {
+            Log.d(TAG, "Mock 模式：使用内置 JSON")
+            try {
+                val configs = parseConfig(MOCK_JSON)
+                if (configs.isNotEmpty()) {
+                    val sources = discoverAndBuildSources(configs, cacheRepository)
+                    applySources(sources)
+                    _state.value = ConfigState.READY
+                    Log.d(TAG, "Mock 加载成功，${sources.size} 个源")
+                } else {
+                    _state.value = ConfigState.FAILED
+                    Log.e(TAG, "Mock JSON 无有效源")
+                }
+            } catch (e: Exception) {
+                _state.value = ConfigState.FAILED
+                Log.e(TAG, "Mock 异常", e)
+            }
+            return
+        }
+
         val cachedJson = prefs.getString(KEY_CACHED_JSON, null)
         if (cachedJson != null) {
             // ── 有缓存：同步加载 ──
