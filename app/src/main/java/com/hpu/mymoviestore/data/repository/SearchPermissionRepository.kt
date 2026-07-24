@@ -29,7 +29,7 @@ class SearchPermissionRepository(
 
     companion object {
         private const val TAG = "SearchPermissionRepo"
-        private const val PERMISSION_URL = "https://cdn.jsdelivr.net/gh/ReformLi/tvbox@refs/heads/main/mytvbox.json"
+        private const val PERMISSION_URL = "https:www.******.json"
         private const val CACHE_KEY = "search_permission_result"
         private const val PREFS_NAME = "search_permission_prefs"
         private const val PREFS_KEY_RESULT = "permission_result"

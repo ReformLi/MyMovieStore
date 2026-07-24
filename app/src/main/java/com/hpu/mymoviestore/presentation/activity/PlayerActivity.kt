@@ -990,8 +990,10 @@ class PlayerActivity : AppCompatActivity() {
         val durationMs = p.duration
         binding.tvLockedPosition.text = formatTime(displayMs)
         binding.tvLockedDuration.text = formatTime(durationMs)
-        val percent = if (durationMs > 0) ((displayMs * 100) / durationMs).toInt() else 0
-        binding.progressBarLocked.progress = percent
+        if (durationMs > 0) {
+            binding.progressBarLocked.max = durationMs.toInt().coerceAtLeast(1)
+            binding.progressBarLocked.progress = displayMs.toInt()
+        }
     }
 
     // ================== 画中画 (PiP) ==================
@@ -1258,8 +1260,15 @@ class PlayerActivity : AppCompatActivity() {
             } else if (gestureDirection == GESTURE_DIR_HORIZONTAL) {
                 seekTargetMs = seekBaseMs
                 wasPlayingBeforeSeek = player?.isPlaying ?: false
+                binding.playerView.useController = false
+                binding.playerView.hideController()
+                binding.topControls.visibility = View.GONE
+                binding.statusContainer.visibility = View.GONE
+                binding.btnLock.visibility = View.GONE
+                binding.lockedProgressBar.visibility = View.VISIBLE
                 player?.pause()
                 danmakuManager?.pause()
+                updateLockedProgress()
                 showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
             }
             // 重置起始位置，使后续 MOVE 基于当前位置计算增量
@@ -1279,6 +1288,7 @@ class PlayerActivity : AppCompatActivity() {
                     lastGestureApplyMs = now
                     player?.seekTo(seekTargetMs)
                     effectivePositionMs = seekTargetMs
+                    updateLockedProgress()
                     showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
                     // 重置基准，使下次 MOVE 基于当前手指位置计算微调
                     seekBaseMs = seekTargetMs
@@ -1312,6 +1322,8 @@ class PlayerActivity : AppCompatActivity() {
                 p.seekTo(finalMs)
                 Log.d(TAG, "快进/快退完成: seekTo=${finalMs}ms")
             }
+            binding.playerView.useController = true
+            binding.lockedProgressBar.visibility = View.GONE
             if (wasPlayingBeforeSeek) {
                 player?.play()
                 danmakuManager?.resume()
