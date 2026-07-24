@@ -159,6 +159,9 @@ class PlayerActivity : AppCompatActivity() {
     private val GESTURE_THROTTLE_MS = 50L
     private var lastGestureApplyMs = 0L
 
+    // 拖拽 seek 时的播放状态（用于在 seek 完成后恢复播放）
+    private var wasPlayingBeforeSeek = false
+
     // 屏幕锁定
     private var isScreenLocked = false
 
@@ -175,7 +178,7 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PlayerActivity"
-        private const val LONG_PRESS_THRESHOLD_MS = 500L  // 拉长到 500ms，避免误触发
+        private const val LONG_PRESS_THRESHOLD_MS = 300L
         private const val SEEK_STEP_MS = 10_000L
         private const val PIP_ACTION_REWIND = "pip_action_rewind"
         private const val PIP_ACTION_PLAY_PAUSE = "pip_action_play_pause"
@@ -1238,40 +1241,51 @@ class PlayerActivity : AppCompatActivity() {
         val absX = abs(deltaX)
         val absY = abs(deltaY)
 
-        // 首次 MOVE：根据方向锁定手势类型
+        // 首次 MOVE：根据方向锁定手势类型，并立即执行对应调节
         if (gestureDirection == 0) {
             if (absX < 15 && absY < 15) return // 忽略微小移动
             gestureDirection = if (absX >= absY) GESTURE_DIR_HORIZONTAL else GESTURE_DIR_VERTICAL
-            // 锁定方向后重置起始位置，避免累计误差
-            longPressStartX = event.x
-            longPressStartY = event.y
             seekBaseMs = player?.currentPosition ?: 0L
             seekTargetMs = seekBaseMs
             Log.d(TAG, "手势方向锁定: ${if (gestureDirection == GESTURE_DIR_HORIZONTAL) "水平(快进)" else "垂直(亮度/音量)"}")
+            // 锁定后立即用已累积的位移执行调节，不浪费这次 MOVE
+            if (gestureDirection == GESTURE_DIR_VERTICAL && absY >= 5) {
+                if (event.x < screenWidth / 2) {
+                    adjustBrightness(deltaY)
+                } else {
+                    adjustVolume(deltaY)
+                }
+            } else if (gestureDirection == GESTURE_DIR_HORIZONTAL) {
+                seekTargetMs = seekBaseMs
+                wasPlayingBeforeSeek = player?.isPlaying ?: false
+                player?.pause()
+                danmakuManager?.pause()
+                showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
+            }
+            // 重置起始位置，使后续 MOVE 基于当前位置计算增量
+            longPressStartX = event.x
+            longPressStartY = event.y
             return
         }
 
         when (gestureDirection) {
             GESTURE_DIR_HORIZONTAL -> {
-                // 水平：快进/快退预览（不真正 seek，只更新 UI）
-                // 滑动距离占屏幕宽度比例 → 最大偏移 90 秒
-                val maxSeekMs = 90_000L
+                val maxSeekMs = player?.duration?.coerceAtLeast(1L) ?: 90_000L
                 val offsetMs = (deltaX / screenWidth * maxSeekMs).toLong()
                 seekTargetMs = (seekBaseMs + offsetMs).coerceIn(0L, player?.duration ?: 0L)
 
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastGestureApplyMs >= GESTURE_THROTTLE_MS) {
                     lastGestureApplyMs = now
-                    val diffSec = (seekTargetMs - seekBaseMs) / 1000
-                    val currentSec = seekTargetMs / 1000
-                    val totalSec = (player?.duration ?: 0L) / 1000
-                    val sign = if (diffSec >= 0) "+" else ""
-                    showGestureTip("$sign${diffSec}s / ${currentSec}s (共${totalSec}s)")
+                    player?.seekTo(seekTargetMs)
+                    effectivePositionMs = seekTargetMs
+                    showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
+                    // 重置基准，使下次 MOVE 基于当前手指位置计算微调
+                    seekBaseMs = seekTargetMs
+                    longPressStartX = event.x
                 }
             }
             GESTURE_DIR_VERTICAL -> {
-                // 垂直：亮度/音量（传入本次 MOVE 的增量 deltaY，每次只调一点）
-                val deltaY = event.y - longPressStartY
                 // 死区：忽略小于 5px 的抖动（华为 HiTouch 会导致微小反方向抖动）
                 if (abs(deltaY) >= 5) {
                     if (event.x < screenWidth / 2) {
@@ -1297,6 +1311,11 @@ class PlayerActivity : AppCompatActivity() {
                 val finalMs = seekTargetMs.coerceIn(0L, p.duration)
                 p.seekTo(finalMs)
                 Log.d(TAG, "快进/快退完成: seekTo=${finalMs}ms")
+            }
+            if (wasPlayingBeforeSeek) {
+                player?.play()
+                danmakuManager?.resume()
+                wasPlayingBeforeSeek = false
             }
         }
         isLongPressing = false
