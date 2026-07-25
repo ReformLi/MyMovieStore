@@ -138,10 +138,10 @@ class DanmakuView(context: Context) : View(context) {
             // 这样弹幕的自驱动时间是连续的，不会每秒跳一次
             val oldVideoTime = videoTimeMs
             videoTimeMs = positionMs
-            // 但如果 diff 太大（>500ms），说明可能有卡顿/缓冲，需要微调 wallClockBase
+            // 但如果 diff 太大（>500ms），说明可能有卡顿/缓冲，需要重新对齐时间基准
             val diff = positionMs - oldVideoTime
             if (Math.abs(diff) > 500) {
-                wallClockBase = System.currentTimeMillis() - positionMs
+                wallClockBase = System.currentTimeMillis()
                 Log.d(TAG, "syncTo: 校准时间偏差 ${diff}ms, position=${positionMs}ms")
             }
         }
@@ -156,13 +156,13 @@ class DanmakuView(context: Context) : View(context) {
 
     fun setPaused(isPaused: Boolean) {
         if (isPaused) {
+            if (paused) return
             paused = true
-            // 冻结当前视频时间
             pausedVideoTimeMs = getCurrentVideoMs()
             Log.d(TAG, "pause at ${pausedVideoTimeMs}ms")
         } else {
+            if (!paused) return
             paused = false
-            // 恢复：以冻结的视频时间为基准，重新设置 wallClockBase
             videoTimeMs = pausedVideoTimeMs
             wallClockBase = System.currentTimeMillis()
             Log.d(TAG, "resume from ${pausedVideoTimeMs}ms")

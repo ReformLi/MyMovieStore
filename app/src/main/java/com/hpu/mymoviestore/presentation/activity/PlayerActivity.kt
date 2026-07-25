@@ -616,7 +616,7 @@ class PlayerActivity : AppCompatActivity() {
         Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
         danmakuManager?.loadDanmaku(comments)
         player?.let { p ->
-            danmakuManager?.syncTo(p.currentPosition)
+            danmakuManager?.seekTo(p.currentPosition)
             if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
         }
         hasLocalDanmaku = true
@@ -1484,11 +1484,6 @@ class PlayerActivity : AppCompatActivity() {
                         danmakuSpinner.setSelection(savedIndex)
                         lastSelectedPosition = savedIndex
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
-                        val animeId = candidateList[savedIndex].animeId
-                        val epNum = extractEpisodeNumber(episode)
-                        Handler(Looper.getMainLooper()).post {
-                            loadDanmakuForAnime(animeId, epNum, forceNetwork)
-                        }
                     }
                 }
                 isRetrying = false
@@ -1500,7 +1495,7 @@ class PlayerActivity : AppCompatActivity() {
                 Handler(Looper.getMainLooper()).postDelayed({ isRetrying = false }, 300)
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             } finally {
-                isRestoringSelection = false
+                Handler(Looper.getMainLooper()).post { isRestoringSelection = false }
             }
         }
     }
@@ -1564,7 +1559,7 @@ class PlayerActivity : AppCompatActivity() {
                 Toast.makeText(this@PlayerActivity, "弹幕加载成功", Toast.LENGTH_SHORT).show()
                 danmakuManager?.loadDanmaku(comments)
                 player?.let { p ->
-                    danmakuManager?.syncTo(p.currentPosition)
+                    danmakuManager?.seekTo(p.currentPosition)
                     if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
                 }
 
