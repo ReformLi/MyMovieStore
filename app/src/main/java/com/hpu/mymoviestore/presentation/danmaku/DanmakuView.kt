@@ -118,15 +118,14 @@ class DanmakuView(context: Context) : View(context) {
 
     /**
      * 同步视频时间（毫秒）
-     * - 正常播放时由 progressSyncRunnable 每秒调用，校准时间基准
-     * - 用户 seek（跳转）时也会调用，此时 reset=true 清空活跃弹幕
+     * - 正常播放时由 progressSyncRunnable 每秒调用，仅校准 videoTimeMs，不重置 wallClockBase
+     * - 用户 seek（跳转）时也会调用，此时 reset=true 清空活跃弹幕并重置时间基准
      */
     fun syncTo(positionMs: Long, reset: Boolean = false) {
-        videoTimeMs = positionMs
-        wallClockBase = System.currentTimeMillis()
-
         if (reset) {
-            // seek 跳转：清空所有活跃弹幕，重新扫描
+            // seek 跳转：重置时间基准，清空所有活跃弹幕，重新扫描
+            videoTimeMs = positionMs
+            wallClockBase = System.currentTimeMillis()
             activeScroll.clear()
             activeTop.clear()
             activeBottom.clear()
@@ -134,6 +133,17 @@ class DanmakuView(context: Context) : View(context) {
             scanIndex = 0
             pendingDanmaku.clear()
             Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
+        } else {
+            // 正常播放同步：只更新 videoTimeMs，保持 wallClockBase 不变
+            // 这样弹幕的自驱动时间是连续的，不会每秒跳一次
+            val oldVideoTime = videoTimeMs
+            videoTimeMs = positionMs
+            // 但如果 diff 太大（>500ms），说明可能有卡顿/缓冲，需要微调 wallClockBase
+            val diff = positionMs - oldVideoTime
+            if (Math.abs(diff) > 500) {
+                wallClockBase = System.currentTimeMillis() - positionMs
+                Log.d(TAG, "syncTo: 校准时间偏差 ${diff}ms, position=${positionMs}ms")
+            }
         }
         invalidate()
     }
@@ -270,6 +280,7 @@ class DanmakuView(context: Context) : View(context) {
             // 超过一屏滚动时间仍未放出行，丢弃
             if (elapsedMs > scrollDurationMs) {
                 pendingIt.remove()
+                addedIds.remove(item.text.hashCode())
                 continue
             }
             val row = findScrollRow(tw, viewWidth, maxRows)
@@ -282,6 +293,7 @@ class DanmakuView(context: Context) : View(context) {
                 } else {
                     // 已经完全移出屏幕，丢弃
                     pendingIt.remove()
+                    addedIds.remove(item.text.hashCode())
                 }
             }
         }
@@ -324,7 +336,10 @@ class DanmakuView(context: Context) : View(context) {
                             addedThisFrame++
                         }
                     } else {
-                        // 行满，加入重试队列
+                        // 行满，加入重试队列（超过容量丢弃最旧的）
+                        if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
+                            pendingDanmaku.removeAt(0)
+                        }
                         pendingDanmaku.add(item to tw)
                         addedIds.add(itemId)
                     }
@@ -357,6 +372,9 @@ class DanmakuView(context: Context) : View(context) {
                             addedThisFrame++
                         }
                     } else {
+                        if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
+                            pendingDanmaku.removeAt(0)
+                        }
                         pendingDanmaku.add(item to tw)
                         addedIds.add(itemId)
                     }
@@ -411,10 +429,11 @@ class DanmakuView(context: Context) : View(context) {
      * 查找可放置的滚动行：
      * 遍历所有行，找到一行使得：
      *   1. 该行弹幕数 < MAX_DANMAKU_PER_ROW
-     *   2. 该行最右侧可见尾部 + 新弹幕宽度 <= 屏幕宽度
-     * 即新弹幕进入屏幕时，不会与该行可见弹幕重叠。
+     *   2. 该行最右侧尾部（含屏幕外右侧的新弹幕）+ 新弹幕宽度 <= 屏幕宽度
+     * 即新弹幕进入屏幕时，不会与该行任何弹幕重叠。
      *
-     * 仅考虑屏幕内可见部分的尾部（ad.x >= screenWidth 的弹幕不计入阻塞）。
+     * 注意：屏幕外右侧（x >= screenWidth）的弹幕也要计入占位，
+     * 否则同一帧内连续添加的多条弹幕会被塞到同一行导致重叠。
      */
     private fun findScrollRow(textWidth: Float, screenWidth: Int, maxRows: Int): Int {
         val sw = screenWidth.toFloat()
@@ -422,11 +441,9 @@ class DanmakuView(context: Context) : View(context) {
         val rowCount = IntArray(maxRows) { 0 }
         for (ad in activeScroll) {
             if (ad.row in 0 until maxRows) {
-                // 只在屏幕内的弹幕才计入尾部阻塞
-                if (ad.x < sw) {
-                    val tail = (ad.x + ad.textWidth).coerceAtMost(sw)
-                    if (tail > rowTailX[ad.row]) rowTailX[ad.row] = tail
-                }
+                // 所有活跃弹幕都计入尾部（含屏幕外右侧的新弹幕）
+                val tail = ad.x + ad.textWidth
+                if (tail > rowTailX[ad.row]) rowTailX[ad.row] = tail
                 rowCount[ad.row]++
             }
         }
@@ -464,7 +481,8 @@ class DanmakuView(context: Context) : View(context) {
 
     companion object {
         private const val TAG = "DanmakuView"
-        private const val FRAME_INTERVAL_MS: Long = 33L  // ~30fps
-        private const val MAX_DANMAKU_PER_ROW = 4
+        private const val FRAME_INTERVAL_MS: Long = 33L
+        private const val MAX_DANMAKU_PER_ROW = 8
+        private const val MAX_PENDING_DANMAKU = 200
     }
 }

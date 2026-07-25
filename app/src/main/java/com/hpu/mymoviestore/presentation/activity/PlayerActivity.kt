@@ -664,12 +664,15 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 val timeDiff = kotlin.math.abs(currentMs - lastSyncPositionMs)
-                if (timeDiff > 3000L && lastSyncPositionMs >= 0) {
-                    danmakuManager?.seekTo(currentMs)
-                } else {
-                    danmakuManager?.syncTo(currentMs)
+                // 暂停时不同步弹幕，避免时间基准被打断
+                if (p.isPlaying) {
+                    if (timeDiff > 3000L && lastSyncPositionMs >= 0) {
+                        danmakuManager?.seekTo(currentMs)
+                    } else {
+                        danmakuManager?.syncTo(currentMs)
+                    }
+                    lastSyncPositionMs = currentMs
                 }
-                lastSyncPositionMs = currentMs
 
                 val delta = currentMs - lastSavedProgressMs
                 if (delta >= progressSaveIntervalMs || delta < 0) {
