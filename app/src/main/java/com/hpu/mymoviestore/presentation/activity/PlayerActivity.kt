@@ -122,10 +122,11 @@ class PlayerActivity : AppCompatActivity() {
         private var isRetrying: Boolean = false
         private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private enum class DanmakuSourceState { IDLE, SEARCHING, SUCCESS, FAILED, NO_CANDIDATES, SHOWING_LOCAL }
-    private var danmakuSourceState = DanmakuSourceState.IDLE
+    private enum class DanmakuSourceState { SEARCHING, SUCCESS, FAILED }
+    private var danmakuSourceState = DanmakuSourceState.SEARCHING
     private var statusAdapter: ArrayAdapter<String>? = null
     private var hasLocalDanmaku = false
+    private var lastSelectedPosition = 0
 
     // PlayerView 内部的弹幕控件引用
     private val switchDanmaku: android.widget.Switch get() =
@@ -571,65 +572,60 @@ class PlayerActivity : AppCompatActivity() {
      * 支持两种格式：
      * 1. 数组格式：直接是 [{"cid":1, "p":"...", "m":"..."}, ...]
      * 2. 对象格式：{"count": N, "comments": [{"cid":1, "p":"...", "m":"..."}, ...]}
+     *
+     * @return 加载成功返回 true，失败返回 false（文件损坏/为空/读取失败）
      */
-    private fun loadDanmakuFromLocalFile(file: File) {
-        danmakuLoadJob?.cancel()
-        danmakuLoadJob = uiScope.launch {
-            val comments = withContext(Dispatchers.IO) {
-                try {
-                    val json = file.readText(Charsets.UTF_8)
-                    val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-                    
-                    // 尝试按数组格式解析（直接是 List<DanmakuComment>）
-                    return@withContext try {
-                        val type = Types.newParameterizedType(List::class.java, DanmakuComment::class.java)
-                        val listAdapter = moshi.adapter<List<DanmakuComment>>(type)
-                        val list = listAdapter.fromJson(json)
-                        Log.d(TAG, "本地弹幕文件解析成功(数组格式): ${list?.size ?: 0} 条")
-                        list ?: emptyList()
-                    } catch (e: Exception) {
-                        // 如果数组解析失败，尝试按对象格式解析（DanmakuCommentResponse）
-                        try {
-                            val objAdapter = moshi.adapter(DanmakuCommentResponse::class.java)
-                            val response = objAdapter.fromJson(json)
-                            Log.d(TAG, "本地弹幕文件解析成功(对象格式): ${response?.comments?.size ?: 0} 条")
-                            response?.comments ?: emptyList()
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "本地弹幕文件解析失败(两种格式都失败): ${e2.message}", e2)
-                            emptyList()
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "本地弹幕文件读取失败: ${e.message}", e)
-                    emptyList()
-                }
-            }
+    private suspend fun loadDanmakuFromLocalFile(file: File): Boolean {
+        val comments = withContext(Dispatchers.IO) {
+            try {
+                val json = file.readText(Charsets.UTF_8)
+                val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
-            if (comments.isEmpty()) {
-                Log.w(TAG, "本地弹幕列表为空")
-                danmakuManager?.loadDanmaku(null)
-                hasLocalDanmaku = false
-                if (danmakuSourceState == DanmakuSourceState.SUCCESS) {
-                    danmakuSpinner.visibility = View.VISIBLE
-                } else {
-                    danmakuSpinner.visibility = View.GONE
+                return@withContext try {
+                    val type = Types.newParameterizedType(List::class.java, DanmakuComment::class.java)
+                    val listAdapter = moshi.adapter<List<DanmakuComment>>(type)
+                    val list = listAdapter.fromJson(json)
+                    Log.d(TAG, "本地弹幕文件解析成功(数组格式): ${list?.size ?: 0} 条")
+                    list ?: emptyList()
+                } catch (e: Exception) {
+                    try {
+                        val objAdapter = moshi.adapter(DanmakuCommentResponse::class.java)
+                        val response = objAdapter.fromJson(json)
+                        Log.d(TAG, "本地弹幕文件解析成功(对象格式): ${response?.comments?.size ?: 0} 条")
+                        response?.comments ?: emptyList()
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "本地弹幕文件解析失败(两种格式都失败): ${e2.message}", e2)
+                        emptyList()
+                    }
                 }
-            } else {
-                Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
-                danmakuManager?.loadDanmaku(comments)
-                player?.let { p ->
-                    danmakuManager?.syncTo(p.currentPosition)
-                    if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
-                }
-                hasLocalDanmaku = true
-                // 如果搜索已成功填充 spinner，保留 SUCCESS 状态让 spinner 可见
-                if (danmakuSourceState != DanmakuSourceState.SUCCESS) {
-                    danmakuSourceState = DanmakuSourceState.SHOWING_LOCAL
-                    updateDanmakuSourceUI()
-                }
-                Log.d(TAG, ">>>> [弹幕加载] 来源=本地文件, ${comments.size} 条")
+            } catch (e: Exception) {
+                Log.e(TAG, "本地弹幕文件读取失败: ${e.message}", e)
+                emptyList()
             }
         }
+
+        if (comments.isEmpty()) {
+            Log.w(TAG, "本地弹幕列表为空或损坏，删除缓存文件: ${file.absolutePath}")
+            hasLocalDanmaku = false
+            withContext(Dispatchers.IO) {
+                try { file.delete() } catch (e: Exception) { Log.w(TAG, "删除损坏弹幕文件失败: ${e.message}") }
+            }
+            return false
+        }
+
+        Log.d(TAG, "加载本地弹幕成功: ${comments.size} 条")
+        danmakuManager?.loadDanmaku(comments)
+        player?.let { p ->
+            danmakuManager?.syncTo(p.currentPosition)
+            if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
+        }
+        hasLocalDanmaku = true
+        if (danmakuSourceState != DanmakuSourceState.SUCCESS) {
+            danmakuSourceState = DanmakuSourceState.SUCCESS
+            updateDanmakuSourceUI()
+        }
+        Log.d(TAG, ">>>> [弹幕加载] 来源=本地文件, ${comments.size} 条")
+        return true
     }
 
     // ================== 进度同步 ==================
@@ -872,7 +868,8 @@ class PlayerActivity : AppCompatActivity() {
             dm.setDanmakuEnabled(isChecked)
         }
 
-        danmakuSpinner.visibility = View.GONE
+        danmakuSpinner.visibility = View.VISIBLE
+        updateDanmakuSourceUI()
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -890,8 +887,8 @@ class PlayerActivity : AppCompatActivity() {
                         retryDanmakuSearch()
                         return
                     }
-                    DanmakuSourceState.SEARCHING, DanmakuSourceState.IDLE, DanmakuSourceState.NO_CANDIDATES, DanmakuSourceState.SHOWING_LOCAL -> {
-                        Log.d(TAG, "弹幕源 onItemSelected 跳过（非 SUCCESS 状态）: state=$danmakuSourceState")
+                    DanmakuSourceState.SEARCHING -> {
+                        Log.d(TAG, "弹幕源 onItemSelected 跳过（搜索中）")
                         return
                     }
                     DanmakuSourceState.SUCCESS -> { /* 继续执行下方选择逻辑 */ }
@@ -902,6 +899,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 val anime = candidateList[position]
                 Log.d(TAG, "用户选择弹幕源: videoId=$videoId, position=$position, animeId=${anime.animeId}, title=${anime.animeTitle}")
+                lastSelectedPosition = position
                 DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
                 lastLoadedAnimeId = 0L
                 val epNum = extractEpisodeNumber(episodeTitle)
@@ -922,12 +920,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateDanmakuSourceUI() {
         when (danmakuSourceState) {
-            DanmakuSourceState.IDLE -> danmakuSpinner.visibility = View.GONE
             DanmakuSourceState.SEARCHING -> updateStatusText("弹幕搜索中...")
             DanmakuSourceState.SUCCESS -> danmakuSpinner.visibility = View.VISIBLE
             DanmakuSourceState.FAILED -> updateStatusText("弹幕搜索失败，点击重试")
-            DanmakuSourceState.NO_CANDIDATES -> danmakuSpinner.visibility = View.GONE
-            DanmakuSourceState.SHOWING_LOCAL -> updateStatusText("本地弹幕已加载")
         }
     }
 
@@ -1437,10 +1432,8 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
 
-        if (!hasLocalDanmaku) {
-            danmakuSourceState = DanmakuSourceState.SEARCHING
-            updateDanmakuSourceUI()
-        }
+        danmakuSourceState = DanmakuSourceState.SEARCHING
+        updateDanmakuSourceUI()
 
         danmakuSearchJob = uiScope.launch {
             Log.d(TAG, "launchDanmakuSearch: videoId=$videoId, title='$title', forceNetwork=$forceNetwork")
@@ -1449,10 +1442,8 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
-                    if (!hasLocalDanmaku) {
-                        danmakuSourceState = DanmakuSourceState.NO_CANDIDATES
-                        updateDanmakuSourceUI()
-                    }
+                    danmakuSourceState = DanmakuSourceState.FAILED
+                    updateStatusText("未找到弹幕源，点击重试")
                     isRetrying = false
                     return@launch
                 }
@@ -1491,6 +1482,7 @@ class PlayerActivity : AppCompatActivity() {
                     Log.d(TAG, "弹幕源恢复: savedIndex=$savedIndex")
                     if (savedIndex >= 0) {
                         danmakuSpinner.setSelection(savedIndex)
+                        lastSelectedPosition = savedIndex
                         Log.d(TAG, "Spinner 选中保存的弹幕源: position=$savedIndex, animeId=$savedAnimeId")
                         val animeId = candidateList[savedIndex].animeId
                         val epNum = extractEpisodeNumber(episode)
@@ -1503,11 +1495,9 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
-                if (!hasLocalDanmaku) {
-                    danmakuSourceState = DanmakuSourceState.FAILED
-                    updateDanmakuSourceUI()
-                    Handler(Looper.getMainLooper()).postDelayed({ isRetrying = false }, 300)
-                }
+                danmakuSourceState = DanmakuSourceState.FAILED
+                updateDanmakuSourceUI()
+                Handler(Looper.getMainLooper()).postDelayed({ isRetrying = false }, 300)
                 Toast.makeText(this@PlayerActivity, "弹幕搜索失败", Toast.LENGTH_SHORT).show()
             } finally {
                 isRestoringSelection = false
@@ -1522,61 +1512,83 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         val previousAnimeId = lastLoadedAnimeId
+        val previousSelectedPosition = lastSelectedPosition
         lastLoadedAnimeId = animeId
 
         danmakuLoadJob?.cancel()
         danmakuLoadJob = uiScope.launch {
-            Log.d(TAG, ">>>> [弹幕加载] animeId=$animeId, episode='$episode', forceNetwork=$forceNetwork")
+            try {
+                Log.d(TAG, ">>>> [弹幕加载] animeId=$animeId, episode='$episode', forceNetwork=$forceNetwork")
 
-            // 步1: 始终优先检查本地弹幕文件（即使 forceNetwork=true）
-            val localFile = File(filesDir, "Danmaku/${animeId}_${episode}.json")
-            if (localFile.exists()) {
-                Log.d(TAG, ">>>> [弹幕加载] 来源=本地文件, 路径=${localFile.absolutePath}")
-                loadDanmakuFromLocalFile(localFile)
+                val localFile = File(filesDir, "Danmaku/${animeId}_${episode}.json")
+                if (localFile.exists()) {
+                    Log.d(TAG, ">>>> [弹幕加载] 本地文件存在, 路径=${localFile.absolutePath}")
+                    val localOk = loadDanmakuFromLocalFile(localFile)
+                    if (localOk) {
+                        isRetrying = false
+                        return@launch
+                    }
+                    Log.d(TAG, ">>>> [弹幕加载] 本地文件损坏已删除, 继续尝试缓存/网络")
+                } else {
+                    Log.d(TAG, ">>>> [弹幕加载] 本地文件不存在, 尝试 SharedPreferences 缓存/网络")
+                }
+
+                val bangumi = danmakuRepository.fetchBangumi(animeId = animeId, keyword = videoTitle)
+                if (bangumi == null) {
+                    Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
+                    lastLoadedAnimeId = previousAnimeId
+                    rollbackSpinnerSelection(previousSelectedPosition)
+                    isRetrying = false
+                    Toast.makeText(this@PlayerActivity, "该弹幕源暂时无法获取弹幕", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                selectedBangumi = bangumi
+                Log.d(TAG, "获取 bangumi: title=${bangumi.animeTitle}, episodes=${bangumi.episodes.size}")
+
+                val comments = danmakuRepository.fetchDanmakuComments(
+                    bangumi = bangumi, preferredEpisodeNumber = episode, keyword = videoTitle,
+                    forceNetwork = forceNetwork
+                )
+
+                if (comments.isEmpty()) {
+                    Log.w(TAG, "弹幕列表为空: animeId=$animeId")
+                    lastLoadedAnimeId = previousAnimeId
+                    rollbackSpinnerSelection(previousSelectedPosition)
+                    isRetrying = false
+                    Toast.makeText(this@PlayerActivity, "该集暂无弹幕，请更换其他弹幕源", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                Log.d(TAG, ">>>> [弹幕加载] 来源=缓存/网络, ${comments.size} 条, 已写入本地文件")
                 isRetrying = false
-                return@launch
-            }
-            Log.d(TAG, ">>>> [弹幕加载] 本地文件不存在, 尝试 SharedPreferences 缓存/网络")
+                Toast.makeText(this@PlayerActivity, "弹幕加载成功", Toast.LENGTH_SHORT).show()
+                danmakuManager?.loadDanmaku(comments)
+                player?.let { p ->
+                    danmakuManager?.syncTo(p.currentPosition)
+                    if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
+                }
 
-            // 步2: 获取 bangumi
-            val bangumi = danmakuRepository.fetchBangumi(animeId = animeId, keyword = videoTitle)
-            if (bangumi == null) {
-                Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
+                hasLocalDanmaku = true
+
+                saveDanmakuToLocalFile(animeId, episode, comments)
+            } catch (e: Exception) {
+                Log.e(TAG, "弹幕加载异常: ${e.message}", e)
                 lastLoadedAnimeId = previousAnimeId
+                rollbackSpinnerSelection(previousSelectedPosition)
                 isRetrying = false
-                Toast.makeText(this@PlayerActivity, "该弹幕源暂时无法获取弹幕", Toast.LENGTH_SHORT).show()
-                return@launch
+                Toast.makeText(this@PlayerActivity, "弹幕加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
             }
-            selectedBangumi = bangumi
-            Log.d(TAG, "获取 bangumi: title=${bangumi.animeTitle}, episodes=${bangumi.episodes.size}")
-
-            // 步3: 获取弹幕列表
-            val comments = danmakuRepository.fetchDanmakuComments(
-                bangumi = bangumi, preferredEpisodeNumber = episode, keyword = videoTitle,
-                forceNetwork = forceNetwork
-            )
-
-            if (comments.isEmpty()) {
-                Log.w(TAG, "弹幕列表为空: animeId=$animeId")
-                lastLoadedAnimeId = previousAnimeId
-                isRetrying = false
-                Toast.makeText(this@PlayerActivity, "该集暂无弹幕，请更换其他弹幕源", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-
-            Log.d(TAG, ">>>> [弹幕加载] 来源=SharedPreferences缓存/网络, ${comments.size} 条, 已写入本地文件")
-            isRetrying = false
-            Toast.makeText(this@PlayerActivity, "弹幕加载成功", Toast.LENGTH_SHORT).show()
-            danmakuManager?.loadDanmaku(comments)
-            player?.let { p ->
-                danmakuManager?.syncTo(p.currentPosition)
-                if (switchDanmaku.isChecked) danmakuManager?.ensureStarted()
-            }
-
-            hasLocalDanmaku = true
-
-            saveDanmakuToLocalFile(animeId, episode, comments)
         }
+    }
+
+    private fun rollbackSpinnerSelection(previousPosition: Int) {
+        if (candidateList.isEmpty()) return
+        val rollbackTo = if (previousPosition in candidateList.indices) previousPosition else 0
+        isRestoringSelection = true
+        danmakuSpinner.setSelection(rollbackTo)
+        lastSelectedPosition = rollbackTo
+        isRestoringSelection = false
+        Log.d(TAG, "弹幕源切换失败，回滚到 position=$rollbackTo")
     }
 
     /**
@@ -1876,33 +1888,31 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
-        var localDanmakuLoaded = false
-        if (!danmakuFilePath.isNullOrEmpty()) {
-            val danmakuFile = File(danmakuFilePath)
-            if (danmakuFile.exists()) {
-                loadDanmakuFromLocalFile(danmakuFile)
-                localDanmakuLoaded = true
-            } else {
-                Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath")
-            }
-        }
-        // 回退查找 {animeId}_{episode}.json（来自之前在线播放的缓存）
-        if (!localDanmakuLoaded) {
-            val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
-            if (savedAnimeId != 0L) {
-                val epNum = extractEpisodeNumber(episodeTitle)
-                val fallbackFile = File(filesDir, "Danmaku/${savedAnimeId}_${epNum}.json")
-                if (fallbackFile.exists()) {
-                    Log.d(TAG, ">>>> [弹幕加载] 来源=本地文件(回退), 路径=${fallbackFile.absolutePath}")
-                    loadDanmakuFromLocalFile(fallbackFile)
-                    localDanmakuLoaded = true
+        uiScope.launch {
+            var localDanmakuLoaded = false
+            if (!danmakuFilePath.isNullOrEmpty()) {
+                val danmakuFile = File(danmakuFilePath)
+                if (danmakuFile.exists()) {
+                    localDanmakuLoaded = loadDanmakuFromLocalFile(danmakuFile)
+                } else {
+                    Log.w(TAG, "本地弹幕文件不存在: $danmakuFilePath")
                 }
             }
             if (!localDanmakuLoaded) {
-                Log.d(TAG, "本地弹幕文件不存在, 尝试在线搜索弹幕")
+                val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
+                if (savedAnimeId != 0L) {
+                    val epNum = extractEpisodeNumber(episodeTitle)
+                    val fallbackFile = File(filesDir, "Danmaku/${savedAnimeId}_${epNum}.json")
+                    if (fallbackFile.exists()) {
+                        Log.d(TAG, ">>>> [弹幕加载] 来源=本地文件(回退), 路径=${fallbackFile.absolutePath}")
+                        localDanmakuLoaded = loadDanmakuFromLocalFile(fallbackFile)
+                    }
+                }
+                if (!localDanmakuLoaded) {
+                    Log.d(TAG, "本地弹幕文件不存在, 尝试在线搜索弹幕")
+                }
             }
+            launchDanmakuSearch(videoTitle, episodeTitle)
         }
-        // 始终执行搜索以填充弹幕源 spinner（即使已加载本地文件）
-        launchDanmakuSearch(videoTitle, episodeTitle)
     }
 }
