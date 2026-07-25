@@ -88,6 +88,9 @@ class DanmakuView(context: Context) : View(context) {
     // 已扫描到的弹幕索引（避免每帧都从头遍历）
     private var scanIndex: Int = 0
 
+    // 因行满而未能放置的弹幕（每帧重试）
+    private val pendingDanmaku: ArrayList<Pair<DanmakuItem, Float>> = ArrayList()
+
     // ================== 对外 API ==================
 
     fun loadDanmakuComments(comments: List<DanmakuComment>?) {
@@ -97,6 +100,7 @@ class DanmakuView(context: Context) : View(context) {
         activeBottom.clear()
         addedIds.clear()
         scanIndex = 0
+        pendingDanmaku.clear()
 
         if (comments.isNullOrEmpty()) {
             danmakuList = emptyList()
@@ -128,6 +132,7 @@ class DanmakuView(context: Context) : View(context) {
             activeBottom.clear()
             addedIds.clear()
             scanIndex = 0
+            pendingDanmaku.clear()
             Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
         }
         invalidate()
@@ -164,6 +169,7 @@ class DanmakuView(context: Context) : View(context) {
         activeTop.clear()
         activeBottom.clear()
         addedIds.clear()
+        pendingDanmaku.clear()
     }
 
     // ================== 内部时间 ==================
@@ -243,10 +249,42 @@ class DanmakuView(context: Context) : View(context) {
                 addedIds.remove(ad.item.text.hashCode())
             }
         }
-        // 固定弹幕：超时后移除
+        // 固定弹幕：超时后移除，同时清理 addedIds
         val expireBeforeMs = currentVideoMs - fixedDurationMs
-        activeTop.removeAll { it.startAtMs < expireBeforeMs }
-        activeBottom.removeAll { it.startAtMs < expireBeforeMs }
+        activeTop.removeAll { ad ->
+            val expired = ad.startAtMs < expireBeforeMs
+            if (expired) addedIds.remove(ad.item.text.hashCode())
+            expired
+        }
+        activeBottom.removeAll { ad ->
+            val expired = ad.startAtMs < expireBeforeMs
+            if (expired) addedIds.remove(ad.item.text.hashCode())
+            expired
+        }
+
+        // ========== 1.5 重试之前因行满未放置的弹幕 ==========
+        val pendingIt = pendingDanmaku.iterator()
+        while (pendingIt.hasNext()) {
+            val (item, tw) = pendingIt.next()
+            val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+            // 超过一屏滚动时间仍未放出行，丢弃
+            if (elapsedMs > scrollDurationMs) {
+                pendingIt.remove()
+                continue
+            }
+            val row = findScrollRow(tw, viewWidth, maxRows)
+            if (row >= 0) {
+                val initialX = viewWidth.toFloat() + tw
+                val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                if (x + tw > 0) {
+                    activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
+                    pendingIt.remove()
+                } else {
+                    // 已经完全移出屏幕，丢弃
+                    pendingIt.remove()
+                }
+            }
+        }
 
         // ========== 2. 将新弹幕加入活跃列表 ==========
         // 回退 scanIndex（如果 seek 导致时间回退）
@@ -285,6 +323,10 @@ class DanmakuView(context: Context) : View(context) {
                             addedIds.add(itemId)
                             addedThisFrame++
                         }
+                    } else {
+                        // 行满，加入重试队列
+                        pendingDanmaku.add(item to tw)
+                        addedIds.add(itemId)
                     }
                 }
                 in listOf(5, 7) -> {
@@ -314,6 +356,9 @@ class DanmakuView(context: Context) : View(context) {
                             addedIds.add(itemId)
                             addedThisFrame++
                         }
+                    } else {
+                        pendingDanmaku.add(item to tw)
+                        addedIds.add(itemId)
                     }
                 }
             }
@@ -352,8 +397,7 @@ class DanmakuView(context: Context) : View(context) {
         for (ad in activeBottom) {
             paint.color = ad.item.color
             val x = (viewWidth - ad.textWidth) / 2.0f
-            val displayRow = activeBottom.size - 1 - ad.row
-            val y = bottomBaseY - displayRow * rowHeightPx - rowHeightPx * 0.2f
+            val y = bottomBaseY - (ad.row + 1) * rowHeightPx + rowHeightPx * 0.2f
             if (y > 0) canvas.drawText(ad.item.text, x, y, paint)
         }
 
@@ -365,24 +409,31 @@ class DanmakuView(context: Context) : View(context) {
 
     /**
      * 查找可放置的滚动行：
-     * 遍历所有行，找到一行使得：该行最后一个弹幕的尾部 + 新弹幕宽度 <= 屏幕宽度
-     * 即新弹幕飞到屏幕右边缘时，不会与该行最后一个弹幕重叠
+     * 遍历所有行，找到一行使得：
+     *   1. 该行弹幕数 < MAX_DANMAKU_PER_ROW
+     *   2. 该行最右侧可见尾部 + 新弹幕宽度 <= 屏幕宽度
+     * 即新弹幕进入屏幕时，不会与该行可见弹幕重叠。
+     *
+     * 仅考虑屏幕内可见部分的尾部（ad.x >= screenWidth 的弹幕不计入阻塞）。
      */
     private fun findScrollRow(textWidth: Float, screenWidth: Int, maxRows: Int): Int {
         val sw = screenWidth.toFloat()
-        // 计算每行最右侧弹幕的 x + textWidth
         val rowTailX = FloatArray(maxRows) { -1f }
+        val rowCount = IntArray(maxRows) { 0 }
         for (ad in activeScroll) {
             if (ad.row in 0 until maxRows) {
-                val tail = ad.x + ad.textWidth
-                if (tail > rowTailX[ad.row]) rowTailX[ad.row] = tail
+                // 只在屏幕内的弹幕才计入尾部阻塞
+                if (ad.x < sw) {
+                    val tail = (ad.x + ad.textWidth).coerceAtMost(sw)
+                    if (tail > rowTailX[ad.row]) rowTailX[ad.row] = tail
+                }
+                rowCount[ad.row]++
             }
         }
-        // 选择尾部最靠左的行（最空闲的行）
         var bestRow = -1
         var bestTail = Float.MAX_VALUE
         for (row in 0 until maxRows) {
-            if (rowTailX[row] + textWidth <= sw) {
+            if (rowCount[row] < MAX_DANMAKU_PER_ROW && rowTailX[row] + textWidth <= sw) {
                 if (rowTailX[row] < bestTail) {
                     bestTail = rowTailX[row]
                     bestRow = row
@@ -414,5 +465,6 @@ class DanmakuView(context: Context) : View(context) {
     companion object {
         private const val TAG = "DanmakuView"
         private const val FRAME_INTERVAL_MS: Long = 33L  // ~30fps
+        private const val MAX_DANMAKU_PER_ROW = 4
     }
 }
