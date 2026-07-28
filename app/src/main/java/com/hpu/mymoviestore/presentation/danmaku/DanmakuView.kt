@@ -134,16 +134,8 @@ class DanmakuView(context: Context) : View(context) {
             pendingDanmaku.clear()
             Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
         } else {
-            // 正常播放同步：只更新 videoTimeMs，保持 wallClockBase 不变
-            // 这样弹幕的自驱动时间是连续的，不会每秒跳一次
-            val oldVideoTime = videoTimeMs
             videoTimeMs = positionMs
-            // 但如果 diff 太大（>500ms），说明可能有卡顿/缓冲，需要重新对齐时间基准
-            val diff = positionMs - oldVideoTime
-            if (Math.abs(diff) > 500) {
-                wallClockBase = System.currentTimeMillis()
-                Log.d(TAG, "syncTo: 校准时间偏差 ${diff}ms, position=${positionMs}ms")
-            }
+            wallClockBase = System.currentTimeMillis()
         }
         invalidate()
     }

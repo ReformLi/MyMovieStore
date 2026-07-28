@@ -78,6 +78,7 @@ Desktop.ini
 *.hprof
 example/
 .workbuddy
+AGENTS.md
 
 # ==================== 9. 版本控制特定文件 ====================
 .vscode/
