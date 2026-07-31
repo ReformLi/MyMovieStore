@@ -667,8 +667,10 @@ class PlayerActivity : AppCompatActivity() {
                     } else {
                         danmakuManager?.syncTo(currentMs)
                     }
-                    lastSyncPositionMs = currentMs
                 }
+                // 即使缓冲/暂停也持续更新 lastSyncPositionMs，
+                // 避免恢复播放后 timeDiff 过大误触发 seekTo 清空弹幕
+                lastSyncPositionMs = currentMs
 
                 val delta = currentMs - lastSavedProgressMs
                 if (delta >= progressSaveIntervalMs || delta < 0) {

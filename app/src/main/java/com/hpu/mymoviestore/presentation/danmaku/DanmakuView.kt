@@ -30,6 +30,7 @@ class DanmakuView(context: Context) : View(context) {
     // ================== 数据模型 ==================
 
     data class DanmakuItem(
+        val cid: Long,         // 弹幕唯一ID（用于实例去重）
         val timeSec: Float,    // 出现时间（秒）
         val type: Int,         // 1/2/3/6=滚动；4/8=底部；5/7=顶部
         val textSizePx: Float, // 文本大小（像素）
@@ -68,8 +69,11 @@ class DanmakuView(context: Context) : View(context) {
     private val activeTop: ArrayList<ActiveDanmaku> = ArrayList()
     private val activeBottom: ArrayList<ActiveDanmaku> = ArrayList()
 
-    // 去重：已添加过的弹幕文本哈希（避免同一时刻重复添加）
-    private val addedIds: HashSet<Int> = HashSet()
+    // 实例去重：正在显示/排队的弹幕cid集合，防止同一条弹幕被重复添加
+    private val onScreenCids: HashSet<Long> = HashSet()
+
+    // 文本时间窗口去重：同文本在窗口内只显示一条，避免刷屏挤占真弹幕
+    private val recentTextTimes: HashMap<String, Long> = HashMap()
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -91,6 +95,19 @@ class DanmakuView(context: Context) : View(context) {
     // 因行满而未能放置的弹幕（每帧重试）
     private val pendingDanmaku: ArrayList<Pair<DanmakuItem, Float>> = ArrayList()
 
+    // ================== 去重辅助 ==================
+
+    /** 标记弹幕已添加（实例去重 + 文本时间窗口去重） */
+    private fun markAdded(item: DanmakuItem, currentVideoMs: Long) {
+        onScreenCids.add(item.cid)
+        recentTextTimes[item.text] = currentVideoMs
+    }
+
+    /** 标记弹幕已离开屏幕（仅清除实例去重，文本窗口由时间自动过期） */
+    private fun markRemoved(item: DanmakuItem) {
+        onScreenCids.remove(item.cid)
+    }
+
     // ================== 对外 API ==================
 
     fun loadDanmakuComments(comments: List<DanmakuComment>?) {
@@ -98,7 +115,8 @@ class DanmakuView(context: Context) : View(context) {
         activeScroll.clear()
         activeTop.clear()
         activeBottom.clear()
-        addedIds.clear()
+        onScreenCids.clear()
+        recentTextTimes.clear()
         scanIndex = 0
         pendingDanmaku.clear()
 
@@ -129,8 +147,11 @@ class DanmakuView(context: Context) : View(context) {
             activeScroll.clear()
             activeTop.clear()
             activeBottom.clear()
-            addedIds.clear()
-            scanIndex = 0
+            onScreenCids.clear()
+            recentTextTimes.clear()
+            // 直接用二分查找定位 scanIndex，避免从 0 逐条扫描过期弹幕造成卡顿
+            val windowStartSec = (positionMs - scrollDurationMs) / 1000.0f
+            scanIndex = if (danmakuList.isNotEmpty()) binaryFindFirst(danmakuList, windowStartSec) else 0
             pendingDanmaku.clear()
             Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
         } else {
@@ -170,7 +191,8 @@ class DanmakuView(context: Context) : View(context) {
         activeScroll.clear()
         activeTop.clear()
         activeBottom.clear()
-        addedIds.clear()
+        onScreenCids.clear()
+        recentTextTimes.clear()
         pendingDanmaku.clear()
     }
 
@@ -203,7 +225,11 @@ class DanmakuView(context: Context) : View(context) {
         // 十进制 0xRRGGBB → 带 alpha = FF
         val color = 0xFF000000.toInt() or (colorInt.toInt() and 0xFFFFFF)
 
-        return DanmakuItem(timeSec, type, size, color, text)
+        // cid 去重键：API 返回 cid 则直接用，否则用文本+时间生成伪唯一键
+        val cid = if (comment.cid > 0) comment.cid
+            else (text.hashCode().toLong() and 0x7FFFFFFFL) * 1_000_000L + (timeSec.toLong() * 1000L)
+
+        return DanmakuItem(cid, timeSec, type, size, color, text)
     }
 
     // ================== 绘制 ==================
@@ -248,19 +274,19 @@ class DanmakuView(context: Context) : View(context) {
             val ad = itrScroll.next()
             if (ad.x + ad.textWidth < 0) {
                 itrScroll.remove()
-                addedIds.remove(ad.item.text.hashCode())
+                markRemoved(ad.item)
             }
         }
-        // 固定弹幕：超时后移除，同时清理 addedIds
+        // 固定弹幕：超时后移除，同时清理 onScreenCids
         val expireBeforeMs = currentVideoMs - fixedDurationMs
         activeTop.removeAll { ad ->
             val expired = ad.startAtMs < expireBeforeMs
-            if (expired) addedIds.remove(ad.item.text.hashCode())
+            if (expired) markRemoved(ad.item)
             expired
         }
         activeBottom.removeAll { ad ->
             val expired = ad.startAtMs < expireBeforeMs
-            if (expired) addedIds.remove(ad.item.text.hashCode())
+            if (expired) markRemoved(ad.item)
             expired
         }
 
@@ -272,21 +298,32 @@ class DanmakuView(context: Context) : View(context) {
             // 超过一屏滚动时间仍未放出行，丢弃
             if (elapsedMs > scrollDurationMs) {
                 pendingIt.remove()
-                addedIds.remove(item.text.hashCode())
+                markRemoved(item)
                 continue
             }
             val row = findScrollRow(tw, viewWidth, maxRows)
             if (row >= 0) {
                 val initialX = viewWidth.toFloat() + tw
-                val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+                val effectiveMs = elapsedMs.coerceAtMost(MAX_ENTRY_DELAY_MS)
+                val x = initialX - scrollSpeedPxPerMs * effectiveMs
                 if (x + tw > 0) {
                     activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
                     pendingIt.remove()
                 } else {
                     // 已经完全移出屏幕，丢弃
                     pendingIt.remove()
-                    addedIds.remove(item.text.hashCode())
+                    markRemoved(item)
                 }
+            }
+        }
+
+        // ========== 1.8 清理过期的文本去重窗口 ==========
+        if (recentTextTimes.isNotEmpty()) {
+            val expireTextBefore = currentVideoMs - DEDUP_WINDOW_MS
+            val textItr = recentTextTimes.entries.iterator()
+            while (textItr.hasNext()) {
+                if (textItr.next().value < expireTextBefore) textItr.remove()
             }
         }
 
@@ -302,8 +339,14 @@ class DanmakuView(context: Context) : View(context) {
             val item = danmakuList[scanIndex]
             if (item.timeSec > nowSec) break
 
-            val itemId = item.text.hashCode()
-            if (addedIds.contains(itemId)) {
+            // 实例去重：同一cid已在屏/排队中，跳过
+            if (onScreenCids.contains(item.cid)) {
+                scanIndex++
+                continue
+            }
+            // 文本时间窗口去重：同文本在窗口内只放一条
+            val lastShownMs = recentTextTimes[item.text]
+            if (lastShownMs != null && currentVideoMs - lastShownMs < DEDUP_WINDOW_MS) {
                 scanIndex++
                 continue
             }
@@ -319,12 +362,14 @@ class DanmakuView(context: Context) : View(context) {
                     if (row >= 0) {
                         // 计算弹幕已经"飞行"了多久（当前视频时间 - 弹幕出现时间）
                         val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                        // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+                        val effectiveMs = elapsedMs.coerceAtMost(MAX_ENTRY_DELAY_MS)
                         // 初始 x = viewWidth + tw，每毫秒移动 scrollSpeedPxPerMs
                         val initialX = viewWidth.toFloat() + tw
-                        val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                        val x = initialX - scrollSpeedPxPerMs * effectiveMs
                         if (x + tw > 0) {  // 还没完全移出屏幕才添加
                             activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
-                            addedIds.add(itemId)
+                            markAdded(item, currentVideoMs)
                             addedThisFrame++
                         }
                     } else {
@@ -333,14 +378,14 @@ class DanmakuView(context: Context) : View(context) {
                             pendingDanmaku.removeAt(0)
                         }
                         pendingDanmaku.add(item to tw)
-                        addedIds.add(itemId)
+                        markAdded(item, currentVideoMs)
                     }
                 }
                 in listOf(5, 7) -> {
                     val row = findFreeRow(activeTop, maxRows)
                     if (row >= 0) {
                         activeTop.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
-                        addedIds.add(itemId)
+                        markAdded(item, currentVideoMs)
                         addedThisFrame++
                     }
                 }
@@ -348,7 +393,7 @@ class DanmakuView(context: Context) : View(context) {
                     val row = findFreeRow(activeBottom, maxRows)
                     if (row >= 0) {
                         activeBottom.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
-                        addedIds.add(itemId)
+                        markAdded(item, currentVideoMs)
                         addedThisFrame++
                     }
                 }
@@ -356,11 +401,12 @@ class DanmakuView(context: Context) : View(context) {
                     val row = findScrollRow(tw, viewWidth, maxRows)
                     if (row >= 0) {
                         val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                        val effectiveMs = elapsedMs.coerceAtMost(MAX_ENTRY_DELAY_MS)
                         val initialX = viewWidth.toFloat()
-                        val x = initialX - scrollSpeedPxPerMs * elapsedMs
+                        val x = initialX - scrollSpeedPxPerMs * effectiveMs
                         if (x + tw > 0) {
                             activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
-                            addedIds.add(itemId)
+                            markAdded(item, currentVideoMs)
                             addedThisFrame++
                         }
                     } else {
@@ -368,7 +414,7 @@ class DanmakuView(context: Context) : View(context) {
                             pendingDanmaku.removeAt(0)
                         }
                         pendingDanmaku.add(item to tw)
-                        addedIds.add(itemId)
+                        markAdded(item, currentVideoMs)
                     }
                 }
             }
@@ -476,5 +522,9 @@ class DanmakuView(context: Context) : View(context) {
         private const val FRAME_INTERVAL_MS: Long = 33L
         private const val MAX_DANMAKU_PER_ROW = 8
         private const val MAX_PENDING_DANMAKU = 200
+        /** 同文本去重窗口（毫秒）：相同文本在此窗口内只显示一条 */
+        private const val DEDUP_WINDOW_MS: Long = 3_000L
+        /** 弹幕允许的最大入场延迟（毫秒）：超过此延迟的弹幕从右边缘开始，避免从中间出现 */
+        private const val MAX_ENTRY_DELAY_MS: Long = 500L
     }
 }
