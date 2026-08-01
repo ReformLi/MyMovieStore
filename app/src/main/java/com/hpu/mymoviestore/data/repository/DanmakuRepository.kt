@@ -253,9 +253,13 @@ class DanmakuRepository(
                 Log.d(TAG, "按标题匹配到: ${matchedByTitle.episodeTitle}")
                 return matchedByTitle
             }
+            // 匹配失败：不再静默回落第一集，返回 null 由上层提示"该集暂无弹幕"
+            Log.w(TAG, "未匹配到对应集数(num=$num)，不回落第一集")
+            return null
         }
-        return eps.firstOrNull().also {
-            Log.d(TAG, "使用默认集（第一集）: ${it?.episodeTitle}")
+        // 无集数偏好：仅单集时直接用，多集无法确定返回 null
+        return eps.singleOrNull().also {
+            Log.d(TAG, if (it != null) "无集数偏好且仅有单集，使用: ${it.episodeTitle}" else "无集数偏好且多集，无法匹配")
         }
     }
 
