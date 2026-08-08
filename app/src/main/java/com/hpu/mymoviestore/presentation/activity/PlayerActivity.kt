@@ -44,8 +44,6 @@ import java.util.Date
 import java.util.Locale
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
-import com.hpu.mymoviestore.data.database.MovieDatabase
-import com.hpu.mymoviestore.data.download.DanmakuDownloadManager
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
@@ -905,7 +903,8 @@ class PlayerActivity : AppCompatActivity() {
                 DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
                 lastLoadedAnimeId = 0L
                 val epNum = extractEpisodeNumber(episodeTitle)
-                loadDanmakuForAnime(anime.animeId, epNum, forceNetwork = true)
+                // 缓存优先：命中弹幕列表缓存时不再联网；无缓存时仍会联网获取
+                loadDanmakuForAnime(anime.animeId, epNum)
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -1430,7 +1429,12 @@ class PlayerActivity : AppCompatActivity() {
         return match?.value ?: title
     }
 
-    private fun launchDanmakuSearch(title: String, episode: String, forceNetwork: Boolean = false) {
+    private fun launchDanmakuSearch(
+        title: String,
+        episode: String,
+        forceNetwork: Boolean = false,
+        quietOnFailure: Boolean = false
+    ) {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
 
@@ -1444,6 +1448,12 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕搜索完成: ${candidates.size} 条, videoId=$videoId")
 
                 if (candidates.isEmpty()) {
+                    if (quietOnFailure) {
+                        Log.d(TAG, "弹幕源搜索结果为空，已加载本地弹幕，保持当前弹幕不变")
+                        updateStatusText("已加载本地弹幕")
+                        isRetrying = false
+                        return@launch
+                    }
                     danmakuSourceState = DanmakuSourceState.FAILED
                     updateStatusText("未找到弹幕源，点击重试")
                     isRetrying = false
@@ -1492,6 +1502,12 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "弹幕源列表已更新: ${candidates.size} 个源")
             } catch (e: Exception) {
                 Log.e(TAG, "弹幕搜索失败: ${e.message}", e)
+                if (quietOnFailure) {
+                    Log.d(TAG, "已加载本地弹幕，弹幕源搜索失败不再提示: ${e.message}")
+                    updateStatusText("已加载本地弹幕")
+                    isRetrying = false
+                    return@launch
+                }
                 danmakuSourceState = DanmakuSourceState.FAILED
                 updateDanmakuSourceUI()
                 Handler(Looper.getMainLooper()).postDelayed({ isRetrying = false }, 300)
@@ -1872,17 +1888,10 @@ class PlayerActivity : AppCompatActivity() {
                     effectivePositionMs = resumeFromMs
                     Log.d(TAG, "离线播放：续播 ${task.playPositionMs}ms")
                 }
-                val masterEnabled = DanmakuPrefs(this@PlayerActivity).isMasterEnabled()
-                if (masterEnabled && (task.danmakuStatus == DownloadTaskEntity.DANMAKU_FAILED ||
-                        task.danmakuStatus == DownloadTaskEntity.DANMAKU_NOT_DOWNLOADED)) {
-                    Log.d(TAG, "离线播放：弹幕状态=${task.danmakuStatus}，触发后台重试下载")
-                    DanmakuDownloadManager.getInstance(this@PlayerActivity).retryDanmaku(
-                        taskId = taskId,
-                        title = task.title,
-                        episodeTitle = task.episodeTitle,
-                        dao = MovieDatabase.getInstance(this@PlayerActivity).downloadTaskDao()
-                    )
-                }
+                // 弹幕统一由播放器自己的加载流水线处理（本地文件→回退文件→在线搜索），
+                // 不再触发后台 DanmakuDownloadManager 重试，避免两条流水线并发竞争、
+                // 失败时覆盖数据库状态并清空已有弹幕文件路径。
+                // 在线搜索成功后 saveDanmakuToLocalFile 会写回数据库为已完成。
             }
         }
         uiScope.launch {
@@ -1909,7 +1918,9 @@ class PlayerActivity : AppCompatActivity() {
                     Log.d(TAG, "本地弹幕文件不存在, 尝试在线搜索弹幕")
                 }
             }
-            launchDanmakuSearch(videoTitle, episodeTitle)
+            // 本地弹幕已加载时，在线搜索仅用于补充弹幕源列表；失败时静默处理，
+            // 不影响已加载的弹幕，也不提示搜索失败
+            launchDanmakuSearch(videoTitle, episodeTitle, quietOnFailure = localDanmakuLoaded)
         }
     }
 }

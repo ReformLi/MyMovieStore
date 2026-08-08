@@ -219,7 +219,7 @@ data/
 | `M3u8Parser` | M3U8 文件解析器，提取 `.ts` 分片 URL 列表 |
 | `DownloadService` | 前台服务，管理下载生命周期，显示通知和控制动作 |
 | `DownloadNotificationManager` | 下载通知管理，创建进度通知、更新进度、处理用户操作（暂停/恢复/取消） |
-| `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试 |
+| `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试；失败路径保留已有弹幕文件路径，不清空已下载的弹幕 |
 
 **降低影响策略**（位于 `DownloadEngine` 常量配置）：
 
@@ -239,7 +239,7 @@ data/
 | `PlayHistoryRepository` | 播放历史去重写入（含 sourceName）、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
-| `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制 |
+| `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制；空弹幕列表不写缓存，空缓存视为未命中 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
 | `SearchPermissionRepository` | 应用启动时后台静默检查搜索权限 |
 
@@ -386,6 +386,8 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 | `getBangumi(animeId)` | 获取番剧分集信息 |
 | `getDanmakuComments(episodeId)` | 获取某集的弹幕列表 |
 
+错误处理策略：服务端错误（HTTP 非 2xx、响应体为空、JSON 解析失败）抛出 `IOException`，由上层 `DanmakuRepository.retryWithBackoff` 重试；业务级空结果（`success=false` 或确实无数据）返回空列表/null，调用方按"无弹幕"处理，不触发重试。
+
 ### `RequestRateLimiter`
 
 `RequestRateLimiter` 是每个播放源独立的限流调度器。
@@ -482,7 +484,7 @@ presentation/
 |----------|------|
 | `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
 | `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示；**提供下载入口**，支持单集下载和批量下载 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录** |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录**；离线弹幕统一由播放器加载流水线处理（任务弹幕文件 → 弹幕源索引文件回退 → 在线搜索），不再触发后台弹幕重试，本地弹幕已加载时在线搜索失败静默处理 |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 | `DownloadActivity` | **下载管理页面**，使用 ViewPager2 分"下载中"和"已完成"两个标签页；首次进入时若下载中列表为空自动切换到已完成；支持多选删除 |
 

@@ -25,7 +25,9 @@ import java.util.concurrent.TimeUnit
  * 注：
  * - Base URL 支持通过 setBaseUrl() 覆盖（默认 http://192.168.1.1:4567）
  * - 弹幕内容采用 JSON 格式 {"count":..., "comments":[{"p":"...", "text":"..."}]}
- * - 若网络异常或 API 未启动，返回 null，调用方应按"无弹幕"处理
+ * - 服务端错误（HTTP 非 2xx、响应体为空、JSON 解析失败）抛出 IOException，
+ *   由上层重试机制（DanmakuRepository.retryWithBackoff）处理；
+ *   业务级空结果（success=false 或确实无数据）返回空列表/null，调用方按"无弹幕"处理
  */
 class DanmakuApi {
 
@@ -63,15 +65,13 @@ class DanmakuApi {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                Log.w(TAG, "搜索请求失败: code=${response.code}")
-                return emptyList()
+                throw IOException("搜索请求失败: code=${response.code}")
             }
-            val body = response.body?.string() ?: return emptyList()
+            val body = response.body?.string() ?: throw IOException("搜索响应体为空")
             val parsed = try {
                 searchAdapter.fromJson(body)
             } catch (t: Throwable) {
-                Log.w(TAG, "搜索响应解析失败: ${t.message}")
-                null
+                throw IOException("搜索响应解析失败: ${t.message}", t)
             }
             val result = if (parsed != null && parsed.success && parsed.errorCode == 0) {
                 parsed.animes
@@ -95,15 +95,13 @@ class DanmakuApi {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                Log.w(TAG, "bangumi 请求失败: code=${response.code}")
-                return null
+                throw IOException("bangumi 请求失败: code=${response.code}")
             }
-            val body = response.body?.string() ?: return null
+            val body = response.body?.string() ?: throw IOException("bangumi 响应体为空")
             val parsed = try {
                 bangumiAdapter.fromJson(body)
             } catch (t: Throwable) {
-                Log.w(TAG, "bangumi 响应解析失败: ${t.message}")
-                null
+                throw IOException("bangumi 响应解析失败: ${t.message}", t)
             }
             if (parsed != null && parsed.success && parsed.errorCode == 0 && parsed.bangumi != null) {
                 Log.d(
@@ -129,18 +127,16 @@ class DanmakuApi {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                Log.w(TAG, "弹幕请求失败: code=${response.code}")
-                return emptyList()
+                throw IOException("弹幕请求失败: code=${response.code}")
             }
-            val body = response.body?.string() ?: return emptyList()
+            val body = response.body?.string() ?: throw IOException("弹幕响应体为空")
             Log.d(TAG, "弹幕 JSON 下载成功: ${body.length.toDouble() / 1024} KB")
             Log.d(TAG, "原始 JSON 前 300 字符: ${body.take(300)}")
 
             val parsed = try {
                 commentAdapter.fromJson(body)
             } catch (t: Throwable) {
-                Log.w(TAG, "弹幕 JSON 解析失败: ${t.message}")
-                null
+                throw IOException("弹幕 JSON 解析失败: ${t.message}", t)
             }
 
             if (parsed != null) {

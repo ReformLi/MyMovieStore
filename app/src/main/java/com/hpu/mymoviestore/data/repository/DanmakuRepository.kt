@@ -163,9 +163,9 @@ class DanmakuRepository(
 
         Log.d(TAG, "选中集数: episodeId=${episode.episodeId}, number=${episode.episodeNumber}")
 
-        // 先读缓存
+        // 先读缓存（空列表视为未命中，避免历史遗留的空缓存污染导致一直拿不到弹幕）
         if (!forceNetwork) {
-            cache?.getCommentsCache(episode.episodeId)?.let {
+            cache?.getCommentsCache(episode.episodeId)?.takeIf { it.isNotEmpty() }?.let {
                 Log.d(TAG, "弹幕缓存命中: episodeId=${episode.episodeId}, ${it.size} 条")
                 onResult?.invoke(true, it, true)
                 return it
@@ -188,7 +188,7 @@ class DanmakuRepository(
         val data = result ?: emptyList()
         val fromCache = false
 
-        if (success) {
+        if (success && data.isNotEmpty()) {
             Log.d(TAG, "弹幕来自网络: episodeId=${episode.episodeId}, ${data.size} 条")
             val expireAt = cache?.getUnifiedExpireAt(keyword, bangumi.animeId)
                 ?: (System.currentTimeMillis() + 24 * 60 * 60 * 1000)

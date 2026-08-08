@@ -186,11 +186,14 @@ class DanmakuDownloadManager private constructor(context: Context) {
         dao: DownloadTaskDao,
         isManualRetry: Boolean
     ) {
+        // 先读取已有的弹幕文件路径：任何失败路径都必须保留它，
+        // 避免把之前已下载好的弹幕文件路径清空
+        val existingDanmakuPath = dao.getByTaskId(taskId)?.danmakuFilePath.orEmpty()
         try {
             dao.updateDanmakuStatus(
                 taskId = taskId,
                 danmakuStatus = DownloadTaskEntity.DANMAKU_DOWNLOADING,
-                danmakuFilePath = "",
+                danmakuFilePath = existingDanmakuPath,
                 danmakuError = ""
             )
             notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_DOWNLOADING, null)
@@ -214,14 +217,14 @@ class DanmakuDownloadManager private constructor(context: Context) {
                 jobMap.remove(taskId)
                 Log.d(TAG, "弹幕下载成功: taskId=$taskId, path=${result.filePath}")
             } else {
-                handleDownloadFailure(taskId, title, episodeTitle, dao, result.error, isManualRetry)
+                handleDownloadFailure(taskId, title, episodeTitle, dao, result.error, isManualRetry, existingDanmakuPath)
             }
         } catch (e: CancellationException) {
             Log.d(TAG, "弹幕下载被取消: taskId=$taskId")
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "弹幕下载异常: taskId=$taskId, error=${e.message}", e)
-            handleDownloadFailure(taskId, title, episodeTitle, dao, e.message ?: "未知异常", isManualRetry)
+            handleDownloadFailure(taskId, title, episodeTitle, dao, e.message ?: "未知异常", isManualRetry, existingDanmakuPath)
         }
     }
 
@@ -236,7 +239,8 @@ class DanmakuDownloadManager private constructor(context: Context) {
         episodeTitle: String,
         dao: DownloadTaskDao,
         error: String,
-        isManualRetry: Boolean
+        isManualRetry: Boolean,
+        existingDanmakuPath: String
     ) {
         if (isManualRetry) {
             Log.w(TAG, "手动重试失败: taskId=$taskId, error=$error")
@@ -246,7 +250,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
             dao.updateDanmakuStatus(
                 taskId = taskId,
                 danmakuStatus = DownloadTaskEntity.DANMAKU_FAILED,
-                danmakuFilePath = "",
+                danmakuFilePath = existingDanmakuPath,
                 danmakuError = error
             )
             notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_FAILED, error)
@@ -262,7 +266,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
             dao.updateDanmakuStatus(
                 taskId = taskId,
                 danmakuStatus = DownloadTaskEntity.DANMAKU_RETRYING,
-                danmakuFilePath = "",
+                danmakuFilePath = existingDanmakuPath,
                 danmakuError = "第${currentRetry + 1}次重试中，${BASE_RETRY_DELAY_MS / 1000}s后执行"
             )
             notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_RETRYING, null)
@@ -273,7 +277,7 @@ class DanmakuDownloadManager private constructor(context: Context) {
             dao.updateDanmakuStatus(
                 taskId = taskId,
                 danmakuStatus = DownloadTaskEntity.DANMAKU_FAILED,
-                danmakuFilePath = "",
+                danmakuFilePath = existingDanmakuPath,
                 danmakuError = "重试${MAX_AUTO_RETRY}次后仍失败: $error"
             )
             notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_FAILED, "重试${MAX_AUTO_RETRY}次后仍失败: $error")
