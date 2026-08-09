@@ -523,7 +523,7 @@ presentation/
 | 组件 | 说明 |
 |------|------|
 | `DanmakuManager` | 弹幕渲染管理器，负责弹幕的显示、隐藏、同步、seek、暂停/恢复 |
-| `DanmakuView` | 弹幕绘制 View，基于 Canvas 实现弹幕滚动渲染 |
+| `DanmakuView` | 弹幕绘制 View，基于 Canvas 实现弹幕滚动渲染；扫描游标每帧按时间窗口二分重定位（时间跳变异常可自愈），墙钟前跳（NTP 校时等）时跳过当帧弹幕添加等待校准 |
 | `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化 |
 
 ## 资源结构
