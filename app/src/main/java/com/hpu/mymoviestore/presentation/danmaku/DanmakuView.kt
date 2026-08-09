@@ -17,6 +17,8 @@ import kotlin.math.max
  *  - onDraw 每帧通过 System.currentTimeMillis() 推算当前视频时间，无需外部每秒同步
  *  - syncTo() 仅在播放器 seek（跳转）时调用，用来校准时间基准
  *  - 暂停/恢复通过 pause()/resume() 控制，内部自动处理时间偏移
+ *  - 扫描游标每帧按时间窗口二分重定位，时间跳变等异常可自动恢复
+ *  - 墙钟跳变防御：系统时间前跳（NTP 校时等）时跳过当帧弹幕添加，等待校准恢复
  *
  * p 字段格式（逗号分隔）：
  * - 0: 出现时间（秒）
@@ -83,6 +85,9 @@ class DanmakuView(context: Context) : View(context) {
     // 行高（动态计算）
     private var rowHeightPx: Float = 40f
     private var lastDrawWallMs: Long = System.currentTimeMillis()
+
+    // 上一帧的墙钟偏移（now - wallClockBase），用于检测系统时间前跳（NTP 校时等）
+    private var lastWallDeltaMs: Long = -1L
 
     // 滚动：10 秒内从屏幕右侧滚到左侧
     private val scrollDurationMs: Long = 10_000L
@@ -264,6 +269,20 @@ class DanmakuView(context: Context) : View(context) {
         val currentVideoMs = getCurrentVideoMs()
         val nowSec = currentVideoMs / 1000.0f
 
+        // 时钟跳变防御：正常播放每帧推进约 33ms，秒级校准的漂移远低于该阈值。
+        // 若墙钟偏移帧间增量超过阈值，说明系统时间被前跳（NTP 校时/网络切换等），
+        // 弹幕时钟已被污染——跳过本帧添加，避免按跳变后的时间烧穿弹幕列表，
+        // 等待秒级校准重建基准后自动恢复
+        if (!paused) {
+            val wallDelta = nowWallMs - wallClockBase
+            if (lastWallDeltaMs >= 0 && wallDelta - lastWallDeltaMs > MAX_CLOCK_JUMP_MS) {
+                Log.w(TAG, "检测到时钟跳变 (wallDelta ${lastWallDeltaMs}ms -> ${wallDelta}ms)，跳过本帧弹幕添加")
+                postInvalidateDelayed(FRAME_INTERVAL_MS)
+                return
+            }
+            lastWallDeltaMs = wallDelta
+        }
+
         // 滚动速度：每毫秒移动 viewWidth / scrollDurationMs 像素
         val scrollSpeedPxPerMs = viewWidth.toFloat() / scrollDurationMs
 
@@ -328,10 +347,15 @@ class DanmakuView(context: Context) : View(context) {
         }
 
         // ========== 2. 将新弹幕加入活跃列表 ==========
-        // 回退 scanIndex（如果 seek 导致时间回退）
+        // 每帧按窗口起点二分重定位 scanIndex（O(log n)）：游标完全由当前时间决定。
+        // 旧实现仅在 scanIndex < danmakuList.size 时才允许回退，游标一旦因时间跳变等
+        // 异常被烧穿到列表末尾就永久失效，弹幕再也无法恢复；无条件重定位可自愈。
         val windowStartSec = (currentVideoMs - scrollDurationMs) / 1000.0f
-        if (scanIndex > 0 && scanIndex < danmakuList.size && danmakuList[scanIndex].timeSec > nowSec) {
-            scanIndex = binaryFindFirst(danmakuList, windowStartSec)
+        if (danmakuList.isNotEmpty()) {
+            val targetIndex = binaryFindFirst(danmakuList, windowStartSec)
+            if (targetIndex < scanIndex) {
+                scanIndex = targetIndex
+            }
         }
 
         var addedThisFrame = 0
@@ -375,7 +399,8 @@ class DanmakuView(context: Context) : View(context) {
                     } else {
                         // 行满，加入重试队列（超过容量丢弃最旧的）
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
-                            pendingDanmaku.removeAt(0)
+                            val evicted = pendingDanmaku.removeAt(0)
+                            markRemoved(evicted.first)
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
@@ -411,7 +436,8 @@ class DanmakuView(context: Context) : View(context) {
                         }
                     } else {
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
-                            pendingDanmaku.removeAt(0)
+                            val evicted = pendingDanmaku.removeAt(0)
+                            markRemoved(evicted.first)
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
@@ -526,5 +552,7 @@ class DanmakuView(context: Context) : View(context) {
         private const val DEDUP_WINDOW_MS: Long = 3_000L
         /** 弹幕允许的最大入场延迟（毫秒）：超过此延迟的弹幕从右边缘开始，避免从中间出现 */
         private const val MAX_ENTRY_DELAY_MS: Long = 500L
+        /** 墙钟偏移帧间增量阈值（毫秒）：超过则判定系统时间前跳，跳过本帧弹幕添加 */
+        private const val MAX_CLOCK_JUMP_MS: Long = 3_000L
     }
 }
