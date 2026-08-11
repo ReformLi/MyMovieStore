@@ -100,6 +100,9 @@ class DanmakuView(context: Context) : View(context) {
     // 因行满而未能放置的弹幕（每帧重试）
     private val pendingDanmaku: ArrayList<Pair<DanmakuItem, Float>> = ArrayList()
 
+    // 因 pending 溢出被弹掉的弹幕（下帧给一次重试机会，找不到行则永久丢弃，不干扰扫描节奏）
+    private val retryDanmaku: ArrayList<Pair<DanmakuItem, Float>> = ArrayList()
+
     // ================== 去重辅助 ==================
 
     /** 标记弹幕已添加（实例去重 + 文本时间窗口去重） */
@@ -124,6 +127,7 @@ class DanmakuView(context: Context) : View(context) {
         recentTextTimes.clear()
         scanIndex = 0
         pendingDanmaku.clear()
+        retryDanmaku.clear()
 
         if (comments.isNullOrEmpty()) {
             danmakuList = emptyList()
@@ -158,6 +162,7 @@ class DanmakuView(context: Context) : View(context) {
             val windowStartSec = (positionMs - scrollDurationMs) / 1000.0f
             scanIndex = if (danmakuList.isNotEmpty()) binaryFindFirst(danmakuList, windowStartSec) else 0
             pendingDanmaku.clear()
+            retryDanmaku.clear()
             Log.d(TAG, "syncTo: seek to ${positionMs}ms, 清空活跃弹幕")
         } else {
             videoTimeMs = positionMs
@@ -199,6 +204,7 @@ class DanmakuView(context: Context) : View(context) {
         onScreenCids.clear()
         recentTextTimes.clear()
         pendingDanmaku.clear()
+        retryDanmaku.clear()
     }
 
     // ================== 内部时间 ==================
@@ -337,6 +343,39 @@ class DanmakuView(context: Context) : View(context) {
             }
         }
 
+        // ========== 1.6 重试被 evict 的弹幕（只给一次机会，避免旧弹幕反复占行） ==========
+        if (retryDanmaku.isNotEmpty()) {
+            val retryIt = retryDanmaku.iterator()
+            while (retryIt.hasNext()) {
+                val (item, tw) = retryIt.next()
+                val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                // 已超滚动窗口，永久丢弃
+                if (elapsedMs > scrollDurationMs) {
+                    retryIt.remove()
+                    markRemoved(item)
+                    continue
+                }
+                var placed = false
+                val row = findScrollRow(tw, viewWidth, maxRows)
+                if (row >= 0) {
+                    // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+                    val effectiveMs = elapsedMs.coerceAtMost(MAX_ENTRY_DELAY_MS)
+                    val initialX = viewWidth.toFloat() + tw
+                    val x = initialX - scrollSpeedPxPerMs * effectiveMs
+                    if (x + tw > 0) {
+                        activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
+                        markAdded(item, currentVideoMs)
+                        placed = true
+                    }
+                }
+                if (!placed) {
+                    // 无可用行或已完全移出屏幕：一次机会用完，永久丢弃，不阻塞新弹幕
+                    retryIt.remove()
+                    markRemoved(item)
+                }
+            }
+        }
+
         // ========== 1.8 清理过期的文本去重窗口 ==========
         if (recentTextTimes.isNotEmpty()) {
             val expireTextBefore = currentVideoMs - DEDUP_WINDOW_MS
@@ -401,9 +440,10 @@ class DanmakuView(context: Context) : View(context) {
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
                             val evicted = pendingDanmaku.removeAt(0)
                             markRemoved(evicted.first)
-                            // 回退 scanIndex 到弹掉弹幕的位置，使其下一帧被重新扫描，防止永久丢失
-                            val backIndex = binaryFindFirst(danmakuList, evicted.first.timeSec)
-                            if (backIndex < scanIndex) scanIndex = backIndex
+                            // 不回退 scanIndex（避免旧弹幕复活挤占新弹幕），改为下帧给一次重试机会
+                            if (retryDanmaku.size < MAX_RETRY_DANMAKU) {
+                                retryDanmaku.add(evicted)
+                            }
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
@@ -441,9 +481,10 @@ class DanmakuView(context: Context) : View(context) {
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
                             val evicted = pendingDanmaku.removeAt(0)
                             markRemoved(evicted.first)
-                            // 回退 scanIndex 到弹掉弹幕的位置，使其下一帧被重新扫描，防止永久丢失
-                            val backIndex = binaryFindFirst(danmakuList, evicted.first.timeSec)
-                            if (backIndex < scanIndex) scanIndex = backIndex
+                            // 不回退 scanIndex（避免旧弹幕复活挤占新弹幕），改为下帧给一次重试机会
+                            if (retryDanmaku.size < MAX_RETRY_DANMAKU) {
+                                retryDanmaku.add(evicted)
+                            }
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
@@ -554,6 +595,8 @@ class DanmakuView(context: Context) : View(context) {
         private const val FRAME_INTERVAL_MS: Long = 33L
         private const val MAX_DANMAKU_PER_ROW = 8
         private const val MAX_PENDING_DANMAKU = 200
+        /** pending 溢出被弹掉的弹幕最多保留条数（下帧只给一次重试机会） */
+        private const val MAX_RETRY_DANMAKU = 20
         /** 同文本去重窗口（毫秒）：相同文本在此窗口内只显示一条 */
         private const val DEDUP_WINDOW_MS: Long = 3_000L
         /** 弹幕允许的最大入场延迟（毫秒）：超过此延迟的弹幕从右边缘开始，避免从中间出现 */
