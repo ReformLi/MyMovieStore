@@ -1761,9 +1761,9 @@ class PlayerActivity : AppCompatActivity() {
         val res = when {
             pct <= 10 -> R.drawable.ic_battery_bolt
             pct <= 20 -> R.drawable.ic_battery_1
-            pct <= 40 -> R.drawable.ic_battery_2
-            pct <= 60 -> R.drawable.ic_battery_3
-            pct <= 80 -> R.drawable.ic_battery_4
+            pct <= 50 -> R.drawable.ic_battery_2
+            pct <= 70 -> R.drawable.ic_battery_3
+            pct <= 90 -> R.drawable.ic_battery_4
             else -> R.drawable.ic_battery_5
         }
         binding.ivBattery.setImageResource(res)
