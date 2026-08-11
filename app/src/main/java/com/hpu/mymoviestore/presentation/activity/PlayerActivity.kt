@@ -1546,13 +1546,21 @@ class PlayerActivity : AppCompatActivity() {
                     Log.d(TAG, ">>>> [弹幕加载] 本地文件不存在, 尝试 SharedPreferences 缓存/网络")
                 }
 
-                val bangumi = danmakuRepository.fetchBangumi(animeId = animeId, keyword = videoTitle)
+                val bangumi = danmakuRepository.fetchBangumi(
+                    animeId = animeId, keyword = videoTitle,
+                    preferredEpisodeNumber = episode,
+                    danmakuFileDir = File(filesDir, "Danmaku")
+                )
                 if (bangumi == null) {
-                    Log.w(TAG, "bangumi 为空，无法加载弹幕: animeId=$animeId")
+                    Log.w(TAG, "bangumi 为空（animeId 可能已失效），级联刷新搜索缓存重新搜索")
                     lastLoadedAnimeId = previousAnimeId
                     rollbackSpinnerSelection(previousSelectedPosition)
                     isRetrying = false
-                    Toast.makeText(this@PlayerActivity, "该弹幕源暂时无法获取弹幕", Toast.LENGTH_SHORT).show()
+                    // 级联：清除搜索缓存 + 清除已保存的 animeId → 强制重新搜索
+                    danmakuRepository.clearTaskCache(videoTitle)
+                    DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, 0L)
+                    launchDanmakuSearch(videoTitle, episodeTitle, forceNetwork = true)
+                    Toast.makeText(this@PlayerActivity, "弹幕源已更新，请重新选择", Toast.LENGTH_SHORT).show()
                     return@launch
                 }
                 selectedBangumi = bangumi

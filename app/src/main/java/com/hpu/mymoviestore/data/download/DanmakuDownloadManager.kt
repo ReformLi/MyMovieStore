@@ -334,7 +334,11 @@ class DanmakuDownloadManager private constructor(context: Context) {
 
         // 2. 获取分集信息
         Log.d(TAG, "[$taskId] 获取分集信息: animeId=${anime.animeId}")
-        val bangumi = repository.fetchBangumi(anime.animeId, keyword = title)
+        val bangumi = repository.fetchBangumi(
+            anime.animeId, keyword = title,
+            preferredEpisodeNumber = episodeTitle,
+            danmakuFileDir = danmakuDir
+        )
         if (bangumi == null) {
             val error = "获取分集信息失败: animeId=${anime.animeId}"
             Log.w(TAG, "[$taskId] $error")

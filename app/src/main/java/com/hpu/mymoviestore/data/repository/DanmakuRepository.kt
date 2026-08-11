@@ -2,6 +2,7 @@ package com.hpu.mymoviestore.data.repository
 
 import android.content.Context
 import android.util.Log
+import java.io.File
 import java.io.IOException
 import com.hpu.mymoviestore.data.cache.DanmakuCache
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
@@ -109,13 +110,22 @@ class DanmakuRepository(
     suspend fun fetchBangumi(
         animeId: Long,
         keyword: String = "",
+        preferredEpisodeNumber: String? = null,
+        danmakuFileDir: File? = null,
         onResult: ((Boolean, DanmakuBangumi?, Boolean) -> Unit)? = null
     ): DanmakuBangumi? {
         // 先读缓存
-        cache?.getBangumiCache(animeId)?.let {
-            Log.d(TAG, "分集缓存命中: animeId=$animeId")
-            onResult?.invoke(true, it, true)
-            return it
+        val cached = cache?.getBangumiCache(animeId)
+        if (cached != null) {
+            // 指定了集数时：检查该源下当前集是否有可用弹幕（comment 缓存或本地文件）
+            // 若弹幕不可用，跳过缓存，联网刷新获取最新 episodeId
+            if (preferredEpisodeNumber != null && !hasDanmakuAvailable(animeId, preferredEpisodeNumber, danmakuFileDir, cached)) {
+                Log.d(TAG, "分集缓存命中但当前集无可用弹幕，跳过缓存联网刷新: animeId=$animeId")
+            } else {
+                Log.d(TAG, "分集缓存命中: animeId=$animeId")
+                onResult?.invoke(true, cached, true)
+                return cached
+            }
         }
 
         // 网络请求（带重试）
@@ -264,6 +274,43 @@ class DanmakuRepository(
     }
 
     // ================== 清除任务缓存 ==================
+
+    /**
+     * 检查指定 anime 的当前集是否有可用弹幕（comment 缓存 或 本地文件）
+     * 用于缓存命中时判断是否需要跳过缓存联网刷新
+     */
+    private fun hasDanmakuAvailable(
+        animeId: Long,
+        preferredEpisodeNumber: String,
+        danmakuFileDir: File?,
+        cachedBangumi: DanmakuBangumi
+    ): Boolean {
+        val episode = pickEpisode(cachedBangumi, preferredEpisodeNumber)
+        if (episode == null) {
+            Log.d(TAG, "hasDanmakuAvailable: pickEpisode 未匹配到集数，无法检查弹幕可用性")
+            return false
+        }
+
+        // 1. 检查 comment 缓存（非空才认为可用）
+        val hasCommentCache = cache?.getCommentsCache(episode.episodeId)?.isNotEmpty() == true
+        if (hasCommentCache) {
+            Log.d(TAG, "hasDanmakuAvailable: comment 缓存命中 episodeId=${episode.episodeId}")
+            return true
+        }
+
+        // 2. 检查本地弹幕文件 Danmaku/{animeId}_{episodeNum}.json
+        if (danmakuFileDir != null) {
+            val num = Regex("\\d+").find(preferredEpisodeNumber)?.value ?: preferredEpisodeNumber.trim()
+            val localFile = File(danmakuFileDir, "${animeId}_${num}.json")
+            if (localFile.exists()) {
+                Log.d(TAG, "hasDanmakuAvailable: 本地弹幕文件存在 ${localFile.name}")
+                return true
+            }
+        }
+
+        Log.d(TAG, "hasDanmakuAvailable: 当前集无可用弹幕 (animeId=$animeId, episodeId=${episode.episodeId})")
+        return false
+    }
 
     /**
      * 清除指定任务的弹幕缓存（搜索、分集、弹幕）
