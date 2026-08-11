@@ -401,6 +401,9 @@ class DanmakuView(context: Context) : View(context) {
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
                             val evicted = pendingDanmaku.removeAt(0)
                             markRemoved(evicted.first)
+                            // 回退 scanIndex 到弹掉弹幕的位置，使其下一帧被重新扫描，防止永久丢失
+                            val backIndex = binaryFindFirst(danmakuList, evicted.first.timeSec)
+                            if (backIndex < scanIndex) scanIndex = backIndex
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
@@ -438,6 +441,9 @@ class DanmakuView(context: Context) : View(context) {
                         if (pendingDanmaku.size >= MAX_PENDING_DANMAKU) {
                             val evicted = pendingDanmaku.removeAt(0)
                             markRemoved(evicted.first)
+                            // 回退 scanIndex 到弹掉弹幕的位置，使其下一帧被重新扫描，防止永久丢失
+                            val backIndex = binaryFindFirst(danmakuList, evicted.first.timeSec)
+                            if (backIndex < scanIndex) scanIndex = backIndex
                         }
                         pendingDanmaku.add(item to tw)
                         markAdded(item, currentVideoMs)
