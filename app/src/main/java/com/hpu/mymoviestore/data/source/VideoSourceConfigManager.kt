@@ -80,9 +80,17 @@ class VideoSourceConfigManager(
         private const val TAG = "VideoSourceConfig"
 
         // ====== 离线 Mock 开关 ======
-        private const val USE_MOCK_CONFIG = false   // 设为 true 则使用内置 JSON，不联网
+        private const val USE_MOCK_CONFIG = false   // 设为 true 则使用内置 JSON， 不联网,仅测试用
         private const val MOCK_JSON =
-            "{\n    \"video_sources\": [\n        {\n            \"source_id\": \"crawler_niuer\",\n            \"name\": \"九二电影网\",\n            \"base_url\": \"https://www.******.com\"\n        }\n    ]\n}"
+            "{\n    " +
+                "\"video_sources\": [\n        " +
+                    "{\n            " +
+                        "\"source_id\": \"crawler_niuer\",\n            " +
+                        "\"name\": \"电影网\",\n            " +
+                        "\"base_url\": \"https://www.******.com\"\n        " +
+                    "}\n    " +
+                "]\n" +
+            "}"
 
         // ====== 远程配置 URL ======
         private const val CONFIG_URL_DEFAULT =
