@@ -5,10 +5,13 @@ import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
+import com.hpu.mymoviestore.data.source.impl.BaJieVideoSource
 import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
 import com.hpu.mymoviestore.data.source.impl.ChongchongVideoSource
+import com.hpu.mymoviestore.data.source.impl.DaMaoVideoSource
 import com.hpu.mymoviestore.data.source.impl.DadatuVideoSource
 import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
+import com.hpu.mymoviestore.data.source.impl.HanSenVideoSource
 import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
 import com.hpu.mymoviestore.data.source.impl.NiuerVideoSource
@@ -85,7 +88,7 @@ class VideoSourceConfigManager(
             "{\n    " +
                 "\"video_sources\": [\n        " +
                     "{\n            " +
-                        "\"source_id\": \"crawler_niuer\",\n            " +
+                        "\"source_id\": \"crawler_video\",\n            " +
                         "\"name\": \"电影网\",\n            " +
                         "\"base_url\": \"https://www.******.com\"\n        " +
                     "}\n    " +
@@ -118,7 +121,10 @@ class VideoSourceConfigManager(
             NongmingVideoSource::class.java,
             TiantangVideoSource::class.java,
             NiuerVideoSource::class.java,
-            YinghuaVideoSource::class.java
+            YinghuaVideoSource::class.java,
+            DaMaoVideoSource::class.java,
+            HanSenVideoSource::class.java,
+            BaJieVideoSource::class.java
         )
     }
 
