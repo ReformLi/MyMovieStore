@@ -283,6 +283,7 @@ class DanmakuView(context: Context) : View(context) {
             val wallDelta = nowWallMs - wallClockBase
             if (lastWallDeltaMs >= 0 && wallDelta - lastWallDeltaMs > MAX_CLOCK_JUMP_MS) {
                 Log.w(TAG, "检测到时钟跳变 (wallDelta ${lastWallDeltaMs}ms -> ${wallDelta}ms)，跳过本帧弹幕添加")
+                lastWallDeltaMs = wallDelta
                 postInvalidateDelayed(FRAME_INTERVAL_MS)
                 return
             }
@@ -540,11 +541,11 @@ class DanmakuView(context: Context) : View(context) {
      * 查找可放置的滚动行：
      * 遍历所有行，找到一行使得：
      *   1. 该行弹幕数 < MAX_DANMAKU_PER_ROW
-     *   2. 该行最右侧尾部（含屏幕外右侧的新弹幕）+ 新弹幕宽度 <= 屏幕宽度
-     * 即新弹幕进入屏幕时，不会与该行任何弹幕重叠。
+     *   2. 该行最右侧尾部 + 最小间距 <= 屏幕宽度 + 新弹幕宽度
      *
-     * 注意：屏幕外右侧（x >= screenWidth）的弹幕也要计入占位，
-     * 否则同一帧内连续添加的多条弹幕会被塞到同一行导致重叠。
+     * 说明：新弹幕从 viewWidth + textWidth 处入场，与现有弹幕同速左移，
+     * 只要现有弹幕尾部 + MIN_ROW_GAP_PX <= viewWidth + textWidth，
+     * 两者间距始终 >= MIN_ROW_GAP_PX，不会首尾紧贴或重叠。
      */
     private fun findScrollRow(textWidth: Float, screenWidth: Int, maxRows: Int): Int {
         val sw = screenWidth.toFloat()
@@ -561,7 +562,9 @@ class DanmakuView(context: Context) : View(context) {
         var bestRow = -1
         var bestTail = Float.MAX_VALUE
         for (row in 0 until maxRows) {
-            if (rowCount[row] < MAX_DANMAKU_PER_ROW && rowTailX[row] + textWidth <= sw) {
+            if (rowCount[row] < MAX_DANMAKU_PER_ROW
+                && rowTailX[row] + MIN_ROW_GAP_PX <= sw + textWidth
+            ) {
                 if (rowTailX[row] < bestTail) {
                     bestTail = rowTailX[row]
                     bestRow = row
@@ -603,5 +606,7 @@ class DanmakuView(context: Context) : View(context) {
         private const val MAX_ENTRY_DELAY_MS: Long = 500L
         /** 墙钟偏移帧间增量阈值（毫秒）：超过则判定系统时间前跳，跳过本帧弹幕添加 */
         private const val MAX_CLOCK_JUMP_MS: Long = 3_000L
+        /** 同行两条弹幕之间的最小像素间距（防止首尾贴在一起） */
+        private const val MIN_ROW_GAP_PX: Float = 60f
     }
 }
