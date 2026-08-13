@@ -186,14 +186,15 @@ class PermissionConfigRepository(
     }
 
     /**
-     * 清除权限缓存
+     * 清除权限缓存（内存 + SharedPreferences 本地缓存，一并清空）
      */
     fun clearCache() {
+        memoryConfig = null
         prefs.edit()
             .remove(PREFS_KEY_CONFIG)
             .remove(PREFS_KEY_TIMESTAMP)
             .apply()
-        Log.d(TAG, "权限配置缓存已清除")
+        Log.d(TAG, "权限配置缓存已清除（内存 + 本地）")
     }
 
     /**
