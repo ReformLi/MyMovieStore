@@ -9,6 +9,7 @@ import com.hpu.mymoviestore.data.dao.DownloadTaskDao
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.repository.DanmakuRepository
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -133,6 +134,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
         Log.d(TAG, "开始下载弹幕: taskId=$taskId, title=$title, episode=$episodeTitle")
 
         val job = scope.launch {
+            // 弹幕权限：远程配置 enable_danmaku 关闭时禁止弹幕下载（联网获取），直接置为失败终态
+            if (!MovieApplication.get().permissionConfigRepository.checkDanmakuPermissionFast()) {
+                Log.w(TAG, "弹幕权限未开启，禁止弹幕下载: taskId=$taskId")
+                rejectDanmaku(taskId, dao)
+                return@launch
+            }
             downloadDanmakuWithRetry(taskId, title, episodeTitle, dao, isManualRetry = false)
         }
         jobMap[taskId] = job
@@ -157,6 +164,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
         Log.d(TAG, "手动重试弹幕下载: taskId=$taskId, title=$title, episode=$episodeTitle")
 
         val job = scope.launch {
+            // 弹幕权限：远程配置 enable_danmaku 关闭时禁止弹幕下载（联网获取），直接置为失败终态
+            if (!MovieApplication.get().permissionConfigRepository.checkDanmakuPermissionFast()) {
+                Log.w(TAG, "弹幕权限未开启，禁止弹幕下载: taskId=$taskId")
+                rejectDanmaku(taskId, dao)
+                return@launch
+            }
             downloadDanmakuWithRetry(taskId, title, episodeTitle, dao, isManualRetry = true)
         }
         jobMap[taskId] = job
@@ -170,6 +183,24 @@ class DanmakuDownloadManager private constructor(context: Context) {
         jobMap.remove(taskId)
         retryCountMap.remove(taskId)
         Log.d(TAG, "已取消弹幕下载: taskId=$taskId")
+    }
+
+    /**
+     * 弹幕权限关闭时直接置为失败终态（不联网、不重试），保留已有弹幕文件路径。
+     */
+    private suspend fun rejectDanmaku(taskId: String, dao: DownloadTaskDao) {
+        // 先读取已有的弹幕文件路径：任何失败路径都必须保留它，
+        // 避免把之前已下载好的弹幕文件路径清空
+        val existingDanmakuPath = dao.getByTaskId(taskId)?.danmakuFilePath.orEmpty()
+        dao.updateDanmakuStatus(
+            taskId = taskId,
+            danmakuStatus = DownloadTaskEntity.DANMAKU_FAILED,
+            danmakuFilePath = existingDanmakuPath,
+            danmakuError = "弹幕权限未开启"
+        )
+        notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_FAILED, "弹幕权限未开启")
+        retryCountMap.remove(taskId)
+        jobMap.remove(taskId)
     }
 
     // ======================== 核心下载流程 ========================

@@ -8,9 +8,9 @@ import coil.ImageLoaderFactory
 import com.hpu.mymoviestore.data.database.MovieDatabase
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.repository.DownloadRepository
+import com.hpu.mymoviestore.data.repository.PermissionConfigRepository
 import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import com.hpu.mymoviestore.data.repository.SearchHistoryRepository
-import com.hpu.mymoviestore.data.repository.SearchPermissionRepository
 import com.hpu.mymoviestore.data.repository.VideoRepository
 import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
@@ -61,7 +61,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
     lateinit var downloadRepository: DownloadRepository
         private set
 
-    lateinit var searchPermissionRepository: SearchPermissionRepository
+    lateinit var permissionConfigRepository: PermissionConfigRepository
         private set
 
     /** 视频源远程配置管理器（播放源名称/URL 的远程动态配置） */
@@ -94,8 +94,8 @@ class MovieApplication : Application(), ImageLoaderFactory {
         searchHistoryRepository = SearchHistoryRepository(database.searchHistoryDao())
         apiCacheRepository = ApiCacheRepository(database.apiCacheDao())
         downloadRepository = DownloadRepository(database.downloadTaskDao(), database.downloadedVideoIndexDao())
-        searchPermissionRepository = SearchPermissionRepository(this, apiCacheRepository)
-        Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download/SearchPermission)")
+        permissionConfigRepository = PermissionConfigRepository(this, apiCacheRepository)
+        Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download/PermissionConfig)")
 
         // 视频源：assets JSON 挡板 + Room 缓存(TTL=1 天)
         val sourceManager = VideoSourceManager(this, apiCacheRepository)
@@ -151,13 +151,13 @@ class MovieApplication : Application(), ImageLoaderFactory {
             }
         }
 
-        // 应用启动时异步触发搜索权限检查（后台静默执行，不阻塞）
+        // 应用启动时异步触发权限配置检查（后台静默执行，不阻塞；搜索/弹幕等权限均来自该配置）
         applicationScope.launch {
             try {
-                searchPermissionRepository.fetchPermissionAsync()
-                Log.d(TAG, "应用启动时搜索权限后台检查已触发")
+                permissionConfigRepository.fetchPermissionAsync()
+                Log.d(TAG, "应用启动时权限配置后台检查已触发")
             } catch (e: Exception) {
-                Log.w(TAG, "搜索权限后台检查触发失败: ${e.message}")
+                Log.w(TAG, "权限配置后台检查触发失败: ${e.message}")
             }
         }
     }

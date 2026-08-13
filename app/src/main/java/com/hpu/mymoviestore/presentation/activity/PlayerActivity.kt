@@ -868,6 +868,12 @@ class PlayerActivity : AppCompatActivity() {
             Log.d(TAG, "弹幕子开关切换: $isChecked")
             dm.setDanmakuEnabled(isChecked)
             if (isChecked) {
+                // 弹幕权限：远程配置 enable_danmaku 未开启时，开关打开也无效，只显示「弹幕已关闭」
+                if (!isDanmakuPermissionEnabled()) {
+                    Log.d(TAG, "弹幕权限未开启，开关打开无效: videoId=$videoId")
+                    showDanmakuClosedState()
+                    return@setOnCheckedChangeListener
+                }
                 // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；
                 // 否则优先尝试本地弹幕（savedAnimeId 关联），本地未命中才联网补搜索
                 if (danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty()) {
@@ -889,7 +895,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        if (subEnabled) {
+        if (subEnabled && isDanmakuPermissionEnabled()) {
             danmakuSpinner.visibility = View.VISIBLE
             updateDanmakuSourceUI()
         } else {
@@ -963,6 +969,14 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSpinner.isEnabled = false
         danmakuSpinner.visibility = View.VISIBLE
     }
+
+    /**
+     * 弹幕权限检查（远程配置 switches.enable_danmaku）。
+     * 权限关闭时：弹幕不做任何联网获取，无论播放器弹幕开关是否打开，都只显示「弹幕已关闭」。
+     * 获取失败/无缓存时默认放行（true）。
+     */
+    private fun isDanmakuPermissionEnabled(): Boolean =
+        MovieApplication.get().permissionConfigRepository.checkDanmakuPermissionFast()
 
     /** 重建候选源 adapter（开关关闭期间可能被状态文本替换，重新打开时需要恢复）。
      *  调用方需自行管理 isRestoringSelection（设置 adapter 与 setSelection 期间保持 true）。 */
@@ -1513,6 +1527,15 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
 
+        // 弹幕权限：远程配置 enable_danmaku 关闭时，不进行任何联网获取
+        //（候选源搜索/分集/评论均被拦截），无论开关是否打开都只显示「弹幕已关闭」
+        if (!isDanmakuPermissionEnabled()) {
+            Log.d(TAG, "弹幕权限未开启，禁止弹幕联网搜索: videoId=$videoId")
+            isRetrying = false
+            showDanmakuClosedState()
+            return
+        }
+
         // 弹幕开关只负责是否渲染：关闭时拦截所有联网搜索入口（在线播放/离线播放/失败重试/级联自愈），
         // 本地弹幕文件读取不受影响（loadDanmakuFromLocalFile 在开关判断之外）
         if (!switchDanmaku.isChecked) {
@@ -1588,6 +1611,12 @@ class PlayerActivity : AppCompatActivity() {
      * - savedAnimeId == 0：正常联网搜索候选源
      */
     private fun tryRestoreLocalDanmaku() {
+        // 弹幕权限：远程配置 enable_danmaku 关闭时，本地弹幕也不显示，只显示「弹幕已关闭」
+        if (!isDanmakuPermissionEnabled()) {
+            Log.d(TAG, "弹幕权限未开启，跳过本地弹幕恢复: videoId=$videoId")
+            showDanmakuClosedState()
+            return
+        }
         val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
         if (savedAnimeId <= 0L) {
             Log.d(TAG, "弹幕开关恢复: 无已保存弹幕源(savedAnimeId=$savedAnimeId)，联网搜索")
@@ -1620,6 +1649,12 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun loadDanmakuForAnime(animeId: Long, episode: String, forceNetwork: Boolean = false) {
+        // 弹幕权限：远程配置 enable_danmaku 关闭时，不进行任何加载（本地文件/缓存/联网均拦截）
+        if (!isDanmakuPermissionEnabled()) {
+            Log.d(TAG, "弹幕权限未开启，禁止弹幕加载: animeId=$animeId")
+            showDanmakuClosedState()
+            return
+        }
         if (animeId == lastLoadedAnimeId && lastLoadedAnimeId != 0L) {
             Log.d(TAG, "弹幕源已加载，跳过: animeId=$animeId")
             return
@@ -2004,6 +2039,12 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         uiScope.launch {
+            // 弹幕权限：远程配置 enable_danmaku 关闭时，离线播放也不加载/显示弹幕（本地文件也不上屏）
+            if (!isDanmakuPermissionEnabled()) {
+                Log.d(TAG, "弹幕权限未开启，离线播放跳过弹幕加载: videoId=$videoId")
+                showDanmakuClosedState()
+                return@launch
+            }
             var localDanmakuLoaded = false
             if (!danmakuFilePath.isNullOrEmpty()) {
                 val danmakuFile = File(danmakuFilePath)

@@ -221,7 +221,7 @@ class SearchFragment : Fragment() {
         currentPage = page.coerceAtLeast(1)
 
         // 检查搜索权限（非阻塞快速检查）
-        val hasPermission = MovieApplication.get().searchPermissionRepository.checkPermissionFast()
+        val hasPermission = MovieApplication.get().permissionConfigRepository.checkSearchPermissionFast()
         if (!hasPermission) {
             Log.w(TAG, "搜索权限检查未通过，禁止搜索")
             binding.tvSearchSummary.visibility = View.GONE
@@ -235,7 +235,7 @@ class SearchFragment : Fragment() {
 
         // 后台异步触发权限检查（fetchPermissionAsync 内部会判断缓存，有效则跳过）
         lifecycleScope.launch(Dispatchers.IO) {
-            MovieApplication.get().searchPermissionRepository.fetchPermissionAsync()
+            MovieApplication.get().permissionConfigRepository.fetchPermissionAsync()
         }
 
         // 权限通过，继续搜索

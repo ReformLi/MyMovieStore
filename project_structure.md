@@ -81,7 +81,7 @@ app/src/main/
 `MovieApplication` 是应用级初始化入口：
 
 - 初始化 Room 数据库 `MovieDatabase`。
-- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`SearchPermissionRepository`。
+- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`PermissionConfigRepository`。
 - 创建本地挡板源 `VideoSourceManager`。
 - 爬虫源由 `VideoSourceConfigManager` **远程动态加载**（非硬编码），启动时同步缓存或异步重试最多 5 次获取源配置。
 - 创建首页发现源 `DoubanDiscoverySource`。
@@ -241,7 +241,7 @@ data/
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
 | `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制；空弹幕列表不写缓存，空缓存视为未命中 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
-| `SearchPermissionRepository` | 应用启动时后台静默检查搜索权限 |
+| `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项权限配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`），与本地 app_name/version 匹配后生效；缓存 1 天，网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用 |
 
 ### 弹幕缓存
 
