@@ -219,7 +219,7 @@ data/
 | `M3u8Parser` | M3U8 文件解析器，提取 `.ts` 分片 URL 列表 |
 | `DownloadService` | 前台服务，管理下载生命周期，显示通知和控制动作 |
 | `DownloadNotificationManager` | 下载通知管理，创建进度通知、更新进度、处理用户操作（暂停/恢复/取消） |
-| `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试；失败路径保留已有弹幕文件路径，不清空已下载的弹幕 |
+| `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试；失败路径保留已有弹幕文件路径，不清空已下载的弹幕；**下载成功时同时保存 `{animeId}_{集数}.json` 索引文件，并回写 `DanmakuPrefs.saveAnimeId(videoId, animeId)` 关联**，供播放器开关打开时直接定位本地文件，避免重复联网搜索 |
 
 **降低影响策略**（位于 `DownloadEngine` 常量配置）：
 
@@ -484,7 +484,7 @@ presentation/
 |----------|------|
 | `MainActivity` | 主页面容器，使用底部导航切换首页、搜索和我的；通过 `add + hide/show` 保留 Fragment 实例；处理返回键双击退出和搜索页状态管理 |
 | `DetailActivity` | 视频详情页，展示完整视频信息、播放线路、剧集和续播提示；**提供下载入口**，支持单集下载和批量下载 |
-| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录**；离线弹幕统一由播放器加载流水线处理（任务弹幕文件 → 弹幕源索引文件回退 → 在线搜索），不再触发后台弹幕重试，本地弹幕已加载时在线搜索失败静默处理 |
+| `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录**；离线弹幕统一由播放器加载流水线处理（任务弹幕文件 → 弹幕源索引文件回退 → 在线搜索），不再触发后台弹幕重试，本地弹幕已加载时在线搜索失败静默处理；**弹幕开关打开时先经 `tryRestoreLocalDanmaku()` 尝试本地弹幕（本地文件 → 弹幕缓存 → 联网级联三级优先，本地命中零联网并显示「已加载本地弹幕」），仅当无已保存弹幕源时才联网搜索候选源** |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 | `DownloadActivity` | **下载管理页面**，使用 ViewPager2 分"下载中"和"已完成"两个标签页；首次进入时若下载中列表为空自动切换到已完成；支持多选删除 |
 
@@ -524,7 +524,7 @@ presentation/
 |------|------|
 | `DanmakuManager` | 弹幕渲染管理器，负责弹幕的显示、隐藏、同步、seek、暂停/恢复 |
 | `DanmakuView` | 弹幕绘制 View，基于 Canvas 实现弹幕滚动渲染；扫描游标每帧按时间窗口二分重定位（时间跳变异常可自愈），墙钟前跳（NTP 校时等）时跳过当帧弹幕添加等待校准 |
-| `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化 |
+| `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化；**按 videoId 保存/读取用户选择的弹幕源 animeId（`saveAnimeId` / `getSavedAnimeId`，key=`danmaku_anime_{videoId}`）**，弹幕下载完成时也会回写该关联，供播放器开关打开时直接定位本地弹幕文件 |
 
 ## 资源结构
 
@@ -791,6 +791,36 @@ DanmakuApi.getDanmakuComments() ── 带缓存和重试
 DanmakuManager.loadDanmaku(comments)
         ↓
 DanmakuView 弹幕渲染
+```
+
+#### 弹幕加载优先链（开关打开 / 换弹幕源）
+
+弹幕获取按「本地文件 → 弹幕缓存 → 联网级联」三级优先，`searchCandidates` 联网搜索仅在没有任何可复用数据时触发：
+
+```text
+弹幕开关打开 / onItemSelected 选择新源
+        ↓
+PlayerActivity.tryRestoreLocalDanmaku()        （换源路径直接走 loadDanmakuForAnime）
+        ↓
+DanmakuPrefs.getSavedAnimeId(videoId)          （弹幕下载完成时由 DanmakuDownloadManager 回写）
+        ├─ savedAnimeId == 0 → launchDanmakuSearch（联网搜候选源）
+        └─ savedAnimeId > 0
+            ├─ ① 本地文件 Danmaku/{animeId}_{集数}.json 存在
+            │    └─ loadDanmakuFromLocalFile 直接上屏 · 零联网 · 显示「已加载本地弹幕」
+            └─ ② 本地不存在 → loadDanmakuForAnime
+                 ├─ fetchBangumi 缓存命中 + comment 缓存有内容 → 零联网
+                 ├─ 缓存缺失 → 联网级联获取（fetchBangumi → fetchDanmakuComments）
+                 └─ animeId 失效（bangumi 空）→ 清搜索缓存 + saveAnimeId(0) + 强制重搜
+```
+
+弹幕下载完成时的关联回写：
+
+```text
+DanmakuDownloadManager.executeDanmakuDownload()
+        ↓ 保存 Danmaku/{taskId}.json + Danmaku/{animeId}_{集数}.json
+DanmakuPrefs.saveAnimeId(videoIdFromTask, anime.animeId)
+        ↓
+播放器开关打开 → getSavedAnimeId 命中 → 本地文件直接加载，零联网
 ```
 
 ### 播放历史与续播
