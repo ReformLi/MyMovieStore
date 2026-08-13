@@ -14,7 +14,7 @@ import org.jsoup.nodes.Document
 import java.net.URLEncoder
 
 /**
- * 九二电影网（www.ccwhz.com）播放源
+ * 九二电影网（www.******.com）播放源
  *
  * 搜索页 URL 格式：/vodsearch/{keyword}----------{page}---.html
  * 模板与农民TV相同（stui模板）

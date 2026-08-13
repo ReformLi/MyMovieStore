@@ -14,7 +14,7 @@ import org.jsoup.nodes.Document
 import java.net.URLEncoder
 
 /**
- * 大猫影院（www.gdkebang.com）播放源
+ * 大猫影院（www.******.com）播放源
  *
  * 搜索页 URL 格式：/vodsearch/{keyword}----------{page}---.html
  */

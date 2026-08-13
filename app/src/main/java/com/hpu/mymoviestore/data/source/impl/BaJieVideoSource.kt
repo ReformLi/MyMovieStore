@@ -14,7 +14,7 @@ import org.jsoup.nodes.Document
 import java.net.URLEncoder
 
 /**
- * 八戒影视（www.hfyqb.com）播放源
+ * 八戒影视（www.******.com）播放源
  *
  * 搜索页 URL 格式：/bjyssearch/{keyword}----------{page}---.html
  */

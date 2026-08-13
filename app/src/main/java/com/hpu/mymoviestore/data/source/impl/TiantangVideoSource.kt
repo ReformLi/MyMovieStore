@@ -323,7 +323,7 @@ class TiantangVideoSource(
 
     /**
      * 构建小蜜tv影院的搜索URL
-     * 格式：http://www.xiaomiyingyin.cc/tag/page/1/wd/斗罗大陆/
+     * 格式：http://www.******.cc/tag/page/1/wd/斗罗大陆/
      */
     override fun buildSearchUrl(keyword: String, page: Int): String {
         val encodedKeyword = URLEncoder.encode(keyword, "UTF-8")

@@ -14,7 +14,7 @@ import org.jsoup.nodes.Document
 import java.net.URLEncoder
 
 /**
- * 虫虫电影网（www.ctwlpt.com）播放源
+ * 虫虫电影网（www.******.com）播放源
  *
  * 搜索页 URL 格式：/vodsearch/{keyword}----------{page}---.html
  */
