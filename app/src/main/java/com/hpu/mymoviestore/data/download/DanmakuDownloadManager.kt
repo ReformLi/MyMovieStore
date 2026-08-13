@@ -374,6 +374,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
             Log.d(TAG, "[$taskId] 弹幕源索引文件已保存: ${sourceIndexFile.absolutePath}")
         }
 
+        // 回写 animeId 关联：播放器开关打开时可直接用 savedAnimeId 定位本地文件，避免重复联网搜索
+        if (videoIdFromTask > 0L) {
+            DanmakuPrefs(appContext).saveAnimeId(videoIdFromTask, anime.animeId)
+            Log.d(TAG, "[$taskId] 已回写弹幕源关联: videoId=$videoIdFromTask, animeId=${anime.animeId}")
+        }
+
         return DownloadResult(isSuccess = true, filePath = danmakuFile.absolutePath)
     }
 

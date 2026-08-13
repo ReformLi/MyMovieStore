@@ -868,7 +868,8 @@ class PlayerActivity : AppCompatActivity() {
             Log.d(TAG, "弹幕子开关切换: $isChecked")
             dm.setDanmakuEnabled(isChecked)
             if (isChecked) {
-                // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；否则补一次搜索
+                // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；
+                // 否则优先尝试本地弹幕（savedAnimeId 关联），本地未命中才联网补搜索
                 if (danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty()) {
                     isRestoringSelection = true
                     setupSourceAdapter(candidateList)
@@ -878,7 +879,7 @@ class PlayerActivity : AppCompatActivity() {
                     isRestoringSelection = false
                     showDanmakuSpinner()
                 } else {
-                    launchDanmakuSearch(videoTitle, episodeTitle)
+                    tryRestoreLocalDanmaku()
                 }
             } else {
                 // 关闭开关：取消进行中的搜索/加载，左侧显示灰色「弹幕已关闭」
@@ -1577,6 +1578,44 @@ class PlayerActivity : AppCompatActivity() {
             } finally {
                 Handler(Looper.getMainLooper()).post { isRestoringSelection = false }
             }
+        }
+    }
+
+    /**
+     * 开关打开且无候选源时的本地弹幕恢复（零联网优先）：
+     * - savedAnimeId > 0：优先加载本地文件 `Danmaku/{savedAnimeId}_{ep}.json`（命中即上屏，显示「已加载本地弹幕」）；
+     *   本地未命中回落 loadDanmakuForAnime（comment 缓存 → 联网级联自愈）
+     * - savedAnimeId == 0：正常联网搜索候选源
+     */
+    private fun tryRestoreLocalDanmaku() {
+        val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
+        if (savedAnimeId <= 0L) {
+            Log.d(TAG, "弹幕开关恢复: 无已保存弹幕源(savedAnimeId=$savedAnimeId)，联网搜索")
+            launchDanmakuSearch(videoTitle, episodeTitle)
+            return
+        }
+        val epNum = extractEpisodeNumber(episodeTitle)
+        val localFile = File(filesDir, "Danmaku/${savedAnimeId}_${epNum}.json")
+        if (localFile.exists()) {
+            Log.d(TAG, ">>>> [弹幕开关] 本地文件存在，直接加载: ${localFile.absolutePath}")
+            danmakuLoadJob?.cancel()
+            danmakuLoadJob = uiScope.launch {
+                val ok = loadDanmakuFromLocalFile(localFile)
+                if (ok) {
+                    lastLoadedAnimeId = savedAnimeId
+                    isRetrying = false
+                    updateStatusText("已加载本地弹幕")
+                } else {
+                    Log.d(TAG, ">>>> [弹幕开关] 本地文件损坏已删除，回落 loadDanmakuForAnime")
+                    lastLoadedAnimeId = 0L
+                    loadDanmakuForAnime(savedAnimeId, epNum)
+                }
+            }
+        } else {
+            Log.d(TAG, ">>>> [弹幕开关] 本地文件不存在(savedAnimeId=$savedAnimeId)，尝试缓存/网络")
+            // 重置去重标记：开关关闭时若该源加载被取消，lastLoadedAnimeId 可能等于 savedAnimeId 导致跳过
+            lastLoadedAnimeId = 0L
+            loadDanmakuForAnime(savedAnimeId, epNum)
         }
     }
 
