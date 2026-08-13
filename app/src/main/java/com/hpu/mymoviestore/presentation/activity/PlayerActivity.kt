@@ -123,6 +123,7 @@ class PlayerActivity : AppCompatActivity() {
     private enum class DanmakuSourceState { SEARCHING, SUCCESS, FAILED }
     private var danmakuSourceState = DanmakuSourceState.SEARCHING
     private var statusAdapter: ArrayAdapter<String>? = null
+    private var statusTextColor = Color.WHITE
     private var hasLocalDanmaku = false
     private var lastSelectedPosition = 0
 
@@ -866,10 +867,33 @@ class PlayerActivity : AppCompatActivity() {
         switchDanmaku.setOnCheckedChangeListener { _, isChecked ->
             Log.d(TAG, "弹幕子开关切换: $isChecked")
             dm.setDanmakuEnabled(isChecked)
+            if (isChecked) {
+                // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；否则补一次搜索
+                if (danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty()) {
+                    isRestoringSelection = true
+                    setupSourceAdapter(candidateList)
+                    if (lastSelectedPosition in candidateList.indices) {
+                        danmakuSpinner.setSelection(lastSelectedPosition)
+                    }
+                    isRestoringSelection = false
+                    showDanmakuSpinner()
+                } else {
+                    launchDanmakuSearch(videoTitle, episodeTitle)
+                }
+            } else {
+                // 关闭开关：取消进行中的搜索/加载，左侧显示灰色「弹幕已关闭」
+                danmakuSearchJob?.cancel()
+                danmakuLoadJob?.cancel()
+                showDanmakuClosedState()
+            }
         }
 
-        danmakuSpinner.visibility = View.VISIBLE
-        updateDanmakuSourceUI()
+        if (subEnabled) {
+            danmakuSpinner.visibility = View.VISIBLE
+            updateDanmakuSourceUI()
+        } else {
+            showDanmakuClosedState()
+        }
 
         danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -919,15 +943,64 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun showDanmakuSpinner() {
+        // 弹幕源选择器跟随开关：
+        // - 开关关闭：显示灰色「弹幕已关闭」，不可点击
+        // - 开关开启且搜索成功：显示候选源列表
+        if (!switchDanmaku.isChecked) {
+            showDanmakuClosedState()
+            return
+        }
+        danmakuSpinner.isEnabled = true
+        danmakuSpinner.visibility =
+            if (danmakuSourceState == DanmakuSourceState.SUCCESS) View.VISIBLE else View.GONE
+    }
+
+    /** 开关关闭时：左侧显示灰色「弹幕已关闭」，不可点击 */
+    private fun showDanmakuClosedState() {
+        updateStatusText("弹幕已关闭", textColor = Color.GRAY)
+        danmakuSpinner.isEnabled = false
+        danmakuSpinner.visibility = View.VISIBLE
+    }
+
+    /** 重建候选源 adapter（开关关闭期间可能被状态文本替换，重新打开时需要恢复）。
+     *  调用方需自行管理 isRestoringSelection（设置 adapter 与 setSelection 期间保持 true）。 */
+    private fun setupSourceAdapter(candidates: List<DanmakuAnime>) {
+        val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
+        val adapter = object : ArrayAdapter<String>(
+            this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val v = super.getView(position, convertView, parent) as TextView
+                v.setTextColor(Color.WHITE)
+                v.textSize = 13f
+                return v
+            }
+            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val v = super.getDropDownView(position, convertView, parent) as TextView
+                v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
+                v.setTextColor(Color.WHITE)
+                v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
+                v.setPadding(24, 20, 24, 20)
+                v.textSize = 13f
+                return v
+            }
+        }
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        danmakuSpinner.adapter = adapter
+        danmakuSpinner.isEnabled = true
+    }
+
     private fun updateDanmakuSourceUI() {
         when (danmakuSourceState) {
             DanmakuSourceState.SEARCHING -> updateStatusText("弹幕搜索中...")
-            DanmakuSourceState.SUCCESS -> danmakuSpinner.visibility = View.VISIBLE
+            DanmakuSourceState.SUCCESS -> showDanmakuSpinner()
             DanmakuSourceState.FAILED -> updateStatusText("弹幕搜索失败，点击重试")
         }
     }
 
-    private fun updateStatusText(text: String) {
+    private fun updateStatusText(text: String, textColor: Int = Color.WHITE) {
+        statusTextColor = textColor
         if (statusAdapter != null && danmakuSpinner.adapter === statusAdapter) {
             statusAdapter!!.clear()
             statusAdapter!!.add(text)
@@ -938,13 +1011,13 @@ class PlayerActivity : AppCompatActivity() {
             ) {
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getView(position, convertView, parent) as TextView
-                    v.setTextColor(Color.WHITE)
+                    v.setTextColor(statusTextColor)
                     v.textSize = 13f
                     return v
                 }
                 override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getDropDownView(position, convertView, parent) as TextView
-                    v.setTextColor(Color.WHITE)
+                    v.setTextColor(statusTextColor)
                     v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
                     v.setPadding(24, 20, 24, 20)
                     v.textSize = 13f
@@ -954,6 +1027,7 @@ class PlayerActivity : AppCompatActivity() {
             statusAdapter!!.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             isRestoringSelection = true
             danmakuSpinner.adapter = statusAdapter
+            // 状态文本（搜索中/失败重试/已关闭）始终可见：开关关闭时由 showDanmakuClosedState 显示「弹幕已关闭」
             danmakuSpinner.visibility = View.VISIBLE
             isRestoringSelection = false
         }
@@ -1438,6 +1512,15 @@ class PlayerActivity : AppCompatActivity() {
         danmakuSearchJob?.cancel()
         danmakuLoadJob?.cancel()
 
+        // 弹幕开关只负责是否渲染：关闭时拦截所有联网搜索入口（在线播放/离线播放/失败重试/级联自愈），
+        // 本地弹幕文件读取不受影响（loadDanmakuFromLocalFile 在开关判断之外）
+        if (!switchDanmaku.isChecked) {
+            Log.d(TAG, "弹幕开关关闭，跳过弹幕搜索: videoId=$videoId")
+            isRetrying = false
+            showDanmakuClosedState()
+            return
+        }
+
         danmakuSourceState = DanmakuSourceState.SEARCHING
         updateDanmakuSourceUI()
 
@@ -1462,30 +1545,9 @@ class PlayerActivity : AppCompatActivity() {
 
                 candidateList = candidates
                 danmakuSourceState = DanmakuSourceState.SUCCESS
-                val sourceLabels = candidates.map { "弹幕源 ${it.source}" }
-                val adapter = object : ArrayAdapter<String>(
-                    this@PlayerActivity, android.R.layout.simple_spinner_item, sourceLabels
-                ) {
-                    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                        val v = super.getView(position, convertView, parent) as TextView
-                        v.setTextColor(Color.WHITE)
-                        v.textSize = 13f
-                        return v
-                    }
-                    override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                        val v = super.getDropDownView(position, convertView, parent) as TextView
-                        v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
-                        v.setTextColor(Color.WHITE)
-                        v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
-                        v.setPadding(24, 20, 24, 20)
-                        v.textSize = 13f
-                        return v
-                    }
-                }
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 isRestoringSelection = true
-                danmakuSpinner.adapter = adapter
-                danmakuSpinner.visibility = View.VISIBLE
+                setupSourceAdapter(candidates)
+                showDanmakuSpinner()
 
                 val savedAnimeId = DanmakuPrefs(this@PlayerActivity).getSavedAnimeId(videoId)
                 Log.d(TAG, "弹幕源恢复: videoId=$videoId, savedAnimeId=$savedAnimeId, candidates.size=${candidates.size}")
