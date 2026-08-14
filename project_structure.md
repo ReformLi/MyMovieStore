@@ -215,8 +215,8 @@ data/
 
 | 组件 | 职责 |
 |------|------|
-| `DownloadEngine` | 下载引擎核心，管理任务队列、解析 M3U8、并发下载分片、合并为 mp4、进度回调 |
-| `M3u8Parser` | M3U8 文件解析器，提取 `.ts` 分片 URL 列表 |
+| `DownloadEngine` | 下载引擎核心，管理任务队列、解析 M3U8、并发下载分片、合并为 mp4、进度回调；**支持 AES-128 加密 HLS 流：解析 key + IV，分片整体下载后 AES/CBC/PKCS5Padding 解密再写盘，加密流禁用 Range 断点续传；首分片解密后校验容器头（TS 同步字节 / MP4 ftyp），校验失败抛 `HlsDecryptException` 直接终止任务** |
+| `M3u8Parser` | M3U8 文件解析器，提取 `.ts` 分片 URL 列表；解析 `#EXT-X-KEY` 加密信息（`M3u8Playlist` 返回分片 + `HlsEncryption`），无显式 IV 时用分片序号，`SAMPLE-AES`/多 key 流抛 `HlsEncryptionException`；检测到 `#EXT-X-MAP`（fMP4/CMAF）同样拦截拒绝 |
 | `DownloadService` | 前台服务，管理下载生命周期，显示通知和控制动作 |
 | `DownloadNotificationManager` | 下载通知管理，创建进度通知、更新进度、处理用户操作（暂停/恢复/取消） |
 | `DanmakuDownloadManager` | 弹幕下载管理器，根据视频标题下载弹幕 JSON 文件，支持重试；失败路径保留已有弹幕文件路径，不清空已下载的弹幕；**下载成功时同时保存 `{animeId}_{集数}.json` 索引文件，并回写 `DanmakuPrefs.saveAnimeId(videoId, animeId)` 关联**，供播放器开关打开时直接定位本地文件，避免重复联网搜索 |

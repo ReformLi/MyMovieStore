@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -30,6 +33,14 @@ object DownloadStatus {
     const val CANCELLED = 5     // 已取消
     const val MERGING = 6       // 合并中
 }
+
+/**
+ * 解密结果校验失败时抛出的异常。
+ *
+ * 含义：密钥或 IV 与流不匹配，解密出的明文不是合法媒体容器。
+ * 重试结果必然相同，因此不参与分片重试，直接终止任务。
+ */
+internal class HlsDecryptException(message: String) : IOException(message)
 
 /**
  * 下载回调接口
@@ -68,6 +79,10 @@ data class DownloadTask(
     val segmentDownloadedBytes: ConcurrentHashMap<Int, Long> = ConcurrentHashMap(),
     /** 每个分片是否已完成 */
     val segmentCompleted: ConcurrentHashMap<Int, Boolean> = ConcurrentHashMap(),
+    /** HLS 加密信息（AES-128 时非 null，由 M3u8Parser 解析填充） */
+    var encryption: HlsEncryption? = null,
+    /** 已下载的解密密钥（AES-128，16 字节） */
+    var encryptionKey: ByteArray? = null,
     /** 该任务的协程 Job */
     var job: Job? = null,
     /** 当前活跃的 OkHttp Call（用于暂停/取消时中断网络请求） */
@@ -87,6 +102,7 @@ data class DownloadTask(
  * - 支持暂停/恢复/取消
  * - 分片下载支持断点续传（Range header）
  * - 分片下载失败自动重试 3 次（间隔递增 5s, 15s, 30s）
+ * - 支持 AES-128 加密 HLS 流（解析 key + IV，分片下载后解密再合并）
  * - 所有分片完成后合并为 mp4（二进制顺序拼接 FileOutputStream）
  * - 合并后删除临时分片文件
  * - 实时通过回调通知进度更新
@@ -354,13 +370,31 @@ class DownloadEngine(context: Context) {
             // 1. 解析 m3u8
             if (task.segmentUrls.isEmpty()) {
                 Log.d(TAG, "开始解析 m3u8: ${task.m3u8Url}")
-                val segments = m3u8Parser.parse(task.m3u8Url)
-                if (segments.isNullOrEmpty()) {
+                val playlist = m3u8Parser.parse(task.m3u8Url)
+                if (playlist == null || playlist.segments.isEmpty()) {
                     updateStatus(task, DownloadStatus.FAILED, "m3u8 解析失败，未找到有效分片")
                     return
                 }
-                task.segmentUrls = segments
-                Log.d(TAG, "m3u8 解析完成，共 ${segments.size} 个分片")
+                task.segmentUrls = playlist.segments
+                task.encryption = playlist.encryption
+                Log.d(TAG, "m3u8 解析完成，共 ${playlist.segments.size} 个分片" +
+                        (if (playlist.encryption != null) "（AES-128 加密流）" else ""))
+
+                // 加密流：下载解密密钥
+                playlist.encryption?.let { encryption ->
+                    if (encryption.keyUri != null) {
+                        try {
+                            task.encryptionKey = downloadKey(encryption.keyUri)
+                            Log.d(TAG, "加密密钥下载成功: keyUri=${encryption.keyUri}")
+                        } catch (e: Exception) {
+                            updateStatus(task, DownloadStatus.FAILED, "解密密钥下载失败: ${e.message}")
+                            return
+                        }
+                    } else {
+                        updateStatus(task, DownloadStatus.FAILED, "加密流缺少密钥地址，暂不支持下载")
+                        return
+                    }
+                }
             }
 
             // 2. 检查存储空间
@@ -450,10 +484,17 @@ class DownloadEngine(context: Context) {
         taskTempDir: File
     ) {
         val segmentFile = File(taskTempDir, String.format("%05d.ts", index))
-        val existingBytes = task.segmentDownloadedBytes[index] ?: 0L
+        // 加密流的分片是密文，必须整片下载解密，无法用 Range 断点续传
+        val isEncrypted = task.encryption != null
+        val existingBytes = if (isEncrypted) 0L else (task.segmentDownloadedBytes[index] ?: 0L)
+
+        // 加密流：清除残留的密文分片，从头完整下载
+        if (isEncrypted && segmentFile.exists()) {
+            segmentFile.delete()
+        }
 
         // 如果文件已存在且大小匹配，说明已完成
-        if (segmentFile.exists() && segmentFile.length() == existingBytes && existingBytes > 0
+        if (!isEncrypted && segmentFile.exists() && segmentFile.length() == existingBytes && existingBytes > 0
             && task.segmentCompleted[index] == true
         ) {
             return
@@ -488,6 +529,10 @@ class DownloadEngine(context: Context) {
                 return
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: HlsDecryptException) {
+                // 解密校验失败（key/IV 不匹配）：重试结果必然相同，直接终止整个任务
+                Log.e(TAG, "分片解密校验失败，终止下载: index=$index, ${e.message}")
+                throw e
             } catch (e: IOException) {
                 // OkHttp Call 被 cancel() 后会抛 IOException("Canceled")，不重试
                 if (task.isPaused.get() || task.isCancelled.get()) {
@@ -510,7 +555,10 @@ class DownloadEngine(context: Context) {
     }
 
     /**
-     * 执行单次分片下载（支持 Range 断点续传）。
+     * 执行单次分片下载。
+     *
+     * - 非加密流：支持 Range 断点续传，流式写盘
+     * - AES-128 加密流：整体下载后解密再写盘（不使用 Range）
      */
     private suspend fun downloadSegmentWithRetry(
         task: DownloadTask,
@@ -525,6 +573,41 @@ class DownloadEngine(context: Context) {
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 12; Mobile) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
 
+            // 加密流：整体下载 → 解密 → 写盘（不发送 Range header）
+            if (task.encryption != null) {
+                val request = requestBuilder.build()
+                val call = okHttpClient.newCall(request)
+                task.activeCalls[index] = call
+                try {
+                    val response = call.execute()
+                    try {
+                        if (!response.isSuccessful && response.code != 206) {
+                            throw IOException("HTTP ${response.code}: ${response.message}")
+                        }
+                        val body = response.body ?: throw IOException("响应体为空")
+                        val encryptedBytes = body.bytes()
+                        if (task.isCancelled.get() || task.isPaused.get()) {
+                            throw CancellationException("下载被中断")
+                        }
+
+                        // AES-128-CBC 解密
+                        val decryptedBytes = decryptSegment(encryptedBytes, index, task)
+
+                        // 解密后明文写盘（覆盖式，不做追加）
+                        FileOutputStream(segmentFile, false).use { outputStream ->
+                            outputStream.write(decryptedBytes)
+                        }
+                        Log.d(TAG, "分片解密完成: index=$index, encrypted=${encryptedBytes.size}B -> plain=${decryptedBytes.size}B")
+                    } finally {
+                        response.close()
+                    }
+                } finally {
+                    task.activeCalls.remove(index)
+                }
+                return@withContext
+            }
+
+            // 非加密流：Range 断点续传 + 流式写盘（原有逻辑）
             // 断点续传：设置 Range header
             if (startByte > 0 && segmentFile.exists()) {
                 requestBuilder.header("Range", "bytes=$startByte-")
@@ -576,6 +659,95 @@ class DownloadEngine(context: Context) {
                 task.activeCalls.remove(index)
             }
         }
+    }
+
+    /**
+     * 下载 AES-128 解密密钥（16 字节）。
+     */
+    private fun downloadKey(keyUri: String): ByteArray {
+        val request = Request.Builder()
+            .url(keyUri)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 12; Mobile) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+            .header("Referer", keyUri.substringBeforeLast("/"))
+            .build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}: ${response.message}")
+            }
+            val bytes = response.body?.bytes() ?: throw IOException("响应体为空")
+            if (bytes.size != 16) {
+                throw IOException("密钥长度异常: ${bytes.size} 字节（期望 16）")
+            }
+            return bytes
+        }
+    }
+
+    /**
+     * 对单个分片执行 AES-128-CBC 解密。
+     *
+     * IV 优先级：显式 IV（m3u8 的 IV=0x...）> 分片序号（RFC 8216 默认值）。
+     * 首分片（index=0）解密后会校验明文是否为合法媒体容器，防止 key/IV 错误时
+     * 静默产出乱码文件（AES-CBC 在 key/IV 错误时通常不抛异常）。
+     *
+     * @throws HlsDecryptException 解密结果校验失败（密钥或 IV 与源不匹配，重试无意义）
+     */
+    private fun decryptSegment(encrypted: ByteArray, index: Int, task: DownloadTask): ByteArray {
+        val encryption = task.encryption ?: return encrypted
+        val key = task.encryptionKey ?: throw IOException("缺少解密密钥")
+        val iv = encryption.iv ?: defaultIv(index)
+        try {
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
+            val decrypted = cipher.doFinal(encrypted)
+            if (index == 0) {
+                validateDecryptedContainer(decrypted)
+            }
+            return decrypted
+        } catch (e: HlsDecryptException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException("分片解密失败 (index=$index): ${e.message}", e)
+        }
+    }
+
+    /**
+     * 校验解密后的首分片是否为合法媒体容器。
+     *
+     * 合法情况：
+     * - MPEG-TS：同步字节 0x47，且偏移 188 / 376 处重复出现（每 188 字节一个 TS 包）
+     * - MP4/fMP4：偏移 4 处为 "ftyp"（box size + type）
+     *
+     * 均不匹配说明密钥或 IV 与流不匹配（解出乱码），抛 [HlsDecryptException]。
+     */
+    private fun validateDecryptedContainer(plain: ByteArray) {
+        if (plain.isEmpty()) {
+            throw HlsDecryptException("解密结果无效（密钥或 IV 与源不匹配）")
+        }
+        // MPEG-TS：0x47 开头，188/376 偏移处仍为同步字节
+        val isTs = plain[0].toInt() == 0x47 &&
+            (plain.size < 188 ||
+                (plain[188].toInt() == 0x47 && (plain.size < 376 || plain[376].toInt() == 0x47)))
+        // MP4/fMP4：偏移 4 处为 "ftyp"
+        val isMp4 = plain.size >= 8 &&
+            plain[4] == 'f'.code.toByte() && plain[5] == 't'.code.toByte() &&
+            plain[6] == 'y'.code.toByte() && plain[7] == 'p'.code.toByte()
+        if (!isTs && !isMp4) {
+            throw HlsDecryptException("解密结果无效（密钥或 IV 与源不匹配）")
+        }
+    }
+
+    /**
+     * 计算默认 IV：分片序号（0 起）作为 128 位大端整数（RFC 8216）。
+     */
+    private fun defaultIv(index: Int): ByteArray {
+        val iv = ByteArray(16)
+        var value = index.toLong()
+        for (i in 0 until 8) {
+            iv[15 - i] = (value and 0xFF).toByte()
+            value = value shr 8
+        }
+        return iv
     }
 
     // ======================== 合并与清理 ========================

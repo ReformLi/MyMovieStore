@@ -68,8 +68,13 @@ class DownloadingAdapter(
             binding.progressBar.progress = progress
             binding.tvProgress.text = "$progress%"
 
-            // 状态文字
-            binding.tvStatus.text = DownloadTaskEntity.statusToText(task.status)
+            // 状态文字（失败时附加失败原因，让用户知道具体为什么下不了）
+            val statusText = DownloadTaskEntity.statusToText(task.status)
+            binding.tvStatus.text = if (task.status == DownloadTaskEntity.STATUS_FAILED && task.errorMsg.isNotBlank()) {
+                "$statusText：${task.errorMsg}"
+            } else {
+                statusText
+            }
 
             // 根据状态显示操作按钮
             when (task.status) {
