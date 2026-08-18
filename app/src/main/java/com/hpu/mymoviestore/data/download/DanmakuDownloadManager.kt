@@ -140,6 +140,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
                 rejectDanmaku(taskId, dao)
                 return@launch
             }
+            // 弹幕总开关：用户在设置中关闭弹幕总开关后，下载视频时不再自动下载弹幕
+            if (!DanmakuPrefs(appContext).isMasterEnabled()) {
+                Log.w(TAG, "弹幕总开关已关闭，禁止弹幕下载: taskId=$taskId")
+                rejectDanmaku(taskId, dao, "弹幕总开关已关闭")
+                return@launch
+            }
             downloadDanmakuWithRetry(taskId, title, episodeTitle, dao, isManualRetry = false)
         }
         jobMap[taskId] = job
@@ -170,6 +176,12 @@ class DanmakuDownloadManager private constructor(context: Context) {
                 rejectDanmaku(taskId, dao)
                 return@launch
             }
+            // 弹幕总开关：用户在设置中关闭弹幕总开关后，下载视频时不再自动下载弹幕
+            if (!DanmakuPrefs(appContext).isMasterEnabled()) {
+                Log.w(TAG, "弹幕总开关已关闭，禁止弹幕下载: taskId=$taskId")
+                rejectDanmaku(taskId, dao, "弹幕总开关已关闭")
+                return@launch
+            }
             downloadDanmakuWithRetry(taskId, title, episodeTitle, dao, isManualRetry = true)
         }
         jobMap[taskId] = job
@@ -186,9 +198,11 @@ class DanmakuDownloadManager private constructor(context: Context) {
     }
 
     /**
-     * 弹幕权限关闭时直接置为失败终态（不联网、不重试），保留已有弹幕文件路径。
+     * 弹幕权限/总开关关闭时直接置为失败终态（不联网、不重试），保留已有弹幕文件路径。
+     *
+     * @param reason 失败原因文案，默认「弹幕权限未开启」（远程权限），总开关关闭时传「弹幕总开关已关闭」
      */
-    private suspend fun rejectDanmaku(taskId: String, dao: DownloadTaskDao) {
+    private suspend fun rejectDanmaku(taskId: String, dao: DownloadTaskDao, reason: String = "弹幕权限未开启") {
         // 先读取已有的弹幕文件路径：任何失败路径都必须保留它，
         // 避免把之前已下载好的弹幕文件路径清空
         val existingDanmakuPath = dao.getByTaskId(taskId)?.danmakuFilePath.orEmpty()
@@ -196,9 +210,9 @@ class DanmakuDownloadManager private constructor(context: Context) {
             taskId = taskId,
             danmakuStatus = DownloadTaskEntity.DANMAKU_FAILED,
             danmakuFilePath = existingDanmakuPath,
-            danmakuError = "弹幕权限未开启"
+            danmakuError = reason
         )
-        notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_FAILED, "弹幕权限未开启")
+        notifyStatusChanged(taskId, DownloadTaskEntity.DANMAKU_FAILED, reason)
         retryCountMap.remove(taskId)
         jobMap.remove(taskId)
     }
