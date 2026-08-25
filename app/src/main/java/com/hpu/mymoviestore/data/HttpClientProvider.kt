@@ -26,18 +26,34 @@ object HttpClientProvider {
     /** 通用请求超时（秒） */
     private const val STANDARD_TIMEOUT = 15L
 
+    /** 弹幕 API 请求超时（秒）——服务器 TLS 握手偏慢，放宽到 20s */
+    private const val DANMAKU_TIMEOUT = 20L
+
     /** 下载请求超时（秒） */
     private const val DOWNLOAD_TIMEOUT = 30L
 
     /**
      * 通用 OkHttpClient（15s 超时）。
-     * 用于弹幕 API、m3u8 解析、权限配置、远程配置等常规 HTTP 请求。
+     * 用于 m3u8 解析、权限配置、远程配置等常规 HTTP 请求。
      * 全局单例，连接池由 OkHttp 内部管理（默认 5 个空闲连接，5 分钟超时）。
      */
     val standardClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(STANDARD_TIMEOUT, TimeUnit.SECONDS)
             .readTimeout(STANDARD_TIMEOUT, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
+
+    /**
+     * 弹幕 API 专用 OkHttpClient（20s 超时）。
+     * 弹幕服务器 TLS 握手偏慢，15s 偶尔超时，放宽到 20s。
+     */
+    val danmakuClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(DANMAKU_TIMEOUT, TimeUnit.SECONDS)
+            .readTimeout(DANMAKU_TIMEOUT, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
