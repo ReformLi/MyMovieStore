@@ -60,7 +60,7 @@ class PermissionConfigRepository(
 
         // 本地固定值
         const val LOCAL_APP_NAME = "MyMovieStore"
-        const val LOCAL_VERSION = "1.0.0"
+        const val LOCAL_VERSION = "1.2.0"
     }
 
     private val prefs: SharedPreferences by lazy {
