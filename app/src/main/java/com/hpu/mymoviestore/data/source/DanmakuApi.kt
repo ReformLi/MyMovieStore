@@ -52,17 +52,25 @@ class DanmakuApi {
     fun getBaseUrl(): String = baseUrl
 
     /**
-     * 脱敏 URL：只保留 path + query，不打印域名，避免 Release 包日志泄露服务器地址。
-     * 例：https://example.com/api/v2/search?keyword=xxx → /api/v2/search?keyword=xxx
+     * 脱敏 URL：去除域名和 token，只保留接口路径 + query。
+     *
+     * URL 结构：https://域名/{TOKEN}/api/v2/...
+     * 脱敏后：/api/v2/...
+     *
+     * - 不打印域名，避免泄露服务器地址
+     * - 不打印 token，避免泄露鉴权凭据
      */
     private fun maskUrl(url: String): String {
         return try {
             val parsed = java.net.URI(url)
-            val path = parsed.path ?: ""
+            val fullPath = parsed.path ?: return "<invalid url>"
+            // danmu_api 的 URL 结构为 /{TOKEN}/api/v2/...
+            // 找到 /api/ 的位置，截取之后的路径（去掉 token 段）
+            val apiStart = fullPath.indexOf("/api/")
+            val safePath = if (apiStart >= 0) fullPath.substring(apiStart) else "/<masked>"
             val query = parsed.query?.let { "?$it" } ?: ""
-            path + query
+            safePath + query
         } catch (e: Exception) {
-            // 解析失败时返回固定占位符，不泄露原始 URL
             "<invalid url>"
         }
     }
