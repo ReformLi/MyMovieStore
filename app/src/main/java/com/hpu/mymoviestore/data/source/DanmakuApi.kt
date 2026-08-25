@@ -31,7 +31,7 @@ import java.io.IOException
  */
 class DanmakuApi {
 
-    private val client: OkHttpClient = HttpClientProvider.standardClient
+    private val client: OkHttpClient = HttpClientProvider.danmakuClient
 
     private val moshi: Moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
