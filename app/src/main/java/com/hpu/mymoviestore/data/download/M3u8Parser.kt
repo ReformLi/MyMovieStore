@@ -388,7 +388,7 @@ class M3u8Parser(
                             if (continuation.isActive) {
                                 continuation.resumeWith(
                                     Result.failure(
-                                        java.io.IOException("HTTP ${response.code}: ${response.message}")
+                                        java.io.IOException("HTTP 请求失败: ${response.code} ${response.message}")
                                     )
                                 )
                             }

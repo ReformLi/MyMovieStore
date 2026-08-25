@@ -292,7 +292,7 @@ class PermissionConfigRepository(
 
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw Exception("HTTP ${response.code}")
+                    throw Exception("HTTP 请求失败: ${response.code}")
                 }
 
                 val bodyString = response.body?.string()

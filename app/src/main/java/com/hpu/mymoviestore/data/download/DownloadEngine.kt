@@ -582,7 +582,7 @@ class DownloadEngine(context: Context) {
                     val response = call.execute()
                     try {
                         if (!response.isSuccessful && response.code != 206) {
-                            throw IOException("HTTP ${response.code}: ${response.message}")
+                            throw IOException("HTTP 请求失败: ${response.code} ${response.message}")
                         }
                         val body = response.body ?: throw IOException("响应体为空")
                         val encryptedBytes = body.bytes()
@@ -621,7 +621,7 @@ class DownloadEngine(context: Context) {
                 val response = call.execute()
                 try {
                     if (!response.isSuccessful && response.code != 206) {
-                        throw IOException("HTTP ${response.code}: ${response.message}")
+                        throw IOException("HTTP 请求失败: ${response.code} ${response.message}")
                     }
 
                     val body = response.body ?: throw IOException("响应体为空")
@@ -673,7 +673,7 @@ class DownloadEngine(context: Context) {
             .build()
         okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}: ${response.message}")
+                throw IOException("HTTP 请求失败: ${response.code} ${response.message}")
             }
             val bytes = response.body?.bytes() ?: throw IOException("响应体为空")
             if (bytes.size != 16) {
