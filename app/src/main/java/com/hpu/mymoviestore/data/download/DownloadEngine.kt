@@ -689,7 +689,7 @@ class DownloadEngine(context: Context) {
     private fun decryptSegment(encrypted: ByteArray, index: Int, task: DownloadTask): ByteArray {
         val encryption = task.encryption ?: return encrypted
         val key = task.encryptionKey ?: throw IOException("缺少解密密钥")
-        val iv = encryption.iv ?: defaultIv(index)
+        val iv = encryption.iv ?: defaultIv(index.toLong())
         try {
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
@@ -743,14 +743,19 @@ class DownloadEngine(context: Context) {
 
     /**
      * 计算默认 IV：分片序号（0 起）作为 128 位大端整数（RFC 8216）。
+     *
+     * IV 为 16 字节，分片序号占低 64 位（大端），高 64 位为 0。
+     * 支持 Long 范围内的分片序号（远超实际会出现的分片数量）。
      */
-    private fun defaultIv(index: Int): ByteArray {
+    private fun defaultIv(index: Long): ByteArray {
         val iv = ByteArray(16)
-        var value = index.toLong()
+        var value = index
+        // 填充低 8 字节（iv[8]~iv[15]），大端序
         for (i in 0 until 8) {
             iv[15 - i] = (value and 0xFF).toByte()
             value = value shr 8
         }
+        // 高 8 字节（iv[0]~iv[7]）保持 0（ByteArray 默认值就是 0）
         return iv
     }
 
