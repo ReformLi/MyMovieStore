@@ -719,20 +719,30 @@ class DownloadEngine(context: Context) {
      * - MP4/fMP4：偏移 4 处为 "ftyp"（box size + type）
      *
      * 均不匹配说明密钥或 IV 与流不匹配（解出乱码），抛 [HlsDecryptException]。
+     *
+     * 注意：分片过小（< 188 字节，不足一个 TS 包）时无法可靠校验同步字节，
+     * 直接判失败，避免首字节恰好为 0x47 的小乱码文件被误判通过。
      */
     private fun validateDecryptedContainer(plain: ByteArray) {
         if (plain.isEmpty()) {
             throw HlsDecryptException("解密结果无效（密钥或 IV 与源不匹配）")
         }
-        // MPEG-TS：0x47 开头，188/376 偏移处仍为同步字节
-        val isTs = plain[0].toInt() == 0x47 &&
-            (plain.size < 188 ||
-                (plain[188].toInt() == 0x47 && (plain.size < 376 || plain[376].toInt() == 0x47)))
-        // MP4/fMP4：偏移 4 处为 "ftyp"
+        // MP4/fMP4：偏移 4 处为 "ftyp"（至少 8 字节：4 字节 size + 4 字节 "ftyp"）
         val isMp4 = plain.size >= 8 &&
             plain[4] == 'f'.code.toByte() && plain[5] == 't'.code.toByte() &&
             plain[6] == 'y'.code.toByte() && plain[7] == 'p'.code.toByte()
-        if (!isTs && !isMp4) {
+        if (isMp4) return
+
+        // MPEG-TS：必须至少 188 字节（一个完整 TS 包）才能校验同步字节重复
+        // 分片不足 188 字节时，单凭首字节 0x47 无法区分合法 TS 与恰好首字节匹配的乱码，判失败
+        if (plain.size < 188) {
+            throw HlsDecryptException("解密结果无效（密钥或 IV 与源不匹配）：分片过小（${plain.size} 字节，不足一个 TS 包）")
+        }
+        // 0x47 开头，且偏移 188 / 376 处仍为同步字节
+        val isTs = plain[0].toInt() == 0x47 &&
+            plain[188].toInt() == 0x47 &&
+            (plain.size < 376 || plain[376].toInt() == 0x47)
+        if (!isTs) {
             throw HlsDecryptException("解密结果无效（密钥或 IV 与源不匹配）")
         }
     }
@@ -754,6 +764,8 @@ class DownloadEngine(context: Context) {
 
     /**
      * 合并所有分片为最终的 mp4 文件。
+     *
+     * 任一分片缺失即抛 [IOException] 判失败，避免产出缺数据的坏文件。
      */
     private suspend fun mergeSegments(task: DownloadTask, taskTempDir: File): File {
         return withContext(Dispatchers.IO) {
@@ -768,13 +780,21 @@ class DownloadEngine(context: Context) {
             Log.d(TAG, "开始合并分片: task=${task.taskId}, segments=${task.segmentUrls.size}, " +
                     "output=${outputFile.absolutePath}")
 
+            // 合并前预检：任一分片缺失直接判失败，不产出坏文件
+            val missingSegments = mutableListOf<Int>()
+            for (i in task.segmentUrls.indices) {
+                val segmentFile = File(taskTempDir, String.format("%05d.ts", i))
+                if (!segmentFile.exists() || segmentFile.length() == 0L) {
+                    missingSegments.add(i)
+                }
+            }
+            if (missingSegments.isNotEmpty()) {
+                throw IOException("合并失败：缺失 ${missingSegments.size} 个分片（首个缺失 index=${missingSegments.first()}），已终止合并，不产出坏文件")
+            }
+
             FileOutputStream(outputFile).use { fos ->
                 for (i in task.segmentUrls.indices) {
                     val segmentFile = File(taskTempDir, String.format("%05d.ts", i))
-                    if (!segmentFile.exists()) {
-                        Log.w(TAG, "合并时发现缺失分片: index=$i, file=${segmentFile.absolutePath}")
-                        continue
-                    }
 
                     segmentFile.inputStream().use { sis ->
                         val buffer = ByteArray(524288)
@@ -784,7 +804,9 @@ class DownloadEngine(context: Context) {
                         }
                     }
 
-                    Log.d(TAG, "合并分片: $i/${task.segmentUrls.size}")
+                    if (i % 20 == 0 || i == task.segmentUrls.lastIndex) {
+                        Log.d(TAG, "合并分片: $i/${task.segmentUrls.size}")
+                    }
                 }
                 fos.flush()
             }
