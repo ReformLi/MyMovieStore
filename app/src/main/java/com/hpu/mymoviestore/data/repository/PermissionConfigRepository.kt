@@ -3,14 +3,14 @@ package com.hpu.mymoviestore.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.hpu.mymoviestore.data.HttpClientProvider
+import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
-import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 
 /**
  * App 远程权限配置模型。
@@ -67,10 +67,7 @@ class PermissionConfigRepository(
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val okHttpClient: OkHttpClient = HttpClientProvider.standardClient
 
     /**
      * 内存中的权限配置：

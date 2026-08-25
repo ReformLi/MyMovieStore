@@ -1,6 +1,7 @@
 package com.hpu.mymoviestore.data.source
 
 import android.util.Log
+import com.hpu.mymoviestore.data.HttpClientProvider
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuAnime
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumi
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuBangumiResponse
@@ -12,7 +13,6 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * 弹幕 API 客户端（基于 danmu_api 开源项目）
@@ -31,10 +31,7 @@ import java.util.concurrent.TimeUnit
  */
 class DanmakuApi {
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = HttpClientProvider.standardClient
 
     private val moshi: Moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())

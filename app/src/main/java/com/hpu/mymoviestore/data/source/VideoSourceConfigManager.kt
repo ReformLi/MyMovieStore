@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.hpu.mymoviestore.data.HttpClientProvider
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.source.impl.BaJieVideoSource
 import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
@@ -130,11 +131,7 @@ class VideoSourceConfigManager(
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val httpClient = HttpClientProvider.standardClient
 
     /** 配置状态，供 UI 观察（LODAING 时显示加载界面，READY 时隐藏） */
     private val _state = MutableLiveData(ConfigState.LOADING)

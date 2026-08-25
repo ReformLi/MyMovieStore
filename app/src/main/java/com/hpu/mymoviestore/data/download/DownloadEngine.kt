@@ -3,10 +3,10 @@ package com.hpu.mymoviestore.data.download
 import android.content.Context
 import android.os.StatFs
 import android.util.Log
+import com.hpu.mymoviestore.data.HttpClientProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.*
@@ -148,13 +148,7 @@ class DownloadEngine(context: Context) {
 
     private val appContext: Context = context.applicationContext
 
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
-        .connectTimeout(DOWNLOAD_TIMEOUT, TimeUnit.SECONDS)
-        .readTimeout(DOWNLOAD_TIMEOUT, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val okHttpClient: OkHttpClient = HttpClientProvider.downloadClient
 
     private val m3u8Parser = M3u8Parser(okHttpClient)
 

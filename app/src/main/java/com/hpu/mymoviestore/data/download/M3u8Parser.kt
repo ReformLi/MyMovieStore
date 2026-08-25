@@ -1,10 +1,10 @@
 package com.hpu.mymoviestore.data.download
 
 import android.util.Log
+import com.hpu.mymoviestore.data.HttpClientProvider
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URI
-import java.util.concurrent.TimeUnit
 
 /**
  * HLS 加密信息（#EXT-X-KEY 解析结果）。
@@ -46,12 +46,7 @@ class HlsEncryptionException(message: String) : Exception(message)
  * - 返回 M3u8Playlist（分片列表 + 加密信息）
  */
 class M3u8Parser(
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val okHttpClient: OkHttpClient = HttpClientProvider.standardClient
 ) {
 
     companion object {

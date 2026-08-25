@@ -1,6 +1,7 @@
 package com.hpu.mymoviestore.data.source
 
 import android.util.Log
+import com.hpu.mymoviestore.data.HttpClientProvider
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import com.hpu.mymoviestore.data.model.CrawlError
 import com.hpu.mymoviestore.data.model.CrawlErrorType
@@ -497,19 +498,6 @@ abstract class CrawlerVideoSource(
         private const val NEG_TYPE_TIMEOUT = "TIMEOUT"
         // ────────────────────────────────────────────────────────────────────
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .addInterceptor { chain ->
-                val original = chain.request()
-                val request = original.newBuilder()
-                    .header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    )
-                    .build()
-                chain.proceed(request)
-            }
-            .build()
+        fun defaultClient(): OkHttpClient = HttpClientProvider.crawlerClient
     }
 }
