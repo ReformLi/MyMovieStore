@@ -49,10 +49,26 @@ class DanmakuApi {
 
     fun setBaseUrl(url: String) {
         baseUrl = url
-        Log.d(TAG, "弹幕 Base URL 设置为: $url")
+        Log.d(TAG, "弹幕 Base URL 已更新（域名脱敏）")
     }
 
     fun getBaseUrl(): String = baseUrl
+
+    /**
+     * 脱敏 URL：只保留 path + query，不打印域名，避免 Release 包日志泄露服务器地址。
+     * 例：https://example.com/api/v2/search?keyword=xxx → /api/v2/search?keyword=xxx
+     */
+    private fun maskUrl(url: String): String {
+        return try {
+            val parsed = java.net.URI(url)
+            val path = parsed.path ?: ""
+            val query = parsed.query?.let { "?$it" } ?: ""
+            path + query
+        } catch (e: Exception) {
+            // 解析失败时返回固定占位符，不泄露原始 URL
+            "<invalid url>"
+        }
+    }
 
     /**
      * 按 keyword 搜索匹配的番剧/影视
@@ -60,7 +76,7 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun searchAnime(keyword: String): List<DanmakuAnime> {
         val url = "$baseUrl/api/v2/search/anime?keyword=${keyword.urlEncode()}"
-        Log.d(TAG, "搜索弹幕: $url")
+        Log.d(TAG, "搜索弹幕: ${maskUrl(url)}")
 
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
@@ -90,7 +106,7 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun getBangumi(animeId: Long): DanmakuBangumi? {
         val url = "$baseUrl/api/v2/bangumi/$animeId"
-        Log.d(TAG, "获取 bangumi: $url")
+        Log.d(TAG, "获取 bangumi: ${maskUrl(url)}")
 
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
@@ -122,7 +138,7 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun getDanmakuComments(episodeId: Long): List<DanmakuComment> {
         val url = "$baseUrl/api/v2/comment/$episodeId"
-        Log.d(TAG, "获取弹幕 JSON: $url")
+        Log.d(TAG, "获取弹幕 JSON: ${maskUrl(url)}")
 
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
