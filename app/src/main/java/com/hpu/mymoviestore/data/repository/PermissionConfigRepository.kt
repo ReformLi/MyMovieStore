@@ -125,8 +125,10 @@ class PermissionConfigRepository(
 
     /**
      * 异步触发权限检查（后台执行，不阻塞 UI）。
-     * 缓存有效时直接跳过，避免不必要的网络请求。
-     * 检查结果会更新到内存和本地缓存。
+     *
+     * - 缓存有效时直接跳过，避免不必要的网络请求
+     * - 获取成功时更新到内存和本地缓存（24h TTL）
+     * - 获取失败时不写缓存，本次会话默认放行，下次进入应用重新获取
      */
     suspend fun fetchPermissionAsync() {
         if (isCacheValid()) {
@@ -135,13 +137,18 @@ class PermissionConfigRepository(
         }
         try {
             val config = fetchConfigWithRetry()
-            Log.d(TAG, "后台权限配置检查完成: $config")
-            memoryConfig = config
-            saveLocalCache(config)
-            try {
-                cacheRepository.put(CACHE_KEY, config.toCacheJson(), ApiCacheEntity.TTL_ONE_DAY)
-            } catch (e: Exception) {
-                Log.w(TAG, "写入 ApiCache 失败: ${e.message}")
+            if (config != null) {
+                Log.d(TAG, "权限配置获取成功，已写入缓存: $config")
+                memoryConfig = config
+                saveLocalCache(config)
+                try {
+                    cacheRepository.put(CACHE_KEY, config.toCacheJson(), ApiCacheEntity.TTL_ONE_DAY)
+                } catch (e: Exception) {
+                    Log.w(TAG, "写入 ApiCache 失败: ${e.message}")
+                }
+            } else {
+                // 获取失败：不写缓存，本次会话 checkPermissionFast 走 ?: true 放行
+                Log.w(TAG, "权限配置获取失败，不写缓存，本次会话默认放行，下次进入应用重新获取")
             }
         } catch (e: Exception) {
             Log.w(TAG, "后台权限配置检查异常: ${e.message}")
@@ -151,6 +158,10 @@ class PermissionConfigRepository(
     /**
      * 同步检查权限（会阻塞，等待网络请求完成）。
      * 用于应用启动时预加载，或需要立即知道结果的场景。
+     *
+     * - 缓存有效时直接返回缓存
+     * - 获取成功时写入缓存（24h TTL）并返回实际配置
+     * - 获取失败时返回 DEFAULT（放行）但不写缓存，下次进入应用重新获取
      *
      * @return 完整的权限配置（含搜索、弹幕等开关）
      */
@@ -165,16 +176,21 @@ class PermissionConfigRepository(
 
         // 2. 从网络获取
         val config = fetchConfigWithRetry()
-        Log.d(TAG, "权限配置：网络获取 = $config")
-        memoryConfig = config
-        saveLocalCache(config)
-        try {
-            cacheRepository.put(CACHE_KEY, config.toCacheJson(), ApiCacheEntity.TTL_ONE_DAY)
-        } catch (e: Exception) {
-            Log.w(TAG, "写入 ApiCache 失败: ${e.message}")
+        if (config != null) {
+            Log.d(TAG, "权限配置获取成功，已写入缓存: $config")
+            memoryConfig = config
+            saveLocalCache(config)
+            try {
+                cacheRepository.put(CACHE_KEY, config.toCacheJson(), ApiCacheEntity.TTL_ONE_DAY)
+            } catch (e: Exception) {
+                Log.w(TAG, "写入 ApiCache 失败: ${e.message}")
+            }
+            return config
         }
 
-        return config
+        // 3. 获取失败：返回 DEFAULT 放行，但不写缓存
+        Log.w(TAG, "权限配置获取失败，本次返回默认放行（不写缓存，下次进入应用重新获取）")
+        return PermissionConfig.DEFAULT
     }
 
     /**
@@ -255,9 +271,13 @@ class PermissionConfigRepository(
     }
 
     /**
-     * 带重试的权限配置获取
+     * 带重试的权限配置获取。
+     *
+     * @return 成功时返回实际配置；所有重试均失败时返回 null（不返回 DEFAULT）。
+     *         调用方负责在 null 时决定是否放行：快速检查 `?: true` 放行，
+     *         但不写缓存，确保下次进入应用会重新获取。
      */
-    private suspend fun fetchConfigWithRetry(): PermissionConfig {
+    private suspend fun fetchConfigWithRetry(): PermissionConfig? {
         repeat(MAX_RETRIES) { attempt ->
             try {
                 val config = fetchConfigFromNetwork()
@@ -271,9 +291,9 @@ class PermissionConfigRepository(
                 }
             }
         }
-        // 所有重试都失败，默认放行（各开关全部开启）
-        Log.w(TAG, "所有重试均失败，默认放行: ${PermissionConfig.DEFAULT}")
-        return PermissionConfig.DEFAULT
+        // 所有重试均失败：返回 null，不写缓存，下次进入应用重新获取
+        Log.w(TAG, "所有重试均失败，本次会话默认放行（不写缓存，下次进入应用重新获取）")
+        return null
     }
 
     /**
