@@ -33,6 +33,12 @@ class DanmakuApi {
 
     private val client: OkHttpClient = HttpClientProvider.danmakuClient
 
+    object ProxyConfig {
+        const val BASE_URL = "http://localhost:8080"  // 代理网关地址
+        const val PROXY_PATH = "/proxy"               // 代理路由前缀
+        const val TOKEN = "dev-token-123"             // Bearer Token
+    }
+
     private val moshi: Moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
@@ -81,9 +87,14 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun searchAnime(keyword: String): List<DanmakuAnime> {
         val url = "$baseUrl/api/v2/search/anime?keyword=${keyword.urlEncode()}"
+//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/search/anime?keyword=${keyword.urlEncode()}"//代理路径
         Log.d(TAG, "搜索弹幕: ${maskUrl(url)}")
 
-        val request = Request.Builder().url(url).get().build()
+        val request = Request.Builder()
+            .url(url)
+//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")//代理网关token
+            .get()
+            .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("搜索请求失败: code=${response.code}")
@@ -111,9 +122,14 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun getBangumi(animeId: Long): DanmakuBangumi? {
         val url = "$baseUrl/api/v2/bangumi/$animeId"
+//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/bangumi/$animeId"//代理路径
         Log.d(TAG, "获取 bangumi: ${maskUrl(url)}")
 
-        val request = Request.Builder().url(url).get().build()
+        val request = Request.Builder()
+            .url(url)
+//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")//代理网关token
+            .get()
+            .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("bangumi 请求失败: code=${response.code}")
@@ -143,9 +159,14 @@ class DanmakuApi {
     @Throws(IOException::class)
     fun getDanmakuComments(episodeId: Long): List<DanmakuComment> {
         val url = "$baseUrl/api/v2/comment/$episodeId"
+//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/comment/$episodeId"//代理路径
         Log.d(TAG, "获取弹幕 JSON: ${maskUrl(url)}")
 
-        val request = Request.Builder().url(url).get().build()
+        val request = Request.Builder()
+            .url(url)
+//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")
+            .get()
+            .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("弹幕请求失败: code=${response.code}")
