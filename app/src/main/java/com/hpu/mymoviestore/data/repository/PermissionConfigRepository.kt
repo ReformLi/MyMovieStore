@@ -3,6 +3,7 @@ package com.hpu.mymoviestore.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.data.HttpClientProvider
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import kotlinx.coroutines.Dispatchers
@@ -14,20 +15,55 @@ import org.json.JSONObject
 
 /**
  * App 远程权限配置模型。
- * 每个字段对应远程 JSON switches 中的一个开关，且必须满足 app_name/version 匹配才生效。
+ *
+ * - searchEnabled/danmakuEnabled：功能开关，需满足 app_name + version 匹配才生效
+ * - enableUpdate：更新检查开关（app_name 匹配即生效，**不受 version 匹配限制**——
+ *   否则远程版本领先时 versionMatch=false，版本滞后的用户将永远收不到更新提示）
+ * - forceUpdateUrl：APK 下载地址
+ * - updateDetails：更新说明文案（展示到关于页更新卡片）
+ * - latestVersion：远程最新版本号（metadata.version 原始值），与本地版本比较判断是否有更新
  */
 data class PermissionConfig(
     val searchEnabled: Boolean,
-    val danmakuEnabled: Boolean
+    val danmakuEnabled: Boolean,
+    val enableUpdate: Boolean = false,
+    val forceUpdateUrl: String? = null,
+    val updateDetails: String? = null,
+    val latestVersion: String? = null
 ) {
-    /** 序列化为本地缓存用的 JSON（结构与远程 JSON 无关，仅存解析结果） */
-    fun toCacheJson(): String = """{"search":$searchEnabled,"danmaku":$danmakuEnabled}"""
+    /**
+     * 序列化为本地缓存用的 JSON（结构与远程 JSON 无关，仅存解析结果）。
+     *
+     * 包含 cached_for_version 字段（方案 B）：记录该缓存对应的 App 版本，
+     * 读取时与当前 BuildConfig.VERSION_NAME 校验，版本升级后旧缓存自动失效，
+     * 避免升级后 24h 内带着旧版本获取的权限状态（如 version 不匹配导致的全关）。
+     */
+    fun toCacheJson(): String {
+        val url = forceUpdateUrl?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""
+        val details = updateDetails?.replace("\\", "\\\\")
+            ?.replace("\"", "\\\"")?.replace("\n", "\\n")?.replace("\r", "") ?: ""
+        val version = latestVersion?.replace("\"", "\\\"") ?: ""
+        return """{"search":$searchEnabled,"danmaku":$danmakuEnabled,"enableUpdate":$enableUpdate,"forceUpdateUrl":"$url","updateDetails":"$details","latestVersion":"$version","cached_for_version":"${BuildConfig.VERSION_NAME}"}"""
+    }
 
     companion object {
         /** 网络获取失败/无缓存时的默认配置：全部放行，避免远程异常锁死本地功能 */
         val DEFAULT = PermissionConfig(searchEnabled = true, danmakuEnabled = true)
     }
 }
+
+/**
+ * 更新检查结果。
+ *
+ * @param latestVersion 远程最新版本号
+ * @param downloadUrl APK 下载地址
+ * @param details 更新说明文案
+ */
+data class UpdateInfo(
+    val latestVersion: String,
+    val downloadUrl: String,
+    val details: String?
+)
 
 /**
  * 远程权限配置仓库
@@ -58,9 +94,9 @@ class PermissionConfigRepository(
         private const val MAX_RETRIES = 5
         private const val RETRY_INTERVAL_MS = 60 * 1000L // 1分钟
 
-        // 本地固定值
+        // 本地固定值（LOCAL_VERSION 从 BuildConfig 读取，发版时只需改 build.gradle.kts 的 versionName）
         const val LOCAL_APP_NAME = "MyMovieStore"
-        const val LOCAL_VERSION = "1.2.0"
+        val LOCAL_VERSION: String = BuildConfig.VERSION_NAME
     }
 
     private val prefs: SharedPreferences by lazy {
@@ -234,7 +270,11 @@ class PermissionConfigRepository(
     }
 
     /**
-     * 读取本地缓存
+     * 读取本地缓存。
+     *
+     * 方案 B：缓存 JSON 内记录 cached_for_version（获取该配置时的 App 版本），
+     * 与当前 BuildConfig.VERSION_NAME 不一致即视为无效（App 升级后旧缓存自动失效，
+     * 重新联网拉取，避免升级后 24h 内带着旧版本获取的权限状态）。
      */
     private fun readLocalCache(): PermissionConfig? {
         val timestamp = prefs.getLong(PREFS_KEY_TIMESTAMP, 0)
@@ -246,9 +286,21 @@ class PermissionConfigRepository(
         val jsonStr = prefs.getString(PREFS_KEY_CONFIG, null) ?: return null
         return try {
             val json = JSONObject(jsonStr)
+
+            // 版本校验：缓存获取时的 App 版本与当前版本不一致 → 缓存失效
+            val cachedForVersion = json.optString("cached_for_version", "")
+            if (cachedForVersion != BuildConfig.VERSION_NAME) {
+                Log.d(TAG, "本地缓存版本不匹配（缓存=$cachedForVersion, 当前=${BuildConfig.VERSION_NAME}），视为无效")
+                return null
+            }
+
             PermissionConfig(
                 searchEnabled = json.optBoolean("search", true),
-                danmakuEnabled = json.optBoolean("danmaku", true)
+                danmakuEnabled = json.optBoolean("danmaku", true),
+                enableUpdate = json.optBoolean("enableUpdate", false),
+                forceUpdateUrl = json.optString("forceUpdateUrl", "").takeIf { it.isNotEmpty() },
+                updateDetails = json.optString("updateDetails", "").takeIf { it.isNotEmpty() },
+                latestVersion = json.optString("latestVersion", "").takeIf { it.isNotEmpty() }
             )
         } catch (e: Exception) {
             Log.w(TAG, "本地缓存解析失败，视为无效: ${e.message}")
@@ -332,25 +384,29 @@ class PermissionConfigRepository(
 
     /**
      * 解析远程 JSON 配置。
-     * 每个开关独立判断：开关为 true 且 app_name/version 与本地匹配时该权限才生效；
-     * 开关缺失/为 false 时对应权限禁止（与"获取失败默认放行"互不影响）。
+     *
+     * - 搜索/弹幕权限：开关为 true 且 app_name + version 与本地匹配时生效
+     * - 更新检查：enable_update 且 app_name 匹配即生效（不要求 version 匹配，
+     *   否则远程版本领先时 versionMatch=false，用户收不到更新提示）
+     * - strings 下的 force_update_url / update_details / metadata.version 原样带出，
+     *   供更新检查与关于页展示
      */
     private fun parseConfig(json: JSONObject): PermissionConfig {
         val switchesObj = json.optJSONObject("switches")
+        val stringsObj = json.optJSONObject("strings")
         val metadataObj = json.optJSONObject("metadata")
 
         val myapp = switchesObj?.optBoolean("myapp", false) ?: false
         val enableDanmaku = switchesObj?.optBoolean("enable_danmaku", false) ?: false
+        val enableUpdateSwitch = switchesObj?.optBoolean("enable_update", false) ?: false
         val remoteAppName = metadataObj?.optString("app_name", "") ?: ""
         val remoteVersion = metadataObj?.optString("version", "") ?: ""
+        val forceUpdateUrl = stringsObj?.optString("force_update_url", "")?.takeIf { it.isNotEmpty() }
+        val updateDetails = stringsObj?.optString("update_details", "")?.takeIf { it.isNotEmpty() }
 
-        Log.d(TAG, "远程配置: myapp=$myapp, enable_danmaku=$enableDanmaku, app_name='$remoteAppName', version='$remoteVersion'")
+        Log.d(TAG, "远程配置: myapp=$myapp, enable_danmaku=$enableDanmaku, enable_update=$enableUpdateSwitch, app_name='$remoteAppName', version='$remoteVersion'")
         Log.d(TAG, "本地配置: app_name='$LOCAL_APP_NAME', version='$LOCAL_VERSION'")
 
-        // 条件判断：
-        // 1. 各开关（myapp / enable_danmaku）必须为 true
-        // 2. app_name 必须匹配
-        // 3. version 必须匹配
         val nameMatch = remoteAppName == LOCAL_APP_NAME
         val versionMatch = remoteVersion == LOCAL_VERSION
 
@@ -358,7 +414,78 @@ class PermissionConfigRepository(
 
         return PermissionConfig(
             searchEnabled = myapp && nameMatch && versionMatch,
-            danmakuEnabled = enableDanmaku && nameMatch && versionMatch
+            danmakuEnabled = enableDanmaku && nameMatch && versionMatch,
+            // 更新检查：app_name 匹配 + enable_update 开关（不要求 versionMatch，理由见方法注释）
+            enableUpdate = enableUpdateSwitch && nameMatch,
+            forceUpdateUrl = forceUpdateUrl,
+            updateDetails = updateDetails,
+            latestVersion = remoteVersion.takeIf { it.isNotEmpty() }
         )
+    }
+
+    /**
+     * 检查是否有可用更新。
+     *
+     * 判断条件（三者同时满足）：
+     * 1. enableUpdate：远程 enable_update 开关开启且 app_name 匹配
+     * 2. 远程 latestVersion > 本地版本（语义化版本比较，1.10.0 > 1.9.0）
+     * 3. force_update_url 非空（有可下载的 APK 地址）
+     *
+     * 数据来源为本地缓存（内存或 SharedPreferences，方案 B 带版本校验）；
+     * 缓存不存在时触发一次后台拉取再判断。
+     *
+     * @return 有更新返回 [UpdateInfo]；无更新或无法判断返回 null
+     */
+    suspend fun checkUpdate(): UpdateInfo? {
+        // 确保配置已加载：无缓存时尝试后台拉取（成功后写入内存）
+        if (loadConfigFast() == null) {
+            Log.d(TAG, "更新检查：无缓存，尝试拉取配置")
+            fetchPermissionAsync()
+        }
+        val config = loadConfigFast() ?: run {
+            Log.d(TAG, "更新检查：配置不可用，跳过检查")
+            return null
+        }
+
+        // 1. 更新开关
+        if (!config.enableUpdate) {
+            Log.d(TAG, "更新检查：enable_update 未开启或 app_name 不匹配")
+            return null
+        }
+
+        // 2. 版本比较：远程版本需大于本地版本
+        val latest = config.latestVersion
+        if (latest == null || compareVersion(latest, LOCAL_VERSION) <= 0) {
+            Log.d(TAG, "更新检查：本地已是最新（remote=$latest, local=$LOCAL_VERSION）")
+            return null
+        }
+
+        // 3. 下载地址
+        val url = config.forceUpdateUrl
+        if (url.isNullOrEmpty()) {
+            Log.w(TAG, "更新检查：发现新版本 $latest 但缺少下载地址")
+            return null
+        }
+
+        Log.d(TAG, "更新检查：发现新版本 $latest（本地=$LOCAL_VERSION）")
+        return UpdateInfo(latestVersion = latest, downloadUrl = url, details = config.updateDetails)
+    }
+
+    /**
+     * 语义化版本比较（按 "." 分段逐位比较数字，位数不足补 0）。
+     * 例：1.10.0 vs 1.9.0 → 1（正确处理字符串比较会出错的场景）
+     *
+     * @return 正数表示 v1 > v2，负数表示 v1 < v2，0 表示相等
+     */
+    private fun compareVersion(v1: String, v2: String): Int {
+        val p1 = v1.split(".").map { it.trim().toIntOrNull() ?: 0 }
+        val p2 = v2.split(".").map { it.trim().toIntOrNull() ?: 0 }
+        val maxLen = maxOf(p1.size, p2.size)
+        for (i in 0 until maxLen) {
+            val a = p1.getOrElse(i) { 0 }
+            val b = p2.getOrElse(i) { 0 }
+            if (a != b) return a - b
+        }
+        return 0
     }
 }

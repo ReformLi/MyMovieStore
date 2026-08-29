@@ -24,6 +24,7 @@ import com.hpu.mymoviestore.databinding.FragmentProfileBinding
 import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
+import com.hpu.mymoviestore.presentation.update.AboutBottomSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,7 +93,8 @@ class ProfileFragment : Fragment() {
 
         // 关于
         binding.cardAbout.setOnClickListener {
-            showAboutDialog()
+            AboutBottomSheet.newInstance()
+                .show(parentFragmentManager, "AboutBottomSheet")
         }
     }
 
@@ -417,23 +419,6 @@ class ProfileFragment : Fragment() {
                     "如遇问题，请检查网络连接后重试。"
             )
             .setPositiveButton("知道了", null)
-            .show()
-    }
-
-    /**
-     * 关于弹框
-     */
-    private fun showAboutDialog() {
-        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
-            .setTitle("关于")
-            .setMessage(
-                "我的影视\n" +
-                    "版本: 1.2.0\n\n" +
-                    "一款简洁的影视浏览与播放应用，\n" +
-                    "聚合豆瓣内容发现与在线播放资源。\n\n" +
-                    "仅供学习交流使用。"
-            )
-            .setPositiveButton("确定", null)
             .show()
     }
 

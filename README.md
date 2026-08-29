@@ -139,21 +139,38 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 
 ### 弹幕远程权限
 
-`PermissionConfigRepository` 从远程 JSON 文件（`switches` + `metadata`）统一获取 App 各功能权限：
+`PermissionConfigRepository` 从远程 JSON 文件（`switches` + `strings` + `metadata`）统一获取 App 各功能权限：
 
 ```json
 {
   "switches": {
     "myapp": true,
-    "enable_danmaku": true
+    "enable_danmaku": true,
+    "enable_update": true
   },
-  "metadata": { "app_name": "MyMovieStore", "version": "1.0.0" }
+  "strings": {
+    "force_update_url": "https://xxx.com/app.apk",
+    "update_details": "修复了XXX的问题！"
+  },
+  "metadata": { "app_name": "MyMovieStore", "version": "1.2.0" }
 }
 ```
 
 - **弹幕权限**：`enable_danmaku` 为 true 且 `app_name`/`version` 与本地一致时弹幕可用（保持现状）；否则弹幕不做任何联网获取（搜索/分集/评论/下载均拦截），无论播放器弹幕开关是否打开，都只显示「弹幕已关闭」。
 - **与搜索权限一致**：`myapp` 控制搜索功能，两个开关同源同规则。
 - **失败默认放行**：联网获取权限配置失败（含解析失败）时默认全部开启，避免远程配置异常锁死本地功能；结果缓存 1 天。
+- **缓存带版本校验**：本地缓存 JSON 记录 `cached_for_version`，与当前 App 版本不一致时缓存自动失效重新拉取，避免升级后带着旧版本获取的权限状态跑满 24h。
+- **本地版本号**：`LOCAL_VERSION` 从 `BuildConfig.VERSION_NAME` 读取，发版时只需修改 `build.gradle.kts` 的 `versionName`。
+
+### 应用内更新
+
+基于同一份远程 JSON 实现更新检查与 APK 下载安装：
+
+- **更新检查**（`checkUpdate()`）：`enable_update` 开启 + `app_name` 匹配（不要求 version 匹配，否则版本滞后的用户永远收不到提示）+ 远程 `metadata.version` 语义化比较大于本地版本 + 下载地址非空，三者同时满足才提示。
+- **启动提示弹窗**（`MainActivity`）：发现新版本时弹纯提示弹窗（无跳转按钮），告知「我的 → 关于 → 检查更新」；可选「下次再说」（下次启动再弹）或「今天不再提醒」（当天不再弹，日期记录于 `UpdatePrefs`）。
+- **关于页 BottomSheet**（`AboutBottomSheet`）：替换原 AlertDialog。展示 App 信息（版本从 BuildConfig 读取）、检查更新入口、更新详情卡片（`update_details` 文案 + 新版本号）；点击「立即更新」通过 OkHttp 下载 APK（实时进度条，存于 `cacheDir/update/`），完成后跳转系统安装器。
+- **安装授权**：`REQUEST_INSTALL_PACKAGES` 权限 + Android 8.0+ 动态检查「安装未知应用」授权，未授权时引导跳转系统设置；APK 通过 `FileProvider` 共享给系统安装器。
+- **数据与展示分层**：远程配置拉取跟随权限缓存 24h 一次；版本比较每次启动读缓存本地判断，无额外网络开销。
 
 ## 播放器手势与锁定
 

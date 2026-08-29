@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 应用内更新：共享 cacheDir/update/ 下的 APK 文件给系统安装器 -->
+    <cache-path
+        name="update_apk"
+        path="update/" />
+</paths>

@@ -4,19 +4,26 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.hpu.mymoviestore.BuildConfig
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.data.repository.PermissionConfigRepository
 import com.hpu.mymoviestore.databinding.ActivityMainBinding
 import com.hpu.mymoviestore.presentation.fragment.HomeFragment
 import com.hpu.mymoviestore.presentation.fragment.ProfileFragment
 import com.hpu.mymoviestore.presentation.fragment.SearchFragment
+import com.hpu.mymoviestore.presentation.update.UpdatePrefs
+import kotlinx.coroutines.launch
 
 /**
  * 应用主页面 —— 底部导航 + ViewPager2 承载
@@ -55,6 +62,58 @@ class MainActivity : AppCompatActivity() {
         setupViewPager()
         setupBottomNavigation()
         setupBackPressed()
+        checkUpdateOnLaunch()
+    }
+
+    /**
+     * 启动时检查更新（纯提示，不跳转）。
+     *
+     * - 有新版本且今日未跳过 → 弹窗告知「设置 → 关于 → 检查更新」
+     * - 用户可选「下次再说」（下次启动再弹）或「今天不再提醒」（当天不再弹）
+     */
+    private fun checkUpdateOnLaunch() {
+        lifecycleScope.launch {
+            try {
+                val updateInfo = MovieApplication.get().permissionConfigRepository.checkUpdate()
+                    ?: return@launch
+                if (!UpdatePrefs(this@MainActivity).shouldShowToday()) {
+                    Log.d(TAG, "更新提示：用户已选择今天不再提醒，跳过弹窗")
+                    return@launch
+                }
+                showUpdateTipDialog(updateInfo.latestVersion, updateInfo.details)
+            } catch (e: Exception) {
+                Log.w(TAG, "更新检查异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 更新提示弹窗（纯提示，无跳转按钮）。
+     * 用户按引导自行前往「我的 → 关于」检查更新。
+     */
+    private fun showUpdateTipDialog(latestVersion: String, details: String?) {
+        val message = buildString {
+            append("发现新版本 v$latestVersion，当前版本 v")
+            append(BuildConfig.VERSION_NAME)
+            append("\n\n")
+            if (!details.isNullOrEmpty()) {
+                append(details)
+                append("\n\n")
+            }
+            append("请前往「我的 → 关于」检查更新")
+        }
+        AlertDialog.Builder(this, R.style.RoundedDialog)
+            .setTitle("发现新版本")
+            .setMessage(message)
+            .setPositiveButton("下次再说") { _, _ ->
+                Log.d(TAG, "更新提示：用户选择下次再说")
+            }
+            .setNegativeButton("今天不再提醒") { _, _ ->
+                UpdatePrefs(this).markSkipToday()
+                Log.d(TAG, "更新提示：用户选择今天不再提醒")
+            }
+            .setCancelable(true)
+            .show()
     }
 
     // ======================== ViewPager2 ========================

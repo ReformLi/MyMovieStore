@@ -241,7 +241,10 @@ data/
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
 | `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制；空弹幕列表不写缓存，空缓存视为未命中 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
-| `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项权限配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`），与本地 app_name/version 匹配后生效；缓存 1 天，网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用 |
+| `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`、更新 `switches.enable_update` + `strings.force_update_url`/`update_details`），与本地 app_name/version 匹配后生效；缓存 1 天且带 `cached_for_version` 版本校验（升级后自动失效重拉）；网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用，`checkUpdate()` 启动更新检查调用 |
+| `AboutBottomSheet` | 关于页 BottomSheet：App 信息展示（BuildConfig 版本）、检查更新、更新详情卡片（`update_details` + 新版本号）、OkHttp 下载 APK（实时进度，存 `cacheDir/update/`）、FileProvider 发起系统安装 |
+| `ApkDownloader` / `ApkInstaller` | 更新包下载器（OkHttp 流式下载 + 进度回调）与安装工具（Android 8.0+ 安装未知应用授权检查 + FileProvider 共享） |
+| `UpdatePrefs` | 更新提示弹窗频率控制：「今天不再提醒」按日期记录，「下次再说」不持久化 |
 
 ### 弹幕缓存
 
