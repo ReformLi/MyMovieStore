@@ -1,10 +1,13 @@
 package com.hpu.mymoviestore.presentation.activity
 
+import android.app.Dialog
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.view.WindowManager
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -14,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.button.MaterialButton
 import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
@@ -92,28 +96,40 @@ class MainActivity : AppCompatActivity() {
      * 用户按引导自行前往「我的 → 关于」检查更新。
      */
     private fun showUpdateTipDialog(latestVersion: String, details: String?) {
-        val message = buildString {
-            append("发现新版本 v$latestVersion，当前版本 v")
-            append(BuildConfig.VERSION_NAME)
-            append("\n\n")
-            if (!details.isNullOrEmpty()) {
-                append(details)
-                append("\n\n")
-            }
-            append("请前往「我的 → 关于」检查更新")
+        val dialog = Dialog(this)
+        val view = layoutInflater.inflate(R.layout.dialog_update_tip, null)
+        view.findViewById<TextView>(R.id.tvBadgeVersion).text = "v$latestVersion"
+
+        val tvUpdateContent = view.findViewById<TextView>(R.id.tvUpdateContent)
+        val cardUpdateContent = view.findViewById<View>(R.id.cardUpdateContent)
+        if (details.isNullOrEmpty()) {
+            cardUpdateContent.visibility = View.GONE
+        } else {
+            tvUpdateContent.text = details
         }
-        AlertDialog.Builder(this, R.style.RoundedDialog)
-            .setTitle("发现新版本")
-            .setMessage(message)
-            .setPositiveButton("下次再说") { _, _ ->
-                Log.d(TAG, "更新提示：用户选择下次再说")
-            }
-            .setNegativeButton("今天不再提醒") { _, _ ->
-                UpdatePrefs(this).markSkipToday()
-                Log.d(TAG, "更新提示：用户选择今天不再提醒")
-            }
-            .setCancelable(true)
-            .show()
+
+        // 主按钮：关闭弹窗（下次启动再提示）
+        view.findViewById<MaterialButton>(R.id.btnGotIt).setOnClickListener {
+            Log.d(TAG, "更新提示：用户选择知道了（下次再说）")
+            dialog.dismiss()
+        }
+        // 次按钮：今天不再提醒
+        view.findViewById<TextView>(R.id.tvSkipToday).setOnClickListener {
+            UpdatePrefs(this).markSkipToday()
+            Log.d(TAG, "更新提示：用户选择今天不再提醒")
+            dialog.dismiss()
+        }
+
+        dialog.setContentView(view)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85).toInt(),
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+        }
+        dialog.setCancelable(true)
+        dialog.show()
     }
 
     // ======================== ViewPager2 ========================

@@ -167,8 +167,8 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 基于同一份远程 JSON 实现更新检查与 APK 下载安装：
 
 - **更新检查**（`checkUpdate()`）：`enable_update` 开启 + `app_name` 匹配（不要求 version 匹配，否则版本滞后的用户永远收不到提示）+ 远程 `metadata.version` 语义化比较大于本地版本 + 下载地址非空，三者同时满足才提示。
-- **启动提示弹窗**（`MainActivity`）：发现新版本时弹纯提示弹窗（无跳转按钮），告知「我的 → 关于 → 检查更新」；可选「下次再说」（下次启动再弹）或「今天不再提醒」（当天不再弹，日期记录于 `UpdatePrefs`）。
-- **关于页 BottomSheet**（`AboutBottomSheet`）：替换原 AlertDialog。展示 App 信息（版本从 BuildConfig 读取）、检查更新入口、更新详情卡片（`update_details` 文案 + 新版本号）；点击「立即更新」通过 OkHttp 下载 APK（实时进度条，存于 `cacheDir/update/`），完成后跳转系统安装器。
+- **启动提示弹窗**（`MainActivity`）：发现新版本时弹居中卡片弹窗（`dialog_update_tip.xml`，无跳转按钮），告知「我的 → 关于 → 检查更新」；可选「知道了」（下次启动再弹）或「今天不再提醒」（当天不再弹，日期记录于 `UpdatePrefs`）。
+- **关于页**（`AboutDialog`）：居中卡片 Dialog（`dialog_about.xml`，与更新提示弹窗风格统一），替换原 AlertDialog。展示 App 信息（版本从 BuildConfig 读取为 `vX.X.X` 徽章）、检查更新入口、更新详情卡片（`update_details` 文案 + 新版本号）；点击「立即更新」通过 OkHttp 下载 APK（实时进度条，存于 `cacheDir/update/`），完成后跳转系统安装器。内容区超过屏高 65% 时可滚动。
 - **安装授权**：`REQUEST_INSTALL_PACKAGES` 权限 + Android 8.0+ 动态检查「安装未知应用」授权，未授权时引导跳转系统设置；APK 通过 `FileProvider` 共享给系统安装器。
 - **数据与展示分层**：远程配置拉取跟随权限缓存 24h 一次；版本比较每次启动读缓存本地判断，无额外网络开销。
 

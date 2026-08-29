@@ -24,7 +24,8 @@ import com.hpu.mymoviestore.databinding.FragmentProfileBinding
 import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
-import com.hpu.mymoviestore.presentation.update.AboutBottomSheet
+import com.hpu.mymoviestore.presentation.help.HelpDialog
+import com.hpu.mymoviestore.presentation.update.AboutDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,13 +89,14 @@ class ProfileFragment : Fragment() {
 
         // 帮助
         binding.cardHelp.setOnClickListener {
-            showHelpDialog()
+            HelpDialog.newInstance()
+                .show(parentFragmentManager, "HelpDialog")
         }
 
         // 关于
         binding.cardAbout.setOnClickListener {
-            AboutBottomSheet.newInstance()
-                .show(parentFragmentManager, "AboutBottomSheet")
+            AboutDialog.newInstance()
+                .show(parentFragmentManager, "AboutDialog")
         }
     }
 
@@ -403,24 +405,6 @@ class ProfileFragment : Fragment() {
     }
 
     // ================== 帮助 & 关于 ==================
-
-    /**
-     * 帮助弹框
-     */
-    private fun showHelpDialog() {
-        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
-            .setTitle("帮助")
-            .setMessage(
-                "欢迎使用我的影视！\n\n" +
-                    "1. 首页发现：浏览豆瓣热门影视内容\n" +
-                    "2. 搜索播放：输入片名搜索可播放资源\n" +
-                    "3. 播放历史：自动保存观看记录，支持续播\n" +
-                    "4. 视频源：可在我的页面中管理播放源\n\n" +
-                    "如遇问题，请检查网络连接后重试。"
-            )
-            .setPositiveButton("知道了", null)
-            .show()
-    }
 
     override fun onDestroyView() {
         super.onDestroyView()

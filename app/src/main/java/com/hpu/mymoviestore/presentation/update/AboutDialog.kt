@@ -5,11 +5,13 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import androidx.fragment.app.DialogFragment
 import com.google.android.material.button.MaterialButton
 import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.MovieApplication
@@ -20,12 +22,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
 /**
- * 关于页 BottomSheet。
+ * 关于页（居中卡片 Dialog）。
+ *
+ * 采用与更新提示弹窗统一的居中卡片风格——关于页是纯信息展示，
+ * 居中 Dialog 比底部 BottomSheet 更符合用户预期。
  *
  * 内容：
  * - App 信息（名称、版本号从 BuildConfig 读取）
@@ -34,17 +38,18 @@ import java.io.IOException
  * - 下载中：进度条实时刷新
  * - 下载完成：跳转系统安装器
  */
-class AboutBottomSheet : BottomSheetDialogFragment() {
+class AboutDialog : DialogFragment() {
 
     companion object {
-        private const val TAG = "AboutBottomSheet"
+        private const val TAG = "AboutDialog"
 
-        fun newInstance(): AboutBottomSheet = AboutBottomSheet()
+        fun newInstance(): AboutDialog = AboutDialog()
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private lateinit var tvVersion: TextView
+    private lateinit var scrollContent: ScrollView
     private lateinit var layoutCheckUpdate: LinearLayout
     private lateinit var tvUpdateTitle: TextView
     private lateinit var tvUpdateStatus: TextView
@@ -55,6 +60,7 @@ class AboutBottomSheet : BottomSheetDialogFragment() {
     private lateinit var progressDownload: ProgressBar
     private lateinit var tvDownloadProgress: TextView
     private lateinit var btnUpdate: MaterialButton
+    private lateinit var tvClose: TextView
 
     /** 当前检查到的更新信息（null = 未发现更新） */
     private var updateInfo: UpdateInfo? = null
@@ -70,8 +76,9 @@ class AboutBottomSheet : BottomSheetDialogFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        val view = inflater.inflate(R.layout.about_bottom_sheet, container, false)
+        val view = inflater.inflate(R.layout.dialog_about, container, false)
         tvVersion = view.findViewById(R.id.tvVersion)
+        scrollContent = view.findViewById(R.id.scrollContent)
         layoutCheckUpdate = view.findViewById(R.id.layoutCheckUpdate)
         tvUpdateTitle = view.findViewById(R.id.tvUpdateTitle)
         tvUpdateStatus = view.findViewById(R.id.tvUpdateStatus)
@@ -82,15 +89,46 @@ class AboutBottomSheet : BottomSheetDialogFragment() {
         progressDownload = view.findViewById(R.id.progressDownload)
         tvDownloadProgress = view.findViewById(R.id.tvDownloadProgress)
         btnUpdate = view.findViewById(R.id.btnUpdate)
+        tvClose = view.findViewById(R.id.tvClose)
         return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        tvVersion.text = "版本 ${BuildConfig.VERSION_NAME}"
+        tvVersion.text = "v${BuildConfig.VERSION_NAME}"
 
         layoutCheckUpdate.setOnClickListener { checkUpdate() }
         btnUpdate.setOnClickListener { onUpdateButtonClick() }
+        tvClose.setOnClickListener { dismiss() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 居中卡片：透明背景 + 屏宽 85%，内容超长时限制内容区高度可滚动
+        dialog?.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85).toInt(),
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+        }
+        limitContentHeight()
+    }
+
+    /**
+     * 限制内容区最大高度为屏高 65%（更新说明文案较长时可滚动，
+     * 避免 Dialog 撑满屏幕）。
+     */
+    private fun limitContentHeight() {
+        scrollContent.post {
+            if (!isAdded) return@post
+            val maxHeight = (resources.displayMetrics.heightPixels * 0.65).toInt()
+            if (scrollContent.height > maxHeight) {
+                scrollContent.layoutParams = scrollContent.layoutParams.apply {
+                    height = maxHeight
+                }
+            }
+        }
     }
 
     /** 检查更新（复用远程配置仓库的 checkUpdate，缓存命中时不联网） */
@@ -131,6 +169,8 @@ class AboutBottomSheet : BottomSheetDialogFragment() {
         btnUpdate.isEnabled = true
         progressDownload.visibility = View.GONE
         tvDownloadProgress.visibility = View.GONE
+        // 卡片展开后重新计算高度限制
+        limitContentHeight()
     }
 
     /** 「立即更新 / 安装更新」按钮点击 */
@@ -221,7 +261,7 @@ class AboutBottomSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // BottomSheet 关闭即取消协程（下载中的任务随生命周期终止）
+        // Dialog 关闭即取消协程（下载中的任务随生命周期终止）
         scope.cancel()
     }
 }
