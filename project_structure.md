@@ -245,6 +245,7 @@ data/
 | `AboutDialog` | 关于页（居中卡片 Dialog，与更新提示弹窗风格统一）：App 信息展示（BuildConfig 版本徽章）、检查更新、更新详情卡片（`update_details` + 新版本号）、OkHttp 下载 APK（实时进度，存 `cacheDir/update/`）、FileProvider 发起系统安装；内容区超屏高 65% 可滚动 |
 | `ApkDownloader` / `ApkInstaller` | 更新包下载器（OkHttp 流式下载 + 进度回调）与安装工具（Android 8.0+ 安装未知应用授权检查 + FileProvider 共享） |
 | `UpdatePrefs` | 更新提示弹窗频率控制：「今天不再提醒」按日期记录，「知道了」（下次再说）不持久化 |
+| `VideoSourceDialog` | 视频源管理（居中卡片 Dialog）：RecyclerView 列表勾选源、全选/全不选切换 + 已选计数、确定时校验至少一个源并持久化到 SharedPreferences |
 
 ### 弹幕缓存
 

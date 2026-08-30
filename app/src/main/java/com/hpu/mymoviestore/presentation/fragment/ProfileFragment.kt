@@ -25,6 +25,7 @@ import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.help.HelpDialog
+import com.hpu.mymoviestore.presentation.source.VideoSourceDialog
 import com.hpu.mymoviestore.presentation.update.AboutDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,9 +56,10 @@ class ProfileFragment : Fragment() {
     }
 
     private fun setupClickListeners() {
-        // 视频源管理 —— 弹框（多选开关，至少选一个，默认全选）
+        // 视频源管理 —— 居中卡片弹框（多选开关，全选/全不选，至少选一个）
         binding.cardVideoSource.setOnClickListener {
-            showVideoSourceDialog()
+            VideoSourceDialog.newInstance()
+                .show(parentFragmentManager, "VideoSourceDialog")
         }
 
         // 弹幕 —— 滑动开关，默认开启（持久化到 SharedPreferences）
@@ -97,65 +99,6 @@ class ProfileFragment : Fragment() {
         binding.cardAbout.setOnClickListener {
             AboutDialog.newInstance()
                 .show(parentFragmentManager, "AboutDialog")
-        }
-    }
-
-    /**
-     * 视频源管理弹框
-     * 使用真实的 VideoSource 列表，从 MovieApplication 获取。
-     * 保存启用状态到 SharedPreferences。
-     */
-    private fun showVideoSourceDialog() {
-        val app = MovieApplication.get()
-        val sources = app.allVideoSources
-        if (sources.isEmpty()) {
-            Toast.makeText(requireContext(), "暂无可用的视频源", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val sourceNames = sources.map { it.sourceName }.toTypedArray()
-        val checked = sources.map { it.enabled }.toBooleanArray()
-
-        AlertDialog.Builder(requireContext(), R.style.RoundedDialog)
-            .setTitle("视频源管理")
-            .setMultiChoiceItems(sourceNames, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-                // 确保至少选一个
-                if (!checked.any { it }) {
-                    checked[which] = true
-                    Toast.makeText(requireContext(), "至少需要选择一个视频源", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setPositiveButton("确定") { _, _ ->
-                // 更新源的启用状态
-                sources.forEachIndexed { index, source ->
-                    source.enabled = checked[index]
-                }
-                // 保存到 SharedPreferences
-                saveSourceEnabledStates(checked)
-                val selected = sources.filterIndexed { index, _ -> checked[index] }
-                Toast.makeText(
-                    requireContext(),
-                    "已选择: ${selected.joinToString(", ") { it.sourceName }}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    /**
-     * 保存视频源启用状态到 SharedPreferences。
-     */
-    private fun saveSourceEnabledStates(checked: BooleanArray) {
-        val app = MovieApplication.get()
-        val sources = app.allVideoSources
-        val prefs = requireContext().getSharedPreferences("video_sources", Context.MODE_PRIVATE)
-        prefs.edit().apply {
-            sources.forEachIndexed { index, source ->
-                putBoolean("enabled_${source.sourceId}", checked[index])
-            }
-            apply()
         }
     }
 
@@ -234,6 +177,11 @@ class ProfileFragment : Fragment() {
         }
 
         dialog.show()
+        // 与其他弹窗统一：屏宽 85%
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.85).toInt(),
+            android.view.WindowManager.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun createCacheItemView(
