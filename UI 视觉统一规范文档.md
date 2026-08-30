@@ -95,10 +95,14 @@
 
 ### 4.2 圆角
 
-- 小圆角（按钮、输入框）：`4dp`
+- 小圆角（按钮、输入框、标签）：`4dp`（标签可用 `12dp` 全圆角）
 - 中圆角（卡片、列表项）：`8dp`
-- 大圆角（弹框、浮层）：`12dp`
+- 大圆角（卡片容器、内容区）：`12dp`
+- 浮层圆角（居中卡片弹窗、Dialog）：`24dp`
+- BottomSheet 顶部圆角：`12dp`
 - 圆形（头像、图标）：`50%`
+
+> 说明：居中卡片弹窗统一使用 `24dp` 大圆角，与页面卡片（8dp/12dp）形成层次区分。
 
 ### 4.3 边框宽度
 
@@ -134,14 +138,40 @@
 
 ### 5.3 弹框（Dialog / BottomSheet）
 
+#### 5.3.1 居中卡片弹窗（推荐，全项目统一采用）
+
+用于所有信息展示与操作确认类弹窗，基于 `MaterialCardView` 实现：
+
+| 元素     | 规范                                          |
+| ------ | ------------------------------------------- |
+| 根布局    | `MaterialCardView`，圆角 `24dp`，背景 `#1A1A1A`    |
+| 宽度     | 屏宽 `85%`（`window.setLayout` 设置）             |
+| 窗口背景   | 透明（仅卡片显示）                                   |
+| 内边距    | 左右 `22dp`，上 `22dp`，下 `16~18dp`              |
+| 标题     | `19sp` Bold 居中，`#FFFFFF`                    |
+| 副标题    | `13sp` 居中，`#B3B3B3`                         |
+| 内容容器   | 圆角 `14dp`，背景 `#2A2A2A`                      |
+| 正文     | `14sp`，`#F5F5F5`（大段文字避免纯白刺眼）                |
+| 辅助说明   | `12sp`，`#B3B3B3`                            |
+| 底部提示   | `11~12sp`，`#B3B3B3` 或 `#666666`（弱化）          |
+| 分隔线    | `#333333`，`0.5~1dp`                         |
+| 强调/点缀  | 主色 `#FF6B35`（徽章文字、编号圆点、主按钮）                  |
+| 按钮     | 主操作 主色实心；次操作 `#2A2A2A` 灰底 + `#FFFFFF` 白字；均 `44dp` 高、圆角 `12dp`、等分并排 |
+| 长内容    | 内容区包 `ScrollView`，最大高度屏高 `60%~65%`，超出可滚动     |
+
+**已应用**：`dialog_update_tip`（更新提示）、`dialog_about`（关于）、`dialog_help`（帮助）、`dialog_video_source`（视频源管理）、`dialog_clear_cache`（清理缓存）。
+
+#### 5.3.2 通用要求
+
 | 元素     | 规范                |
 | ------ | ----------------- |
 | 背景     | `#1A1A1A`         |
-| 圆角（顶部） | `12dp`            |
-| 标题     | H2，居中对齐或左对齐       |
-| 正文     | 正文大小，颜色次要文字       |
-| 按钮     | 按按钮规范，常用“确定/取消”并排 |
+| 标题     | 居中对齐，`19sp` Bold  |
+| 正文     | `14sp`，颜色 `#F5F5F5` |
+| 按钮     | 按 5.1 按钮规范，"确定/取消"并排 |
 | 遮罩     | `#80000000`       |
+
+> 不再使用系统默认 `AlertDialog` 样式（含 `setMultiChoiceItems` 等原生列表），一律改用自定义卡片布局，保证跨页面视觉一致。
 
 ### 5.4 Toast / Snackbar
 
@@ -254,21 +284,23 @@
 
 ### 8.2 迁移检查清单（按页面/组件）
 
-- [ ] 主界面（MainActivity / 底部导航）
-- [ ] 首页（HomeFragment）
-- [ ] 搜索（SearchFragment）
-- [ ] 历史（HistoryFragment）
-- [ ] 详情（DetailActivity）
-- [ ] 播放器（PlayerActivity）
-- [ ] 下载管理（DownloadManagementFragment）
-- [ ] 我的（ProfileFragment）
-- [ ] 所有弹框（Dialog、BottomSheet）
-- [ ] 菜单与下拉选择（Spinner、PopupMenu）
-- [ ] Toast / Snackbar
-- [ ] 进度条、加载动画
-- [ ] 空状态、错误状态视图
+- [x] 主界面（MainActivity / 底部导航）
+- [x] 首页（HomeFragment）
+- [x] 搜索（SearchFragment）
+- [x] 历史（HistoryFragment）
+- [x] 详情（DetailActivity）
+- [x] 播放器（PlayerActivity）
+- [x] 下载管理（DownloadManagementFragment）
+- [x] 我的（ProfileFragment）
+- [x] 所有弹框（Dialog、BottomSheet）—— 已统一为居中卡片弹窗（见 5.3.1）
+- [x] 菜单与下拉选择（Spinner、PopupMenu）
+- [x] Toast / Snackbar
+- [x] 进度条、加载动画
+- [x] 空状态、错误状态视图
 
 检查项：背景、文字、按钮、边框、分割线、圆角、间距是否与规范一致。
+
+**已完成（2026-08-30）**：全部弹窗统一为居中卡片风格，硬编码灰阶（`#AAAAAA`/`#999999`/`#888888`/`#CCCCCC`/`#2F2F2F`）全部替换为规范变量（`colorOnSurfaceSecondary`/`colorOnSurfaceSoft`/`colorDivider`）；剩余硬编码仅播放器半透明专用色（`#CCFFFFFF`、加载遮罩 `#CC0D0D0D`），属规范允许范围。
 
 ### 8.3 注意事项
 
@@ -290,8 +322,9 @@
 | `colorSurface`            | 卡片/弹框背景 | `#1A1A1A`   |
 | `colorSurfaceHighlight`   | 选中/悬浮背景 | `#2A2A2A`   |
 | `colorOnSurface`          | 主要文字    | `#FFFFFF`   |
+| `colorOnSurfaceSoft`      | 主要文字（柔和） | `#F5F5F5`   |
 | `colorOnSurfaceSecondary` | 次要文字    | `#B3B3B3`   |
-| `colorOnSurfaceDisabled`  | 禁用文字    | `#666666`   |
+| `colorOnSurfaceDisabled`  | 禁用文字/弱化提示 | `#666666`   |
 | `colorDivider`            | 分割线     | `#333333`   |
 | `colorSuccess`            | 成功      | `#4CAF50`   |
 | `colorWarning`            | 警告      | `#FFA726`   |

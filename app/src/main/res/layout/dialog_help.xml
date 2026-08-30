@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:text="帮助"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="19sp"
             android:textStyle="bold" />
 
@@ -34,7 +34,7 @@
             android:layout_marginTop="6dp"
             android:gravity="center"
             android:text="欢迎使用我的影视！"
-            android:textColor="#AAAAAA"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
 
         <!-- 内容区（分组条目，超长可滚动） -->
@@ -57,7 +57,7 @@
                     android:layout_marginStart="4dp"
                     android:layout_marginBottom="6dp"
                     android:text="核心功能"
-                    android:textColor="#888888"
+                    android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="12sp" />
 
                 <LinearLayout
@@ -97,7 +97,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="首页发现"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -105,7 +105,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="浏览豆瓣热门影视"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -115,7 +115,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="0.5dp"
-                        android:background="#2F2F2F" />
+                        android:background="@color/colorDivider" />
 
                     <!-- 搜索播放 -->
                     <LinearLayout
@@ -144,7 +144,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="搜索播放"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -152,7 +152,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="聚合多个视频源在线播放"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -162,7 +162,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="0.5dp"
-                        android:background="#2F2F2F" />
+                        android:background="@color/colorDivider" />
 
                     <!-- 播放体验 -->
                     <LinearLayout
@@ -191,7 +191,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="播放体验"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -199,7 +199,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="手势控制、画中画与屏幕锁定"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -215,7 +215,7 @@
                     android:layout_marginTop="14dp"
                     android:layout_marginBottom="6dp"
                     android:text="更多功能"
-                    android:textColor="#888888"
+                    android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="12sp" />
 
                 <LinearLayout
@@ -255,7 +255,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="离线下载"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -263,7 +263,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="断点续传与后台下载"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -273,7 +273,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="0.5dp"
-                        android:background="#2F2F2F" />
+                        android:background="@color/colorDivider" />
 
                     <!-- 弹幕观看 -->
                     <LinearLayout
@@ -302,7 +302,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="弹幕观看"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -310,7 +310,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="自动匹配番剧弹幕"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -320,7 +320,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="0.5dp"
-                        android:background="#2F2F2F" />
+                        android:background="@color/colorDivider" />
 
                     <!-- 播放历史 -->
                     <LinearLayout
@@ -349,7 +349,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="播放历史"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -357,7 +357,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="自动保存，一键续播"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -367,7 +367,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="0.5dp"
-                        android:background="#2F2F2F" />
+                        android:background="@color/colorDivider" />
 
                     <!-- 视频源管理 -->
                     <LinearLayout
@@ -396,7 +396,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="视频源管理"
-                                android:textColor="#FFFFFF"
+                                android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
                             <TextView
@@ -404,7 +404,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:text="自定义启用与关闭播放源"
-                                android:textColor="#999999"
+                                android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
                         </LinearLayout>
@@ -422,7 +422,7 @@
             android:layout_marginTop="14dp"
             android:gravity="center"
             android:text="如遇问题，请检查网络连接后重试。"
-            android:textColor="#888888"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="12sp" />
 
         <!-- 关闭 -->
@@ -433,7 +433,7 @@
             android:layout_marginTop="14dp"
             android:gravity="center"
             android:text="知道了"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="14sp"
             android:background="@drawable/bg_card_rounded"
             android:foreground="?attr/selectableItemBackground" />

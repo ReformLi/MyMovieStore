@@ -78,7 +78,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/colorOnSurface"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 tools:text="红了樱桃绿了芭蕉" />
@@ -90,7 +90,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="#CCFFFFFF"
+                android:textColor="@color/player_text_secondary"
                 android:textSize="12sp"
                 android:visibility="gone"
                 tools:text="第2集"
@@ -111,7 +111,7 @@
                 android:id="@+id/tvTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#CCFFFFFF"
+                android:textColor="@color/player_text_secondary"
                 android:textSize="12sp"
                 tools:text="21:45" />
 
@@ -188,7 +188,7 @@
             android:layout_height="wrap_content"
             android:includeFontPadding="false"
             android:paddingEnd="8dp"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="12sp"
             android:textStyle="bold"
             tools:text="00:00" />
@@ -209,7 +209,7 @@
             android:layout_height="wrap_content"
             android:includeFontPadding="false"
             android:paddingStart="8dp"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="12sp"
             android:textStyle="bold"
             tools:text="00:00" />
@@ -228,7 +228,7 @@
         android:paddingTop="12dp"
         android:paddingEnd="18dp"
         android:paddingBottom="12dp"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/colorOnSurface"
         android:textSize="15sp"
         android:textStyle="bold"
         android:visibility="gone"

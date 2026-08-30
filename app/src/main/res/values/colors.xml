@@ -25,6 +25,8 @@
 
     <!-- ======================== 文字颜色 ======================== -->
     <color name="colorOnSurface">#FFFFFF</color>
+    <!-- 主要文字柔和档：用于弹窗正文、详情内容等大段文字，避免纯白刺眼 -->
+    <color name="colorOnSurfaceSoft">#F5F5F5</color>
     <color name="colorOnSurfaceSecondary">#B3B3B3</color>
     <color name="colorOnSurfaceDisabled">#666666</color>
     <color name="colorLink">#FFB340</color>
@@ -60,4 +62,8 @@
     <color name="player_overlay">#CC000000</color>
     <color name="player_round_button">#66000000</color>
     <color name="player_gesture_tip">#CC000000</color>
+    <!-- 播放器文字：80% 白，用于次要信息（时间、状态） -->
+    <color name="player_text_secondary">#CCFFFFFF</color>
+    <!-- 加载遮罩：80% 主背景 -->
+    <color name="loading_overlay">#CC0D0D0D</color>
 </resources>

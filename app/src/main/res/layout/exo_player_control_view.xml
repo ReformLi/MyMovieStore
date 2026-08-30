@@ -75,7 +75,7 @@
                 android:layout_height="wrap_content"
                 android:includeFontPadding="false"
                 android:paddingEnd="8dp"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/colorOnSurface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -91,7 +91,7 @@
                 android:layout_height="wrap_content"
                 android:includeFontPadding="false"
                 android:paddingStart="8dp"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/colorOnSurface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -118,7 +118,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:text="弹幕"
-                android:textColor="#CCFFFFFF"
+                android:textColor="@color/player_text_secondary"
                 android:textSize="12sp" />
 
             <Switch

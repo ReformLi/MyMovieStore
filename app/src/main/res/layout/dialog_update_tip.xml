@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:text="发现新版本"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="20sp"
             android:textStyle="bold" />
 
@@ -66,7 +66,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:textColor="#CCCCCC"
+                android:textColor="@color/colorOnSurfaceSoft"
                 android:textSize="14sp"
                 android:lineSpacingExtra="4dp" />
 
@@ -79,7 +79,7 @@
             android:layout_marginTop="16dp"
             android:gravity="center"
             android:text="请前往「我的 → 关于」检查更新"
-            android:textColor="#888888"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
 
         <!-- 主按钮 -->
@@ -90,7 +90,7 @@
             android:layout_marginTop="18dp"
             android:backgroundTint="@color/colorPrimary"
             android:text="知道了"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="15sp"
             app:cornerRadius="14dp" />
 
@@ -102,7 +102,7 @@
             android:layout_marginTop="10dp"
             android:gravity="center"
             android:text="今天不再提醒"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="14sp"
             android:background="@drawable/bg_card_rounded"
             android:foreground="?attr/selectableItemBackground" />

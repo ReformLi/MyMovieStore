@@ -17,7 +17,7 @@
         android:layout_height="32dp"
         android:padding="5dp"
         android:src="@drawable/ic_player_search"
-        app:tint="#999999" />
+        app:tint="@color/colorOnSurfaceSecondary" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -31,7 +31,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="清理搜索缓存"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/colorOnSurface"
             android:textSize="14sp" />
 
         <TextView
@@ -40,7 +40,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="删除所有搜索相关的缓存记录"
-            android:textColor="#999999"
+            android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="12sp" />
     </LinearLayout>
 
