@@ -141,12 +141,14 @@ class ProfileFragment : Fragment() {
         }
 
         // 缓存项配置：(标题, 描述, 图标, 是否默认选中)
+        // 默认选中：搜索缓存、详情页缓存、播放地址缓存（常用且重建成本低）
+        // 首页缓存与弹幕缓存不默认选中（弹幕缓存清掉后需重新拉取，代价较高）
         val cacheItems = listOf(
             CacheItem("清理搜索缓存", "删除所有搜索相关的缓存记录", R.drawable.ic_player_search, true),
-            CacheItem("清理首页缓存", "删除首页列表缓存数据", R.drawable.ic_player_home, true),
+            CacheItem("清理首页缓存", "删除首页列表缓存数据", R.drawable.ic_player_home, false),
             CacheItem("清理详情页缓存", "删除所有详情页元数据", R.drawable.ic_player_detail, true),
             CacheItem("清理播放地址缓存", "删除所有缓存的 m3u8 地址", R.drawable.ic_player_play, true),
-            CacheItem("清理弹幕缓存", "删除所有本地弹幕 JSON 文件及弹幕源选择记录", R.drawable.ic_player_danmaku, true),
+            CacheItem("清理弹幕缓存", "删除所有本地弹幕 JSON 文件及弹幕源选择记录", R.drawable.ic_player_danmaku, false),
             CacheItem("清理全部缓存", "删除以上所有内容", R.drawable.ic_player_clear_all, false)
         )
 
