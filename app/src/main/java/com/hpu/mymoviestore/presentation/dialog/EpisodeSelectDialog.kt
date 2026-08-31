@@ -89,7 +89,7 @@ class EpisodeSelectDialog private constructor(
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             setDimAmount(0.6f)
             setLayout(
-                (context.resources.displayMetrics.widthPixels * 0.85).toInt(),
+                (context.resources.displayMetrics.widthPixels * 0.90).toInt(),
                 WindowManager.LayoutParams.WRAP_CONTENT
             )
         }

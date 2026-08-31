@@ -77,10 +77,7 @@
             android:id="@+id/rvSources"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_card_rounded"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
+            android:layout_marginTop="10dp"
             android:overScrollMode="never" />
 
         <!-- 提示 -->

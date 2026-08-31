@@ -40,7 +40,7 @@ class HelpDialog : DialogFragment() {
         dialog?.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
             setLayout(
-                (resources.displayMetrics.widthPixels * 0.85).toInt(),
+                (resources.displayMetrics.widthPixels * 0.90).toInt(),
                 WindowManager.LayoutParams.WRAP_CONTENT
             )
         }

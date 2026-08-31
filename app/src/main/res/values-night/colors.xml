@@ -10,6 +10,7 @@
     <color name="colorPrimary">#FF6B35</color>
     <color name="colorPrimaryDark">#E55A20</color>
     <color name="colorAccent">#FF6B35</color>
+    <color name="colorOnPrimary">#FFFFFF</color>
     <!-- 兼容旧引用 -->
     <color name="primary">#FF6B35</color>
     <color name="primary_dark">#E55A20</color>

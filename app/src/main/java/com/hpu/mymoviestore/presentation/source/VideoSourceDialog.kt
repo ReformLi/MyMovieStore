@@ -6,7 +6,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
@@ -80,7 +79,7 @@ class VideoSourceDialog : DialogFragment() {
         dialog?.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
             setLayout(
-                (resources.displayMetrics.widthPixels * 0.85).toInt(),
+                (resources.displayMetrics.widthPixels * 0.90).toInt(),
                 WindowManager.LayoutParams.WRAP_CONTENT
             )
         }
@@ -146,10 +145,10 @@ class VideoSourceDialog : DialogFragment() {
 
         inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val tvName: TextView = view.findViewById(R.id.tvSourceName)
-            val cbSource: CheckBox = view.findViewById(R.id.cbSource)
+            val tvCheck: TextView = view.findViewById(R.id.tvCheck)
 
             init {
-                // 整行可点击；CheckBox 关闭自身点击，统一走行点击避免状态冲突
+                // 整行可点击切换勾选状态
                 view.setOnClickListener { toggleItem(bindingAdapterPosition) }
             }
         }
@@ -162,9 +161,25 @@ class VideoSourceDialog : DialogFragment() {
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             holder.tvName.text = sources[position].sourceName
-            holder.cbSource.isChecked = checked[position]
+            bindCheckState(holder.tvCheck, checked[position])
         }
 
         override fun getItemCount(): Int = sources.size
+    }
+
+    /**
+     * 绑定勾选圆状态：
+     * - 选中：主色实心圆 + 白色 ✓
+     * - 未选中：分割线色描边圆环
+     */
+    private fun bindCheckState(tvCheck: TextView, isChecked: Boolean) {
+        if (isChecked) {
+            tvCheck.setBackgroundResource(R.drawable.bg_check_selected)
+            tvCheck.text = "✓"
+            tvCheck.setTextColor(resources.getColor(R.color.colorOnPrimary, null))
+        } else {
+            tvCheck.setBackgroundResource(R.drawable.bg_check_unselected)
+            tvCheck.text = ""
+        }
     }
 }

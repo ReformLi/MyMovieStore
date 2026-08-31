@@ -203,7 +203,7 @@ class ProfileFragment : Fragment() {
         dialog.show()
         // 与其他弹窗统一：屏宽 85%
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.85).toInt(),
+            (resources.displayMetrics.widthPixels * 0.90).toInt(),
             android.view.WindowManager.LayoutParams.WRAP_CONTENT
         )
     }
