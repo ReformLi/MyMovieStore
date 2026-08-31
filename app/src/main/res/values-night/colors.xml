@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 浅色模式色值（UI 视觉统一规范文档 · 白底灰阶方案） -->
+<!-- 深色模式色值（UI 视觉统一规范文档 · 原深色主题基准） -->
 <resources>
     <!-- ======================== 基础色 ======================== -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <!-- ======================== 主色与背景（浅色模式） ======================== -->
+    <!-- ======================== 主色与背景（深色模式） ======================== -->
     <!-- 主色调（深浅色通用） -->
     <color name="colorPrimary">#FF6B35</color>
     <color name="colorPrimaryDark">#E55A20</color>
@@ -14,35 +14,34 @@
     <color name="primary">#FF6B35</color>
     <color name="primary_dark">#E55A20</color>
     <color name="accent">#FF6B35</color>
-    <color name="toolbar_bg">#FFFFFF</color>
+    <color name="toolbar_bg">#1A1A1A</color>
 
-    <!-- 背景层级（浅色） -->
-    <color name="colorBackground">#F5F5F5</color>
-    <color name="colorSurface">#FFFFFF</color>
-    <color name="colorSurfaceHighlight">#F0F0F0</color>
+    <!-- 背景层级（深色） -->
+    <color name="colorBackground">#0D0D0D</color>
+    <color name="colorSurface">#1A1A1A</color>
+    <color name="colorSurfaceHighlight">#2A2A2A</color>
     <!-- 兼容旧引用 -->
-    <color name="background">#F5F5F5</color>
-    <color name="surface_background">#FFFFFF</color>
+    <color name="background">#0D0D0D</color>
+    <color name="surface_background">#1A1A1A</color>
 
-    <!-- ======================== 文字颜色（浅色模式） ======================== -->
-    <color name="colorOnSurface">#1A1A1A</color>
-    <!-- 主要文字柔和档：用于弹窗正文、详情内容等大段文字 -->
-    <color name="colorOnSurfaceSoft">#333333</color>
-    <color name="colorOnSurfaceSecondary">#666666</color>
-    <color name="colorOnSurfaceDisabled">#999999</color>
-    <!-- 链接色浅色下加深保证对比度 -->
-    <color name="colorLink">#E08600</color>
+    <!-- ======================== 文字颜色（深色模式） ======================== -->
+    <color name="colorOnSurface">#FFFFFF</color>
+    <!-- 主要文字柔和档：用于弹窗正文、详情内容等大段文字，避免纯白刺眼 -->
+    <color name="colorOnSurfaceSoft">#F5F5F5</color>
+    <color name="colorOnSurfaceSecondary">#B3B3B3</color>
+    <color name="colorOnSurfaceDisabled">#666666</color>
+    <color name="colorLink">#FFB340</color>
     <!-- 兼容旧引用 -->
-    <color name="text_primary">#1A1A1A</color>
-    <color name="text_secondary">#666666</color>
-    <!-- 顶部图片上的文字：浅色图偏亮，用深色文字 -->
-    <color name="header_text_on_image">#1A1A1A</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3B3B3</color>
+    <!-- 顶部图片上的文字：深色图用白字 -->
+    <color name="header_text_on_image">#FFFFFF</color>
 
-    <!-- ======================== 分割线与边框（浅色模式） ======================== -->
-    <color name="colorDivider">#E0E0E0</color>
-    <color name="colorBorder">#CCCCCC</color>
+    <!-- ======================== 分割线与边框（深色模式） ======================== -->
+    <color name="colorDivider">#333333</color>
+    <color name="colorBorder">#444444</color>
     <!-- 兼容旧引用 -->
-    <color name="divider">#E0E0E0</color>
+    <color name="divider">#333333</color>
 
     <!-- ======================== 交互与状态（深浅色通用） ======================== -->
     <color name="colorSuccess">#4CAF50</color>
@@ -56,9 +55,9 @@
     <!-- 兼容旧引用 -->
     <color name="error_overlay">#80000000</color>
 
-    <!-- ======================== 辅助色（浅色模式） ======================== -->
-    <color name="placeholder">#E0E0E0</color>
-    <color name="chip_background">#F0F0F0</color>
+    <!-- ======================== 辅助色（深色模式） ======================== -->
+    <color name="placeholder">#333333</color>
+    <color name="chip_background">#2A2A2A</color>
     <color name="chip_background_selected">#33FF6B35</color>
 
     <!-- ======================== 播放器专用（恒定深色，不随主题切换） ======================== -->
@@ -68,10 +67,10 @@
     <color name="player_gesture_tip">#CC000000</color>
     <!-- 播放器文字：80% 白，用于次要信息（时间、状态） -->
     <color name="player_text_secondary">#CCFFFFFF</color>
-    <!-- 播放器主要文字：恒定白色（深色文字在纯黑背景不可见） -->
+    <!-- 播放器主要文字：恒定白色 -->
     <color name="player_text_primary">#FFFFFF</color>
     <!-- 播放器内 Spinner 下拉面板背景：恒定深色表面 -->
     <color name="player_panel_background">#1A1A1A</color>
-    <!-- 加载遮罩：浅色模式 80% 浅背景 -->
-    <color name="loading_overlay">#CCF5F5F5</color>
+    <!-- 加载遮罩：深色模式 80% 主背景 -->
+    <color name="loading_overlay">#CC0D0D0D</color>
 </resources>

@@ -10,7 +10,6 @@ import android.view.View
 import android.widget.GridLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -31,6 +30,7 @@ import com.hpu.mymoviestore.data.model.CrawlerVideoDetail
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
+import com.hpu.mymoviestore.presentation.dialog.EpisodeSelectDialog
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -586,10 +586,11 @@ class DetailActivity : AppCompatActivity() {
     }
 
     /**
-     * 显示剧集选择对话框（多选模式）
+     * 显示剧集选择对话框（居中卡片多选弹窗 EpisodeSelectDialog）
      *
      * - 默认选中当前播放的集数
-     * - 已在下载管理中的集数默认选中且置灰（不可取消）
+     * - 已在下载管理中的集数默认选中且置灰（不可取消，全选/全不选也会跳过）
+     * - 支持「全选 ⇄ 全不选」切换 + 已选计数（全部已添加时隐藏该按钮）
      * - 确认后调用 startDownloadForEpisodes 创建下载任务
      */
     private fun showEpisodeSelectDialog(episodes: List<PlayEpisode>) {
@@ -614,55 +615,14 @@ class DetailActivity : AppCompatActivity() {
         // 用 playPageUrl 匹配已有任务（避免索引不一致问题）
         val existingUrls = existingTasks.map { it.playUrl }.toSet()
 
-        val episodeTitles = episodes.map { episode ->
-            val suffix = if (episode.playPageUrl in existingUrls) "（已添加）" else ""
-            "${episode.title}$suffix"
-        }.toTypedArray()
-
-        val checkedItems = BooleanArray(episodes.size) { index ->
-            episodes[index].playPageUrl == selectedEpisode?.playPageUrl
-                    || episodes[index].playPageUrl in existingUrls
-        }
-
-        lateinit var dialog: AlertDialog
-
-        dialog = AlertDialog.Builder(this, R.style.RoundedDialog)
-            .setTitle("选择下载集数")
-            .setMultiChoiceItems(episodeTitles, checkedItems) { _, which, isChecked ->
-                // 已在下载管理中的集数不允许取消选中
-                if (episodes[which].playPageUrl in existingUrls) {
-                    checkedItems[which] = true
-                    dialog.listView.setItemChecked(which, true)
-                } else {
-                    checkedItems[which] = isChecked
-                }
-            }
-            .setPositiveButton("确定") { _, _ ->
-                // 只取非已有任务的集数
-                val selectedEpisodes = episodes.filterIndexed { index, _ ->
-                    checkedItems[index] && episodes[index].playPageUrl !in existingUrls
-                }
-                if (selectedEpisodes.isEmpty()) {
-                    Toast.makeText(this, "没有新集需要下载", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                startDownloadForEpisodes(selectedEpisodes)
-            }
-            .setNegativeButton("取消", null)
-            .create()
-
-        dialog.show()
-
-        // 初始化时置灰已有任务的选项
-        dialog.listView.post {
-            episodes.forEachIndexed { index, episode ->
-                if (episode.playPageUrl in existingUrls) {
-                    dialog.listView.setItemChecked(index, true)
-                    val view = dialog.listView.getChildAt(index)
-                    view?.isEnabled = false
-                    view?.alpha = 0.5f
-                }
-            }
+        EpisodeSelectDialog.show(
+            context = this,
+            episodes = episodes,
+            existingUrls = existingUrls,
+            selectedUrl = selectedEpisode?.playPageUrl
+        ) { selectedEpisodes ->
+            // 回调里只含本次新增的集数（已排除已在下载列表中的集）
+            startDownloadForEpisodes(selectedEpisodes)
         }
     }
 

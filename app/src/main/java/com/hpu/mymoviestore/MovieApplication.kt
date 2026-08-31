@@ -16,6 +16,7 @@ import com.hpu.mymoviestore.data.source.DoubanDiscoverySource
 import com.hpu.mymoviestore.data.source.VideoSource
 import com.hpu.mymoviestore.data.source.VideoSourceConfigManager
 import com.hpu.mymoviestore.data.source.VideoSourceManager
+import com.hpu.mymoviestore.presentation.settings.ThemeManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,6 +84,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // 应用持久化的主题模式（浅色/深色），需在任何 Activity 创建前调用
+        ThemeManager.applySaved(this)
 
         Log.d(TAG, "========== MovieApplication.onCreate 开始 ==========")
 

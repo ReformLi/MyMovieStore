@@ -1,7 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.MyMovieStore" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+    <!-- 深色模式主题：继承同一公共样式，仅覆盖状态栏图标为浅色
+         （注意：同名 style 在 values / values-night 之间是整体替换而非按 item 合并，故必须显式声明 parent） -->
+    <style name="Base.Theme.MyMovieStore" parent="ThemeMyMovieStoreCore">
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

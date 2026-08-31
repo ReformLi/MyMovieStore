@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
@@ -27,12 +28,29 @@
             android:layout_width="match_parent"
             android:layout_height="150dp">   <!-- 高度可自行调整，如120dp、160dp -->
 
-            <!-- 背景图片，始终保持比例，居中裁剪 -->
+            <!-- 背景图片，始终保持比例，居中裁剪（深色 movie_background / 浅色 movie_background_light，代码按主题切换） -->
             <ImageView
+                android:id="@+id/ivHeaderBackground"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="centerCrop"
-                android:src="@drawable/movie_background" />
+                android:src="@drawable/movie_background"
+                tools:ignore="ContentDescription" />
+
+            <!-- 主题切换按钮：透明背景图标（深色下显示太阳=点击切浅色；浅色下显示月亮=点击切深色），
+                 位于图片右上角且在 NestedScrollView 之外，列表滚动时保持不动 -->
+            <ImageView
+                android:id="@+id/btnThemeToggle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="12dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="8dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_theme_sun"
+                app:tint="@color/header_text_on_image"
+                android:contentDescription="@string/theme_toggle_desc" />
 
             <!-- 内容层（透明背景） -->
             <LinearLayout
@@ -62,7 +80,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:text="我的影视"
-                    android:textColor="@android:color/white"
+                    android:textColor="@color/header_text_on_image"
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
@@ -70,7 +88,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="享受精彩影视时光"
-                    android:textColor="@android:color/white"
+                    android:textColor="@color/header_text_on_image"
                     android:textSize="14sp" />
             </LinearLayout>
         </FrameLayout>

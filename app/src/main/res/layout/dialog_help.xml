@@ -22,7 +22,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:text="帮助"
+            android:text="@string/help"
             android:textColor="@color/colorOnSurface"
             android:textSize="19sp"
             android:textStyle="bold" />
@@ -33,7 +33,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="欢迎使用我的影视！"
+            android:text="@string/help_welcome"
             android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
 
@@ -56,7 +56,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
                     android:layout_marginBottom="6dp"
-                    android:text="核心功能"
+                    android:text="@string/help_group_core"
                     android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="12sp" />
 
@@ -83,7 +83,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -96,7 +96,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="首页发现"
+                                android:text="@string/help_home_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -104,7 +104,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="浏览豆瓣热门影视"
+                                android:text="@string/help_home_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -130,7 +130,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -143,7 +143,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="搜索播放"
+                                android:text="@string/help_search_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -151,7 +151,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="聚合多个视频源在线播放"
+                                android:text="@string/help_search_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -177,7 +177,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -190,7 +190,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="播放体验"
+                                android:text="@string/help_player_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -198,7 +198,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="手势控制、画中画与屏幕锁定"
+                                android:text="@string/help_player_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -214,7 +214,7 @@
                     android:layout_marginStart="4dp"
                     android:layout_marginTop="14dp"
                     android:layout_marginBottom="6dp"
-                    android:text="更多功能"
+                    android:text="@string/help_group_more"
                     android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="12sp" />
 
@@ -241,7 +241,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -254,7 +254,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="离线下载"
+                                android:text="@string/help_download_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -262,7 +262,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="断点续传与后台下载"
+                                android:text="@string/help_download_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -288,7 +288,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -301,7 +301,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="弹幕观看"
+                                android:text="@string/help_danmaku_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -309,7 +309,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="自动匹配番剧弹幕"
+                                android:text="@string/help_danmaku_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -335,7 +335,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -348,7 +348,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="播放历史"
+                                android:text="@string/help_history_title"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -356,7 +356,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="自动保存，一键续播"
+                                android:text="@string/help_history_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -382,7 +382,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="10dp"
-                            android:text="●"
+                            android:text="@string/help_bullet"
                             android:textColor="@color/colorPrimary"
                             android:textSize="7sp" />
 
@@ -395,7 +395,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="视频源管理"
+                                android:text="@string/video_source"
                                 android:textColor="@color/colorOnSurface"
                                 android:textSize="14sp" />
 
@@ -403,7 +403,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="自定义启用与关闭播放源"
+                                android:text="@string/help_source_desc"
                                 android:textColor="@color/colorOnSurfaceSecondary"
                                 android:textSize="12sp" />
 
@@ -421,7 +421,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:gravity="center"
-            android:text="如遇问题，请检查网络连接后重试。"
+            android:text="@string/help_footer"
             android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="12sp" />
 
@@ -432,7 +432,7 @@
             android:layout_height="44dp"
             android:layout_marginTop="14dp"
             android:gravity="center"
-            android:text="知道了"
+            android:text="@string/got_it"
             android:textColor="@color/colorOnSurface"
             android:textSize="14sp"
             android:background="@drawable/bg_card_rounded"

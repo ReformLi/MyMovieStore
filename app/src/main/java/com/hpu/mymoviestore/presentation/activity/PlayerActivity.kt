@@ -995,7 +995,7 @@ class PlayerActivity : AppCompatActivity() {
                 val v = super.getDropDownView(position, convertView, parent) as TextView
                 v.text = candidateList.getOrNull(position)?.animeTitle ?: ""
                 v.setTextColor(Color.WHITE)
-                v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
+                v.setBackgroundColor(ContextCompat.getColor(context, R.color.player_panel_background))
                 v.setPadding(24, 20, 24, 20)
                 v.textSize = 13f
                 return v
@@ -1033,7 +1033,7 @@ class PlayerActivity : AppCompatActivity() {
                 override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val v = super.getDropDownView(position, convertView, parent) as TextView
                     v.setTextColor(statusTextColor)
-                    v.setBackgroundColor(ContextCompat.getColor(context, R.color.colorSurface))
+                    v.setBackgroundColor(ContextCompat.getColor(context, R.color.player_panel_background))
                     v.setPadding(24, 20, 24, 20)
                     v.textSize = 13f
                     return v

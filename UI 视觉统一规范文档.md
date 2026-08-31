@@ -159,7 +159,7 @@
 | 按钮     | 主操作 主色实心；次操作 `#2A2A2A` 灰底 + `#FFFFFF` 白字；均 `44dp` 高、圆角 `12dp`、等分并排 |
 | 长内容    | 内容区包 `ScrollView`，最大高度屏高 `60%~65%`，超出可滚动     |
 
-**已应用**：`dialog_update_tip`（更新提示）、`dialog_about`（关于）、`dialog_help`（帮助）、`dialog_video_source`（视频源管理）、`dialog_clear_cache`（清理缓存）。
+**已应用**：`dialog_update_tip`（更新提示）、`dialog_about`（关于）、`dialog_help`（帮助）、`dialog_video_source`（视频源管理）、`dialog_clear_cache`（清理缓存）、`dialog_confirm`（通用确认框，由 `presentation/dialog/ConfirmDialog.kt` 统一承载：清空历史 / 批量删除 / 删除任务等「标题 + 正文 + 次操作 + 主操作」场景，主按钮文案按需传「确定」或「删除」，正文为空时自动隐藏正文区）、`dialog_episode_select`（选择下载集数，`presentation/dialog/EpisodeSelectDialog.kt`：取代原生 `setMultiChoiceItems`，行项复用 `item_episode_select` 范式，含「全选 ⇄ 全不选」+ 已选计数；已在下载列表中的集为**锁定项**——置灰、不可点击、全选/全不选时始终保留勾选）。
 
 #### 5.3.2 通用要求
 
@@ -234,8 +234,43 @@
 
 ## 七、深色模式与主题切换
 
-- 当前App默认为深色主题，无需额外切换。
-- 如需支持浅色模式，可定义两套颜色变量，通过 `Theme.AppCompat.DayNight` 或自定义 `Theme` 实现。建议暂不实现，待后续需求。
+已实现**浅色 / 深色双主题**（2026-08-31），第二章色值表为**深色基准值**，浅色对照见下表。
+
+### 7.1 资源组织
+
+- 同一套颜色名维护两份：`res/values/colors.xml`（浅色）与 `res/values-night/colors.xml`（深色），**两份键名必须完全一致**（缺失项会静默回落到浅色值）。
+- 布局与代码一律引用 `@color/xxx` 或 `?attr/...`，不得写死色值；新增颜色时同步补两份。
+- 主题基类 `ThemeMyMovieStoreCore`（parent `Theme.Material3.DayNight.NoActionBar`）承载公共项；`Base.Theme.MyMovieStore` 在 `values` 与 `values-night` 各定义一次，仅用于覆盖 `windowLightStatusBar`。
+  > 注意：同名 style 在不同配置下是**整体替换而非按 item 合并**，`values-night` 版本必须显式声明 `parent`，否则 AAPT 会按名字前缀隐式继承而报「resource style/Base.Theme not found」。
+
+### 7.2 浅色对照表
+
+| 用途 | 深色（第二章） | 浅色 |
+| ------------ | ------- | ---- |
+| 主背景 | `#0D0D0D` | `#F5F5F5` |
+| 二级背景（卡片/弹框） | `#1A1A1A` | `#FFFFFF` |
+| 三级背景（选中/内容容器） | `#2A2A2A` | `#F0F0F0` |
+| 分割线 | `#333333` | `#E0E0E0` |
+| 边框 | `#444444` | `#CCCCCC` |
+| 主要文字 | `#FFFFFF` | `#1A1A1A` |
+| 正文（柔和） | `#F5F5F5` | `#333333` |
+| 次要文字 | `#B3B3B3` | `#666666` |
+| 禁用/弱化文字 | `#666666` | `#999999` |
+| 链接/高亮 | `#FFB340` | `#E08600` |
+| 加载遮罩 | `#CC0D0D0D` | `#CCF5F5F5` |
+| 主色 / 状态色 / 遮罩阴影 | 两模式一致 | 同左 |
+
+### 7.3 切换机制与入口
+
+- `presentation/settings/ThemeManager.kt`：偏好存 `SharedPreferences("app_settings")` 的 `theme_mode`（`MODE_LIGHT=0` / `MODE_DARK=1`），**默认深色**（保持历史观感）。
+- 生效方式 `AppCompatDelegate.setDefaultNightMode()`：`MovieApplication.onCreate` 启动时应用已存偏好；切换时所有 Activity 自动重建重绘。
+- 入口：「我的」页头部图片**右上角**的透明背景图标按钮（40dp，`?attr/selectableItemBackgroundBorderless`）。图标语义为**目标模式**——深色下显示太阳（点击切浅色），浅色下显示月亮（点击切深色）。该按钮与头部图片同在一个不随列表滚动的头部卡片内，滑动菜单列表时保持不动。
+- 头部背景图随主题切换：深色 `movie_background.png`，浅色 `movie_background_light.png`（代码 `ProfileFragment.applyThemeUi()` 设置）。
+- 图片上的文字与图标使用专用色 `header_text_on_image`（深色 `#FFFFFF` / 浅色 `#1A1A1A`），不用 `colorOnSurface`，因为该文字压在背景图上而非页面表面。
+
+### 7.4 恒定深色的例外
+
+播放器整体不参与主题切换（`PlayerActivity` 用 `Theme.AppCompat.NoActionBar`，其内所有颜色走 `player_*` 前缀资源，两份配置中取值相同）：`player_background`、`player_overlay`、`player_round_button`、`player_gesture_tip`、`player_text_primary`、`player_text_secondary`、`player_panel_background`。其中 `player_text_primary` / `player_panel_background` 是为浅色模式新增的恒定值——原先播放器布局误用 `colorOnSurface`、弹幕下拉面板误用 `colorSurface`，浅色下会变成「深字黑底」不可见。
 
 ---
 
@@ -302,6 +337,16 @@
 
 **已完成（2026-08-30）**：全部弹窗统一为居中卡片风格，硬编码灰阶（`#AAAAAA`/`#999999`/`#888888`/`#CCCCCC`/`#2F2F2F`）全部替换为规范变量（`colorOnSurfaceSecondary`/`colorOnSurfaceSoft`/`colorDivider`）；剩余硬编码仅播放器半透明专用色（`#CCFFFFFF`、加载遮罩 `#CC0D0D0D`），属规范允许范围。
 
+**已完成（确认框收敛）**：新增 `dialog_confirm.xml` + `presentation/dialog/ConfirmDialog.kt`，替换 4 处原生确认框（`HistoryFragment` 清空历史、`DownloadActivity` 批量删除 / 取消任务 / 删除已完成任务），仅换视觉外壳，按钮回调逻辑不变。`themes.xml` 新增通用窗口样式 `CardDialog`（窗口透明 + 圆角交给内部 `MaterialCardView`），`ClearCacheDialog` 改为其空别名。
+
+**已完成（选集弹窗收敛）**：新增 `dialog_episode_select.xml` + `item_episode_select.xml` + `presentation/dialog/EpisodeSelectDialog.kt`，替换 `DetailActivity` 的 `setMultiChoiceItems` 原生多选列表，默认勾选/锁定项置灰禁点/「没有新集需要下载」Toast 后关闭等原有行为保持一致；新增「全选 ⇄ 全不选」（全不选只取消未锁定项）与「已选 N/M」计数，全部集数均已添加时隐藏该按钮。至此项目内**原生列表弹窗清零**，仅剩 `ProfileFragment` 清理缓存使用 `AlertDialog + setView(自定义卡片)` 的合规外壳。
+
+**遗留口径（未处理，待后续决策）**：`RoundedDialog` 已无直接调用方，仅作为 `CardDialog` 的 parent 存在，其 `windowBackground` 指向旧体系 `bg_dialog_rounded` 且被 `CardDialog` 覆盖为透明 —— 该 drawable 实际已成死配置，可随下轮清理。
+
+**已完成（弹窗文案抽取 @string）**：8 个弹窗相关布局（`dialog_about` / `dialog_clear_cache` / `dialog_confirm` / `dialog_episode_select` / `dialog_help` / `dialog_update_tip` / `dialog_video_source` / `item_clear_cache`）内 61 处 `android:text` / `android:hint` / `android:contentDescription` 硬编码中文全部改为资源引用，去重后 46 条文案 → 新增 44 条 `<string>`（`strings.xml` 末尾「弹窗文案」分组，snake_case 命名），并复用两条原本闲置的旧资源 `cancel`（取消）、`video_source`（视频源管理）。lint 侧 `HardcodedText` 由 127 降到 66（弹窗族清零，剩余 66 处均在页面/列表/播放器菜单等非弹窗布局），警告总数 384 → 322。新增文案里 `cache_size_calculating`「缓存大小：计算中...」触发 1 条 `TypographyEllipsis`（建议用省略号 `…`），与项目原有 `loading`「加载中...」同类，两处口径保持一致未改。
+
+**待决策（代码侧文案）**：`VideoSourceDialog` / `EpisodeSelectDialog` / `ConfirmDialog` 调用点 / `ProfileFragment` 缓存项列表等 Kotlin 里仍有弹窗文案字面量（「全不选」「已选 N/M」「没有新集需要下载」「批量删除」等），抽取需 `getString()` 与占位符格式串（`%1$d/%2$d`），涉及 Kotlin 改动，尚未处理。
+
 ### 8.3 注意事项
 
 - 不要修改现有布局结构，只替换颜色、尺寸、字体引用。
@@ -335,12 +380,12 @@
 
 ## 十、后续扩展
 
-- 如需加入浅色模式，可定义另一套颜色资源（如 `colors_light.xml`），并通过主题切换。
+- ~~如需加入浅色模式，可定义另一套颜色资源（如 `colors_light.xml`），并通过主题切换。~~ **已实现**：采用 Android 标准 `-night` 资源限定符（`values` = 浅色 / `values-night` = 深色）+ `ThemeManager` 手动切换，详见第七章。
 - 可进一步定义 `Button`、`EditText` 等组件的自定义样式，减少重复代码。
 - 建议将所有 `dp` 尺寸也抽取为 `dimens.xml`，方便统一调整。
 
 ---
 
-**文档版本**：1.0  
+**文档版本**：1.1  
 **适用项目**：MyMovieStore Android App  
-**更新日期**：2026-06-19
+**更新日期**：2026-08-31

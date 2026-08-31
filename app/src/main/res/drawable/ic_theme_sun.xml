@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 太阳：深色模式下显示（提示点击切换到浅色）；颜色由使用处 tint 决定。
+     拆成多条短路径以避免 lint VectorPath「超长路径」告警，渲染结果与合并写法一致 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 中心圆环 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5 5,-2.24 5,-5 -2.24,-5 -5,-5zM12,9c1.66,0 3,1.34 3,3s-1.34,3 -3,3 -3,-1.34 -3,-3 1.34,-3 3,-3z" />
+    <!-- 上光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11,2v2c0,0.55 0.45,1 1,1s1,-0.45 1,-1V2c0,-0.55 -0.45,-1 -1,-1s-1,0.45 -1,1z" />
+    <!-- 下光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11,20v2c0,0.55 0.45,1 1,1s1,-0.45 1,-1v-2c0,-0.55 -0.45,-1 -1,-1s-1,0.45 -1,1z" />
+    <!-- 左光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M2,13h2c0.55,0 1,-0.45 1,-1s-0.45,-1 -1,-1H2c-0.55,0 -1,0.45 -1,1s0.45,1 1,1z" />
+    <!-- 右光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,13h2c0.55,0 1,-0.45 1,-1s-0.45,-1 -1,-1h-2c-0.55,0 -1,0.45 -1,1s0.45,1 1,1z" />
+    <!-- 左上斜光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4.92,4.93c-0.39,0.39 -0.39,1.02 0,1.41l1.06,1.06c0.39,0.39 1.02,0.39 1.41,0s0.39,-1.02 0,-1.41L6.34,4.93c-0.39,-0.39 -1.02,-0.39 -1.42,0z" />
+    <!-- 右下斜光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M17.66,17.66c-0.39,0.39 -0.39,1.02 0,1.41l1.06,1.06c0.39,0.39 1.02,0.39 1.41,0s0.39,-1.02 0,-1.41l-1.06,-1.06c-0.39,-0.39 -1.03,-0.39 -1.41,0z" />
+    <!-- 右上斜光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M19.07,4.93c0.39,0.39 0.39,1.02 0,1.41l-1.06,1.06c-0.39,0.39 -1.02,0.39 -1.41,0s-0.39,-1.02 0,-1.41l1.06,-1.06c0.39,-0.39 1.03,-0.39 1.41,0z" />
+    <!-- 左下斜光线 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6.34,19.07c0.39,-0.39 0.39,-1.02 0,-1.41l-1.06,-1.06c-0.39,-0.39 -1.02,-0.39 -1.41,0s-0.39,1.02 0,1.41l1.06,1.06c0.39,0.39 1.03,0.39 1.41,0z" />
+</vector>

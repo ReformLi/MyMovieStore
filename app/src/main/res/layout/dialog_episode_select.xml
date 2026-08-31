@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 视频源管理：居中卡片 Dialog（与帮助/关于风格统一），含全选/全不选 -->
+<!-- 选择下载集数：居中卡片 Dialog（与视频源管理同构），含全选/全不选 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -22,7 +22,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:text="@string/video_source"
+            android:text="@string/episode_select_title"
             android:textColor="@color/colorOnSurface"
             android:textSize="19sp"
             android:textStyle="bold" />
@@ -33,7 +33,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="@string/video_source_subtitle"
+            android:text="@string/episode_select_subtitle"
             android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="13sp" />
 
@@ -72,9 +72,9 @@
 
         </LinearLayout>
 
-        <!-- 视频源列表 -->
+        <!-- 集数列表 -->
         <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvSources"
+            android:id="@+id/rvEpisodes"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
@@ -89,7 +89,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="@string/video_source_hint"
+            android:text="@string/episode_select_hint"
             android:textColor="@color/colorOnSurfaceDisabled"
             android:textSize="11sp" />
 

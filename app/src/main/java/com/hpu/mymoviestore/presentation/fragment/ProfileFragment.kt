@@ -25,6 +25,7 @@ import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.help.HelpDialog
+import com.hpu.mymoviestore.presentation.settings.ThemeManager
 import com.hpu.mymoviestore.presentation.source.VideoSourceDialog
 import com.hpu.mymoviestore.presentation.update.AboutDialog
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +53,28 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         restoreSourceEnabledStates()
+        setupThemeToggle()
         setupClickListeners()
+    }
+
+    /** 主题切换：按当前模式渲染按钮图标与头部背景图；点击切换后 Activity 自动重建，本方法随之再次刷新 */
+    private fun setupThemeToggle() {
+        applyThemeUi()
+        binding.btnThemeToggle.setOnClickListener {
+            ThemeManager.toggle(requireContext())
+            // setDefaultNightMode 触发 Activity 重建 → onViewCreated → applyThemeUi() 刷新图标与背景图
+        }
+    }
+
+    /** 深色：背景 movie_background + 太阳图标（点击切浅色）；浅色：movie_background_light + 月亮图标（点击切深色） */
+    private fun applyThemeUi() {
+        val light = ThemeManager.isLightMode(requireContext())
+        binding.ivHeaderBackground.setImageResource(
+            if (light) R.drawable.movie_background_light else R.drawable.movie_background
+        )
+        binding.btnThemeToggle.setImageResource(
+            if (light) R.drawable.ic_theme_moon else R.drawable.ic_theme_sun
+        )
     }
 
     private fun setupClickListeners() {

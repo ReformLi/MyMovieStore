@@ -1,7 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 全局深色主题 -->
-    <style name="Base.Theme.MyMovieStore" parent="Theme.Material3.Dark.NoActionBar">
+    <!-- 主题公共项：深浅色共用，状态栏图标明暗由 values / values-night 各自的 Base.Theme.MyMovieStore 决定 -->
+    <style name="ThemeMyMovieStoreCore" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- 主色 -->
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryVariant">@color/colorPrimaryDark</item>
@@ -25,23 +25,30 @@
         <!-- 状态栏与导航栏 -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/colorSurface</item>
-        <item name="android:windowLightStatusBar">false</item>
 
         <!-- 底部导航栏 -->
         <item name="colorControlHighlight">@color/colorSurfaceHighlight</item>
     </style>
 
+    <!-- 全局主题（浅色）：状态栏图标为深色；深色模式见 values-night/themes.xml -->
+    <style name="Base.Theme.MyMovieStore" parent="ThemeMyMovieStoreCore">
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
     <style name="Theme.MyMovieStore" parent="Base.Theme.MyMovieStore" />
 
-    <!-- 统一圆角弹框样式（12dp 圆角，深色表面背景） -->
-    <style name="RoundedDialog" parent="Theme.Material3.Dark.Dialog.Alert">
+    <!-- 统一圆角弹框样式（12dp 圆角，背景色跟随日夜切换） -->
+    <style name="RoundedDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
         <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
     </style>
 
-    <!-- 清理缓存弹框（自定义布局版，窗口背景透明由内部布局处理圆角） -->
-    <style name="ClearCacheDialog" parent="RoundedDialog">
+    <!-- 居中卡片弹窗通用样式（UI 规范 5.3.1）：窗口背景透明，圆角/背景由内部 MaterialCardView 承担 -->
+    <style name="CardDialog" parent="RoundedDialog">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowMinWidthMajor">75%</item>
         <item name="android:windowMinWidthMinor">75%</item>
     </style>
+
+    <!-- 清理缓存弹框（沿用通用卡片弹窗样式） -->
+    <style name="ClearCacheDialog" parent="CardDialog" />
 </resources>

@@ -2,5 +2,5 @@
 <!-- 版本徽章背景：中性灰圆角（避免半透明主色叠深色卡片后发暗红），文字用主色点缀 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <corners android:radius="20dp" />
-    <solid android:color="#2A2A2A" />
+    <solid android:color="@color/colorSurfaceHighlight" />
 </shape>

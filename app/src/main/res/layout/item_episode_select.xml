@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 选择下载集数：单条集数（标题 + 勾选框），整行可点击；已添加项由代码置灰并禁用点击 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground"
+    android:paddingStart="10dp"
+    android:paddingEnd="6dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/tvEpisodeName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/colorOnSurface"
+        android:textSize="14sp" />
+
+    <CheckBox
+        android:id="@+id/cbEpisode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:buttonTint="@color/colorPrimary"
+        android:clickable="false"
+        android:focusable="false" />
+
+</LinearLayout>

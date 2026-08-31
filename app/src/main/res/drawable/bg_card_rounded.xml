@@ -2,5 +2,5 @@
 <!-- 圆角卡片背景：用于弹窗内嵌内容区和列表项 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <corners android:radius="14dp" />
-    <solid android:color="#2A2A2A" />
+    <solid android:color="@color/colorSurfaceHighlight" />
 </shape>

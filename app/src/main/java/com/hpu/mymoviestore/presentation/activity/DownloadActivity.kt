@@ -5,7 +5,6 @@ import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,6 +17,7 @@ import com.hpu.mymoviestore.databinding.ActivityDownloadBinding
 import com.hpu.mymoviestore.presentation.adapter.CompletedAdapter
 import com.hpu.mymoviestore.presentation.adapter.DownloadPagerAdapter
 import com.hpu.mymoviestore.presentation.adapter.DownloadingAdapter
+import com.hpu.mymoviestore.presentation.dialog.ConfirmDialog
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 
 /**
@@ -114,17 +114,18 @@ class DownloadActivity : AppCompatActivity() {
                     Toast.makeText(this, "未选择任何项目", Toast.LENGTH_SHORT).show()
                     return true
                 }
-                AlertDialog.Builder(this, R.style.RoundedDialog)
-                    .setTitle("批量删除")
-                    .setMessage("确定要删除选中的 ${selectedIds.size} 个下载任务吗？")
-                    .setPositiveButton("删除") { _, _ ->
-                        val ids = completedAdapter.deleteSelected()
-                        viewModel.deleteTasks(ids)
-                        exitMultiSelectMode()
-                        Toast.makeText(this, "已删除 ${ids.size} 个任务", Toast.LENGTH_SHORT).show()
-                    }
-                    .setNegativeButton("取消", null)
-                    .show()
+                ConfirmDialog.show(
+                    context = this,
+                    title = "批量删除",
+                    message = "确定要删除选中的 ${selectedIds.size} 个下载任务吗？",
+                    positiveText = "删除",
+                    negativeText = "取消"
+                ) {
+                    val ids = completedAdapter.deleteSelected()
+                    viewModel.deleteTasks(ids)
+                    exitMultiSelectMode()
+                    Toast.makeText(this, "已删除 ${ids.size} 个任务", Toast.LENGTH_SHORT).show()
+                }
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -229,15 +230,16 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun onTaskCancel(task: DownloadTaskEntity) {
-        AlertDialog.Builder(this, R.style.RoundedDialog)
-            .setTitle("删除任务")
-            .setMessage("确定要删除「${task.title} - ${task.episodeTitle}」的下载任务吗？已下载的分片也会被清除。")
-            .setPositiveButton("删除") { _, _ ->
-                viewModel.cancelTask(task.taskId)
-                Log.d(TAG, "取消并删除任务: ${task.taskId}")
-            }
-            .setNegativeButton("返回", null)
-            .show()
+        ConfirmDialog.show(
+            context = this,
+            title = "删除任务",
+            message = "确定要删除「${task.title} - ${task.episodeTitle}」的下载任务吗？已下载的分片也会被清除。",
+            positiveText = "删除",
+            negativeText = "返回"
+        ) {
+            viewModel.cancelTask(task.taskId)
+            Log.d(TAG, "取消并删除任务: ${task.taskId}")
+        }
     }
 
     private fun onTaskRetry(task: DownloadTaskEntity) {
@@ -278,15 +280,16 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun onTaskDelete(task: DownloadTaskEntity) {
-        AlertDialog.Builder(this, R.style.RoundedDialog)
-            .setTitle("删除任务")
-            .setMessage("确定要删除「${task.title} - ${task.episodeTitle}」吗？\n下载的文件也将被删除。")
-            .setPositiveButton("删除") { _, _ ->
-                viewModel.deleteTask(task.taskId)
-                Log.d(TAG, "删除任务: ${task.taskId}")
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        ConfirmDialog.show(
+            context = this,
+            title = "删除任务",
+            message = "确定要删除「${task.title} - ${task.episodeTitle}」吗？\n下载的文件也将被删除。",
+            positiveText = "删除",
+            negativeText = "取消"
+        ) {
+            viewModel.deleteTask(task.taskId)
+            Log.d(TAG, "删除任务: ${task.taskId}")
+        }
     }
 
     private fun onSelectionChanged(selectedIds: Set<String>) {

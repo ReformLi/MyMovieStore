@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 详情页顶部渐变：引用日夜可切换的背景色（深色下等价于 #0D0D0D → #1A1A1A） -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <gradient
         android:angle="270"
-        android:startColor="#0D0D0D"
-        android:centerColor="#1A1A1A"
-        android:endColor="#1A1A1A" />
+        android:startColor="@color/colorBackground"
+        android:centerColor="@color/colorSurface"
+        android:endColor="@color/colorSurface" />
 </shape>

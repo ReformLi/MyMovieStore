@@ -30,7 +30,7 @@
             android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="清理搜索缓存"
+            android:text="@string/clear_search_cache"
             android:textColor="@color/colorOnSurface"
             android:textSize="14sp" />
 
@@ -39,7 +39,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="删除所有搜索相关的缓存记录"
+            android:text="@string/clear_search_cache_desc"
             android:textColor="@color/colorOnSurfaceSecondary"
             android:textSize="12sp" />
     </LinearLayout>

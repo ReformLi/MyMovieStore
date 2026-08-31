@@ -45,7 +45,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:maxLines="2"
-                    android:textColor="@color/white"
+                    android:textColor="@color/colorOnSurface"
                     android:textSize="24sp"
                     android:textStyle="bold"
                     tools:text="红了樱桃绿了芭蕉" />
