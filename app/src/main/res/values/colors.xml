@@ -24,6 +24,8 @@
     <!-- 兼容旧引用 -->
     <color name="background">#F5F5F5</color>
     <color name="surface_background">#FFFFFF</color>
+    <!-- 弹框主背景（浅色模式与面板背景一致） -->
+    <color name="dialog_background">#FFF4F3</color>
 
     <!-- ======================== 文字颜色（浅色模式） ======================== -->
     <color name="colorOnSurface">#1A1A1A</color>
