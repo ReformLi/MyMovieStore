@@ -7,8 +7,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hpu.mymoviestore.R
@@ -143,7 +145,7 @@ class EpisodeSelectDialog private constructor(
             RecyclerView.ViewHolder(itemBinding.root) {
 
             init {
-                // 整行可点击；CheckBox 关闭自身点击，统一走行点击避免状态冲突
+                // 整行可点击切换勾选状态
                 itemBinding.root.setOnClickListener {
                     val position = bindingAdapterPosition
                     if (position != RecyclerView.NO_POSITION) toggleItem(position)
@@ -162,13 +164,28 @@ class EpisodeSelectDialog private constructor(
             val isLocked = locked[position]
             holder.itemBinding.tvEpisodeName.text =
                 if (isLocked) "${episodes[position].title}（已添加）" else episodes[position].title
-            holder.itemBinding.cbEpisode.isChecked = checked[position]
+            bindCheckState(holder.itemBinding.tvCheck, checked[position])
             // 锁定项置灰且不可交互（对应原生 isEnabled = false + alpha 0.5f）
             holder.itemBinding.root.isEnabled = !isLocked
-            holder.itemBinding.cbEpisode.isEnabled = !isLocked
             holder.itemBinding.root.alpha = if (isLocked) 0.5f else 1.0f
         }
 
         override fun getItemCount(): Int = episodes.size
+    }
+
+    /**
+     * 绑定勾选圆状态：
+     * - 选中：主色实心圆 + 白色 ✓
+     * - 未选中：分割线色描边圆环
+     */
+    private fun bindCheckState(tvCheck: TextView, isChecked: Boolean) {
+        if (isChecked) {
+            tvCheck.setBackgroundResource(R.drawable.bg_check_selected)
+            tvCheck.text = "✓"
+            tvCheck.setTextColor(ContextCompat.getColor(context, R.color.colorOnPrimary))
+        } else {
+            tvCheck.setBackgroundResource(R.drawable.bg_check_unselected)
+            tvCheck.text = ""
+        }
     }
 }
