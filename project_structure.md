@@ -534,28 +534,53 @@ presentation/
 
 ```text
 res/
-├── color/
-│   └── bottom_nav_color.xml
+├── mipmap-anydpi-v26/
+│   ├── ic_launcher.xml
+│   └── ic_launcher_round.xml
+├── mipmap-hdpi/
+│   ├── ic_launcher.webp
+│   ├── ic_launcher_foreground.webp
+│   └── ic_launcher_round.webp
+├── mipmap-mdpi/
+│   ├── ic_launcher.webp
+│   ├── ic_launcher_foreground.webp
+│   └── ic_launcher_round.webp
+├── mipmap-xhdpi/
+│   ├── ic_launcher.webp
+│   ├── ic_launcher_foreground.webp
+│   └── ic_launcher_round.webp
+├── mipmap-xxhdpi/
+│   ├── ic_launcher.webp
+│   ├── ic_launcher_foreground.webp
+│   └── ic_launcher_round.webp
+├── mipmap-xxxhdpi/
+│   ├── ic_launcher.webp
+│   ├── ic_launcher_foreground.webp
+│   └── ic_launcher_round.webp
 ├── drawable/
+│   ├── anim_loading_rotate.xml
+│   ├── bg_badge.xml
+│   ├── bg_card_rounded.xml
 │   ├── bg_chip.xml
 │   ├── bg_chip_selected.xml
 │   ├── bg_detail_card.xml
 │   ├── bg_detail_page.xml
-│   ├── bg_dialog_button_primary.xml
-│   ├── bg_dialog_button_secondary.xml
 │   ├── bg_dialog_rounded.xml
 │   ├── bg_download_progress.xml
 │   ├── bg_episode_normal.xml
 │   ├── bg_episode_selected.xml
 │   ├── bg_play_button.xml
 │   ├── bg_player_gesture_tip.xml
-│   ├── bg_player_round_button.xml
 │   ├── bg_player_top_gradient.xml
 │   ├── bg_poster_round.xml
-│   ├── bg_progress.xml
-│   ├── bg_rating.xml
 │   ├── ic_about.xml
 │   ├── ic_arrow_right.xml
+│   ├── ic_battery_1.xml
+│   ├── ic_battery_2.xml
+│   ├── ic_battery_3.xml
+│   ├── ic_battery_4.xml
+│   ├── ic_battery_5.xml
+│   ├── ic_battery_bolt.xml
 │   ├── ic_check_circle.xml
 │   ├── ic_check_circle_outline.xml
 │   ├── ic_clear_cache.xml
@@ -565,7 +590,8 @@ res/
 │   ├── ic_history.xml
 │   ├── ic_home.xml
 │   ├── ic_launcher_background.xml
-│   ├── ic_launcher_foreground.xml
+│   ├── ic_loading_film.xml
+│   ├── ic_mobile_network.xml
 │   ├── ic_player_back.xml
 │   ├── ic_player_clear_all.xml
 │   ├── ic_player_danmaku.xml
@@ -574,6 +600,7 @@ res/
 │   ├── ic_player_home.xml
 │   ├── ic_player_lock.xml
 │   ├── ic_player_pause.xml
+│   ├── ic_player_pip.xml
 │   ├── ic_player_play.xml
 │   ├── ic_player_rewind_10.xml
 │   ├── ic_player_rotate.xml
@@ -582,14 +609,25 @@ res/
 │   ├── ic_player_unlock.xml
 │   ├── ic_profile.xml
 │   ├── ic_search.xml
-│   └── ic_source.xml
+│   ├── ic_source.xml
+│   ├── ic_theme_moon.xml
+│   ├── ic_theme_sun.xml
+│   ├── ic_wifi.xml
+│   ├── movie_background.png
+│   └── movie_background_light.png
 ├── layout/
 │   ├── activity_detail.xml
 │   ├── activity_download.xml
 │   ├── activity_history.xml
 │   ├── activity_main.xml
 │   ├── activity_player.xml
+│   ├── dialog_about.xml
 │   ├── dialog_clear_cache.xml
+│   ├── dialog_confirm.xml
+│   ├── dialog_episode_select.xml
+│   ├── dialog_help.xml
+│   ├── dialog_update_tip.xml
+│   ├── dialog_video_source.xml
 │   ├── exo_player_control_view.xml
 │   ├── fragment_history.xml
 │   ├── fragment_home.xml
@@ -599,21 +637,32 @@ res/
 │   ├── item_completed.xml
 │   ├── item_download_page.xml
 │   ├── item_downloading.xml
+│   ├── item_episode_select.xml
 │   ├── item_history.xml
 │   ├── item_home_load_more.xml
 │   ├── item_search_result.xml
-│   └── item_video.xml
-├── menu/
-│   └── bottom_nav_menu.xml
+│   ├── item_video.xml
+│   ├── item_video_source.xml
+│   └── layout_loading_overlay.xml
 ├── values/
 │   ├── colors.xml
+│   ├── dimens.xml
 │   ├── strings.xml
+│   ├── styles.xml
 │   └── themes.xml
 ├── values-night/
+│   ├── colors.xml
 │   └── themes.xml
-└── xml/
-    ├── backup_rules.xml
-    └── data_extraction_rules.xml
+├── color/
+│   └── bottom_nav_color.xml
+├── menu/
+│   ├── bottom_nav_menu.xml
+│   ├── menu_download_batch_delete.xml
+│   └── menu_download_toolbar.xml
+├── xml/
+│   ├── backup_rules.xml
+│   ├── data_extraction_rules.xml
+│   └── file_paths.xml
 ```
 
 ### 布局对应关系
