@@ -17,6 +17,8 @@ import java.io.IOException
  * - 断点续传：通过 Range 请求头从已下载字节处继续（206）；
  *   服务器不支持 Range 返回 200 时整体重下；断点越界(416)时作废重下
  * - 通过 sidecar 文件 update.url 记录下载地址，URL 变化（远程换了更新包）时自动作废旧断点
+ * - 通过 sidecar 文件 update.sha256 锚定下载时的远程 sha256：进程重启后据此判断
+ *   本地完整 APK 是否仍与远程当前包一致（一致则复用零流量，不一致则作废重下）
  * - 流式写盘 + 实时进度回调（供 UI 进度条展示）
  */
 class ApkDownloader(private val context: Context) {
@@ -26,6 +28,8 @@ class ApkDownloader(private val context: Context) {
         private const val UPDATE_DIR = "update"
         private const val APK_FILE = "update.apk"
         private const val URL_META_FILE = "update.url"
+        /** 下载完成时锚定的远程 sha256（复用机制的判断锚点） */
+        private const val SHA_META_FILE = "update.sha256"
     }
 
     /** 下载进度回调：downloadedBytes / totalBytes（totalBytes 未知时为 -1） */
@@ -37,17 +41,20 @@ class ApkDownloader(private val context: Context) {
      * 下载 APK（本地存在同 URL 断点时自动续传）。
      *
      * @param url APK 下载地址
+     * @param remoteSha256 远程配置的 update_sha256（下载完成后写入锚点文件供复用判断）
      * @param listener 进度回调（在 IO 线程回调，调用方自行切主线程更新 UI）
      * @return 下载完成的本地文件
      * @throws IOException 网络失败 / 响应异常 / 断点越界
      */
-    suspend fun download(url: String, listener: ProgressListener): File = withContext(Dispatchers.IO) {
+    suspend fun download(url: String, remoteSha256: String?, listener: ProgressListener): File =
+        withContext(Dispatchers.IO) {
         val updateDir = File(context.cacheDir, UPDATE_DIR).apply { mkdirs() }
         val outputFile = File(updateDir, APK_FILE)
         val urlMeta = File(updateDir, URL_META_FILE)
+        val shaMeta = File(updateDir, SHA_META_FILE)
 
         // 清理历史残留（旧版本按时间戳命名的 APK 等其他文件）
-        updateDir.listFiles()?.forEach { if (it != outputFile && it != urlMeta) it.delete() }
+        updateDir.listFiles()?.forEach { if (it != outputFile && it != urlMeta && it != shaMeta) it.delete() }
 
         // 断点判断：本地已有部分文件且 URL 未变 → 续传
         var resumeFrom = 0L
@@ -57,10 +64,11 @@ class ApkDownloader(private val context: Context) {
                 resumeFrom = outputFile.length()
                 if (resumeFrom > 0L) Log.d(TAG, "断点续传: 本地已有 $resumeFrom 字节")
             } else {
-                // URL 变了，旧断点无效
+                // URL 变了，旧断点无效（sha 锚点一并作废）
                 Log.d(TAG, "下载地址已变化，作废旧断点")
                 outputFile.delete()
                 urlMeta.delete()
+                shaMeta.delete()
             }
         }
 
@@ -75,6 +83,7 @@ class ApkDownloader(private val context: Context) {
                 Log.w(TAG, "Range 越界(416)，作废断点")
                 outputFile.delete()
                 urlMeta.delete()
+                shaMeta.delete()
                 throw IOException("断点失效已重置，请重新下载")
             }
             if (!response.isSuccessful) {
@@ -114,10 +123,44 @@ class ApkDownloader(private val context: Context) {
             if (outputFile.length() == 0L) {
                 throw IOException("下载完成但文件为空")
             }
-            // 下载完成：断点已无用，删除 meta；保留 APK 供安装
+            // 下载完成：断点 meta 已无用，删除；写入 sha256 锚点供进程重启后复用判断
             urlMeta.delete()
+            if (!remoteSha256.isNullOrBlank()) {
+                shaMeta.writeText(remoteSha256.trim())
+            } else {
+                // 远程未配置 sha256：无锚点，删除旧锚点避免误复用
+                shaMeta.delete()
+            }
             Log.d(TAG, "APK 下载完成: ${outputFile.absolutePath}, size=${outputFile.length()}")
             outputFile
         }
+    }
+
+    /**
+     * 复用检查（sha256 锚定）：本地存在完整 APK 且其下载时锚定的 sha256
+     * 与当前远程配置一致时返回该文件，供零流量直接进入安装校验。
+     *
+     * - 远程未配置 sha256 时无锚点，保守不复用（返回 null，走全量下载）
+     * - 远程发了新包（sha256 变化）时锚点不匹配 → 返回 null，调用方全量重下
+     */
+    fun reuseCompletedApk(remoteSha256: String?): File? {
+        if (remoteSha256.isNullOrBlank()) return null
+        val updateDir = File(context.cacheDir, UPDATE_DIR)
+        val outputFile = File(updateDir, APK_FILE)
+        val shaMeta = File(updateDir, SHA_META_FILE)
+        if (!outputFile.exists() || outputFile.length() == 0L) return null
+        if (!shaMeta.exists()) return null
+        val anchored = runCatching { shaMeta.readText().trim() }.getOrNull() ?: return null
+        if (!anchored.equals(remoteSha256.trim(), ignoreCase = true)) {
+            Log.d(TAG, "本地安装包锚点与远程不一致（远程已换包），不复用")
+            return null
+        }
+        Log.d(TAG, "命中本地完整安装包（sha256 锚定一致，${outputFile.length()} 字节），零流量复用")
+        return outputFile
+    }
+
+    /** 作废 sha256 锚点（复用的 APK 校验失败或被删除时调用，避免下次误复用） */
+    fun invalidateShaMeta() {
+        File(File(context.cacheDir, UPDATE_DIR), SHA_META_FILE).delete()
     }
 }

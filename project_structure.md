@@ -241,11 +241,7 @@ data/
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
 | `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制；空弹幕列表不写缓存，空缓存视为未命中 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
-| `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`、更新 `switches.enable_update` + `strings.force_update_url`/`update_details`），与本地 app_name/version 匹配后生效；缓存 1 天且带 `cached_for_version` 版本校验（升级后自动失效重拉）；网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用，`checkUpdate()` 启动更新检查调用 |
-| `AboutDialog` | 关于页（居中卡片 Dialog，与更新提示弹窗风格统一）：App 信息展示（BuildConfig 版本徽章）、检查更新、更新详情卡片（`update_details` + 新版本号）、OkHttp 下载 APK（实时进度，存 `cacheDir/update/`）、FileProvider 发起系统安装；内容区超屏高 65% 可滚动 |
-| `ApkDownloader` / `ApkInstaller` | 更新包下载器（OkHttp 流式下载 + 进度回调）与安装工具（Android 8.0+ 安装未知应用授权检查 + FileProvider 共享） |
-| `UpdatePrefs` | 更新提示弹窗频率控制：「今天不再提醒」按日期记录，「知道了」（下次再说）不持久化 |
-| `VideoSourceDialog` | 视频源管理（居中卡片 Dialog）：RecyclerView 列表勾选源、全选/全不选切换 + 已选计数、确定时校验至少一个源并持久化到 SharedPreferences |
+| `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`、更新 `switches.enable_update` + `strings.force_update_url`/`update_details`/`update_sha256`），与本地 app_name/version 匹配后生效；缓存 1 天且带 `cached_for_version` 版本校验（升级后自动失效重拉）；网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用，`checkUpdate()` 启动更新检查调用（`update_sha256` 随 `UpdateInfo.sha256` 透传给下载器做完整性校验） |
 
 ### 弹幕缓存
 
@@ -474,6 +470,17 @@ presentation/
 │   ├── HomeFragment.kt
 │   ├── ProfileFragment.kt
 │   └── SearchFragment.kt
+├── settings/
+│   └── ThemeManager.kt
+├── source/
+│   └── VideoSourceDialog.kt
+├── update/
+│   ├── AboutDialog.kt
+│   ├── ApkDownloadManager.kt
+│   ├── ApkDownloader.kt
+│   ├── ApkInstaller.kt
+│   ├── ApkVerifier.kt
+│   └── UpdatePrefs.kt
 └── viewmodel/
     ├── DownloadViewModel.kt
     ├── HistoryViewModel.kt
@@ -529,6 +536,24 @@ presentation/
 | `DanmakuManager` | 弹幕渲染管理器，负责弹幕的显示、隐藏、同步、seek、暂停/恢复 |
 | `DanmakuView` | 弹幕绘制 View，基于 Canvas 实现弹幕滚动渲染；扫描游标每帧按时间窗口二分重定位（时间跳变异常可自愈），墙钟前跳（NTP 校时等）时跳过当帧弹幕添加等待校准 |
 | `DanmakuPrefs` | 弹幕偏好设置，管理弹幕总开关的持久化；**按 videoId 保存/读取用户选择的弹幕源 animeId（`saveAnimeId` / `getSavedAnimeId`，key=`danmaku_anime_{videoId}`）**，弹幕下载完成时也会回写该关联，供播放器开关打开时直接定位本地弹幕文件 |
+
+### 应用内更新组件（presentation/update/）
+
+| 组件 | 说明 |
+|------|------|
+| `AboutDialog` | 关于页（居中卡片 DialogFragment）：App 信息展示（BuildConfig 版本徽章）、检查更新（复用 `PermissionConfigRepository.checkUpdate()`，缓存命中时不联网）、更新详情卡片（`update_details` + 新版本号）、订阅 `ApkDownloadManager.state` 渲染下载进度/按钮文案（立即更新/下载中.../安装更新/重新下载）、Android 8.0+ 安装授权引导；APK 文件被系统清理时提示重下并重置状态；内容区超屏高 65% 可滚动 |
+| `ApkDownloadManager` | 应用级 APK 下载管理器（单例）：自有 `CoroutineScope(SupervisorJob + Main)` + `StateFlow<DownloadState>`（Idle/Downloading/Completed/Failed），**下载不绑定弹窗生命周期**，弹窗重开自动恢复状态展示；`lastUpdateInfo` 全局持有最近检查到的更新信息（弹窗重开时据此恢复卡片展示）；`start()` 先做 **sha256 锚定复用检查**（本地完整 APK 锚点与远程一致 → 零流量直接进入校验，适配 URL 不变只换内容的发布流程），否则走断点续传下载；下载完成后调用 `ApkVerifier.verify()` 做安装前校验，失败删除文件和锚点并置 Failed；`resetToIdle()` 供安装包失效时重置 |
+| `ApkDownloader` | 更新包下载器：OkHttp 流式下载到 `cacheDir/update/update.apk`，实时进度回调；**断点续传**（Range 请求头，206 续写 / 200 整体重下 / 416 作废断点），sidecar 文件 `update.url` 记录下载地址，URL 变化自动作废旧断点；**完整包复用**——下载完成时将远程 sha256 写入锚点文件 `update.sha256`，`reuseCompletedApk()` 据此判断进程重启后本地完整 APK 是否可零流量复用（远程未配置 sha256 时保守不复用） |
+| `ApkVerifier` | APK 安装前双重校验器：**核心**——下载 APK 签名者证书 SHA-256 与硬编码常量 `EXPECTED_SIGNING_CERT_SHA256` 比对（常量为空时跳过并打日志输出当前证书值）；**辅助**——远程 `update_sha256` 非空时校验文件全量 SHA-256（流式计算）；返回 null 表示通过，否则返回用户可读的失败原因 |
+| `ApkInstaller` | 安装工具：Android 8.0+ 「安装未知应用」授权检查与引导跳转，FileProvider 共享 APK 发起系统安装 |
+| `UpdatePrefs` | 更新提示弹窗频率控制：「今天不再提醒」按日期记录，「知道了」（下次再说）不持久化 |
+
+### 其他 Presentation 组件
+
+| 组件 | 说明 |
+|------|------|
+| `ThemeManager`（settings/） | 主题模式管理：持久化到 SharedPreferences（`app_settings`/`theme_mode`），`applySaved()` 在 Application 创建时应用，ProfileFragment 头部按钮切换（`AppCompatDelegate.setDefaultNightMode()`） |
+| `VideoSourceDialog`（source/） | 视频源管理（居中卡片 Dialog）：RecyclerView 列表勾选源、全选/全不选切换 + 已选计数、确定时校验至少一个源并持久化到 SharedPreferences |
 
 ## 资源结构
 
@@ -927,6 +952,26 @@ saveCurrentProgress() → DownloadRepository.updateOfflinePlayProgress()
         ↓ 不写入 play_history
 ```
 
+### 应用内更新
+
+```text
+MainActivity 启动 / AboutDialog 检查更新
+        ↓
+PermissionConfigRepository.checkUpdate()   （读本地缓存，无缓存时后台拉取）
+        ├─ 无更新 → null（不提示）
+        └─ 有更新 → UpdateInfo(latestVersion, downloadUrl, details, sha256)
+                ↓ AboutDialog「立即更新」
+ApkDownloadManager.start(context, url, sha256)   （应用级单例，不绑定弹窗生命周期）
+        ↓
+ApkDownloader.download()   （OkHttp 流式下载 + Range 断点续传，存 cacheDir/update/）
+        ↓ 下载完成
+ApkVerifier.verify()   （签名证书 SHA-256 比对 + 远程 update_sha256 文件校验）
+        ├─ 失败 → 删除 APK → Failed（按钮变「重新下载」，Toast 提示原因）
+        └─ 通过 → Completed
+                ↓ 下载中→完成瞬态 或 手动点「安装更新」
+ApkInstaller.install()   （8.0+ 授权检查 + FileProvider → 系统安装器）
+```
+
 ### 清理缓存
 
 ```text
@@ -982,7 +1027,7 @@ Toast 提示清理结果
 - 注册 `DetailActivity`、`PlayerActivity`、`HistoryActivity`、`DownloadActivity`。
 - 注册 `DownloadService`（前台服务，`dataSync` 类型）。
 - `PlayerActivity` 使用无 ActionBar 主题，并处理方向和屏幕尺寸变化。
-- 声明 `INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK` 权限。
+- 声明 `INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`POST_NOTIFICATIONS`、`WAKE_LOCK`、`REQUEST_INSTALL_PACKAGES` 权限。
 
 ## 当前实现边界
 

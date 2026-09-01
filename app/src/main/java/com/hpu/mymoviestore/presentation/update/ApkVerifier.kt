@@ -34,7 +34,7 @@ object ApkVerifier {
      * ⚠️ 注意：换签名（如 keystore 丢失后重建）会导致校验拒绝自己的新包，
      * 届时必须同步更新此常量并发版。
      */
-    private const val EXPECTED_SIGNING_CERT_SHA256 = ""
+    private const val EXPECTED_SIGNING_CERT_SHA256 = "A8367CA48F4FAF696A7707FB29F1A7FA497A716CB32853F6C173EE89744C4855"
 
     /**
      * 校验结果：成功返回 null，失败返回用户可读的错误原因。

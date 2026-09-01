@@ -90,6 +90,14 @@ class AboutDialog : DialogFragment() {
         btnUpdate.setOnClickListener { onUpdateButtonClick() }
         tvClose.setOnClickListener { dismiss() }
 
+        // 恢复全局持有的更新信息：弹窗重开时直接展开更新卡片
+        // （下载中显示进度、已完成显示「安装更新」、失败显示「重新下载」），
+        // 而不是回到「检查更新」初始态导致状态显示回退
+        ApkDownloadManager.lastUpdateInfo?.let { info ->
+            updateInfo = info
+            showUpdateCard(info)
+        }
+
         // 订阅全局下载状态：弹窗关闭不中断下载，重开弹窗恢复进度展示
         viewLifecycleOwner.lifecycleScope.launch {
             var last: ApkDownloadManager.DownloadState? = null
@@ -138,7 +146,13 @@ class AboutDialog : DialogFragment() {
 
     /** 检查更新（复用远程配置仓库的 checkUpdate，缓存命中时不联网） */
     private fun checkUpdate() {
-        if (ApkDownloadManager.isDownloading) return
+        if (ApkDownloadManager.isDownloading) {
+            // 下载中拦截：给出明确反馈，避免点击「无反应」的困惑
+            tvUpdateStatus.text = "更新包正在下载中，请稍候"
+            tvUpdateStatus.visibility = View.VISIBLE
+            Toast.makeText(context, "更新包正在下载中，可在下方查看进度", Toast.LENGTH_SHORT).show()
+            return
+        }
         tvUpdateTitle.text = "检查更新"
         tvUpdateStatus.text = "正在检查..."
         tvUpdateStatus.visibility = View.VISIBLE
@@ -149,6 +163,8 @@ class AboutDialog : DialogFragment() {
             try {
                 val info = MovieApplication.get().permissionConfigRepository.checkUpdate()
                 progressCheck.visibility = View.GONE
+                // 全局记录检查结果：弹窗关闭后重开时据此恢复卡片展示
+                ApkDownloadManager.lastUpdateInfo = info
                 if (info != null) {
                     updateInfo = info
                     showUpdateCard(info)
@@ -179,13 +195,27 @@ class AboutDialog : DialogFragment() {
     /** 「立即更新 / 下载中 / 安装更新 / 重新下载」按钮点击 */
     private fun onUpdateButtonClick() {
         val st = ApkDownloadManager.state.value
-        if (st is ApkDownloadManager.DownloadState.Completed && st.url == updateInfo?.downloadUrl) {
+        if (st is ApkDownloadManager.DownloadState.Completed && matchesCurrentUpdate(st)) {
             installApk(st.apk)
             return
         }
         if (ApkDownloadManager.isDownloading) return
         val info = updateInfo ?: return
         ApkDownloadManager.start(requireContext(), info.downloadUrl, info.sha256)
+    }
+
+    /**
+     * 判断已完成的下载包是否就是当前检查到的更新包。
+     * 远程配置了 sha256 时以 sha256 为锚点（URL 不变只换内容的发布流也能识别换包），
+     * 未配置时退回 URL 比对。
+     */
+    private fun matchesCurrentUpdate(st: ApkDownloadManager.DownloadState.Completed): Boolean {
+        val info = updateInfo ?: return false
+        return if (!info.sha256.isNullOrBlank()) {
+            st.sha256?.equals(info.sha256.trim(), ignoreCase = true) == true
+        } else {
+            st.url == info.downloadUrl
+        }
     }
 
     /** 按全局下载状态渲染下载区 UI（进度条 / 按钮文案） */
@@ -216,7 +246,7 @@ class AboutDialog : DialogFragment() {
             is ApkDownloadManager.DownloadState.Completed -> {
                 progressDownload.visibility = View.GONE
                 tvDownloadProgress.visibility = View.GONE
-                if (st.url == updateInfo?.downloadUrl) {
+                if (matchesCurrentUpdate(st)) {
                     btnUpdate.text = "安装更新"
                     btnUpdate.isEnabled = true
                 } else {

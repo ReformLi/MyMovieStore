@@ -1,6 +1,7 @@
 package com.hpu.mymoviestore.presentation.update
 
 import android.content.Context
+import com.hpu.mymoviestore.data.repository.UpdateInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,11 +21,15 @@ import java.io.IOException
  */
 object ApkDownloadManager {
 
-    /** 下载状态。Completed 携带 url，用于判断是否与当前检查到的更新包一致 */
+    /**
+     * 下载状态。Completed 携带 url 和 sha256，用于判断是否与当前检查到的更新包一致：
+     * 远程配置了 sha256 时以 sha256 为锚点（URL 不变只换内容的发布流也可识别换包），
+     * 未配置时退回 URL 比对。
+     */
     sealed class DownloadState {
         object Idle : DownloadState()
         data class Downloading(val downloaded: Long, val total: Long) : DownloadState()
-        data class Completed(val apk: File, val url: String) : DownloadState()
+        data class Completed(val apk: File, val url: String, val sha256: String?) : DownloadState()
         data class Failed(val message: String) : DownloadState()
     }
 
@@ -36,28 +41,51 @@ object ApkDownloadManager {
     /** 是否有下载任务正在进行 */
     val isDownloading: Boolean get() = _state.value is DownloadState.Downloading
 
-    /** 发起（或继续）下载。已在下载中时忽略重复触发。 */
+    /**
+     * 最近一次检查到的更新信息（全局持有，弹窗实例字段随弹窗销毁丢失）。
+     * 「关于」弹窗重开时据此直接恢复更新卡片展示（下载中显示进度、已完成显示安装按钮）。
+     * 由 AboutDialog.checkUpdate() 写入（无更新时置 null）；应用重启自然清零。
+     */
+    var lastUpdateInfo: UpdateInfo? = null
+
+    /**
+     * 发起（或继续）下载。已在下载中时忽略重复触发。
+     *
+     * sha256 锚定复用：本地已有完整 APK 且其下载时锚定的 sha256 与当前远程一致时，
+     * 零流量直接进入安装校验（典型场景：进程重启后重新点「立即更新」，
+     * 不再全量重下之前已下载完成的同一个包）。
+     */
     fun start(context: Context, url: String, remoteSha256: String? = null) {
         if (isDownloading) return
         val appContext = context.applicationContext
-        _state.value = DownloadState.Downloading(0L, -1L)
         val downloader = ApkDownloader(appContext)
         scope.launch {
             try {
-                val apk = downloader.download(url) { downloaded, total ->
-                    _state.value = DownloadState.Downloading(downloaded, total)
+                // ① 复用检查：锚点一致 → 跳过下载直接进入校验
+                val apk = withContext(Dispatchers.IO) {
+                    downloader.reuseCompletedApk(remoteSha256)
+                } ?: run {
+                    // ② 无可复用文件 → 正常下载（带断点续传）
+                    _state.value = DownloadState.Downloading(0L, -1L)
+                    downloader.download(url, remoteSha256) { downloaded, total ->
+                        _state.value = DownloadState.Downloading(downloaded, total)
+                    }
                 }
-                // 下载完成 → 安装前双重校验（签名证书 + 文件 SHA-256，见 ApkVerifier）
+                // ③ 安装前双重校验（签名证书 + 文件 SHA-256，见 ApkVerifier）；
+                //    复用路径同样校验，防本地文件被篡改/损坏
                 val error = withContext(Dispatchers.IO) {
                     ApkVerifier.verify(appContext, apk, remoteSha256)
                 }
                 if (error != null) {
-                    // 校验失败：作废下载文件，避免被安装
-                    withContext(Dispatchers.IO) { apk.delete() }
+                    // 校验失败：作废下载文件和锚点，避免被安装/误复用
+                    withContext(Dispatchers.IO) {
+                        apk.delete()
+                        downloader.invalidateShaMeta()
+                    }
                     _state.value = DownloadState.Failed(error)
                     return@launch
                 }
-                _state.value = DownloadState.Completed(apk, url)
+                _state.value = DownloadState.Completed(apk, url, remoteSha256)
             } catch (e: IOException) {
                 _state.value = DownloadState.Failed(e.message ?: "未知错误")
             } catch (e: Exception) {
