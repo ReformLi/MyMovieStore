@@ -599,3 +599,27 @@ app/build/outputs/apk/debug/app-debug.apk
 
 * 增加收藏功能。
 
+### 应用内更新：已确认暂缓的优化项
+
+以下三个问题已讨论确认，当前行为可接受（各有兜底机制），实现时按此方案推进：
+
+**1. 完成未安装的 APK 无生命周期管理**
+
+下载完成但用户一直未安装的 APK（`cacheDir/update/update.apk`，几十 MB）无主动清理机制（无 TTL、无启动检测、无安装成功删除）。现状兜底：固定文件名死文件最多一份；sha256 锚定复用使其在远程未换包期间可零流量复用。建议方案：安装成功或启动时检测本地版本已 ≥ 该更新包版本 → 删除 APK 及 sha256 锚点（删除时须同步删 `update.sha256`，`invalidateShaMeta()` 已提供作废方法）。
+
+**2. 后台下载无保活**
+
+APK 下载只是 `ApkDownloadManager` 单例内的内存协程，无前台服务/通知，进程被杀下载即断、无通知栏进度。现状兜底：断点续传 + sha256 锚点复用，重下损失可控。建议方案：参考 `DownloadService` 模式增加前台服务 + 进度通知（注意 Android 14+ 前台服务类型限制及应用现有 `dataSync` 类型）；保持 `ApkDownloadManager` 的 StateFlow 订阅接口不变。
+
+**3. 清理缓存统计/清理范围不一致**
+
+缓存大小计算包含整个 `cacheDir`，但「清理全部缓存」不删 `cacheDir/update/`（APK 更新包），用户会看到清理后大小对不上。建议方案（三选一或组合）：① 清理全部时纳入 `cacheDir/update/`，但下载中（`ApkDownloadManager.isDownloading`）跳过；② 清理缓存弹框增加独立选项「清理更新安装包」；③ 大小统计单独标注「含更新安装包 XX MB」不纳入一键清理。
+
+### 发版流程纪律（持续有效）
+
+* 每次发版远程 JSON 的 `version` + `update_sha256` 必须同步更新（`update_sha256` 忘改且 URL 未变 → 复用机制会命中旧包）。
+
+* `update_sha256` 建议视为必填项（空值 = 复用失效 + 完整性校验失效，两道防线同时失效）。
+
+* 换签名（keystore 丢失重建）时必须同步更新 `ApkVerifier.EXPECTED_SIGNING_CERT_SHA256` 常量并发版。
+
