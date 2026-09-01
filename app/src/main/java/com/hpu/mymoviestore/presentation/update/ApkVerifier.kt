@@ -104,20 +104,42 @@ object ApkVerifier {
     private fun apkSigningCertSha256(context: Context, apk: File): String? {
         return try {
             val pm = context.packageManager
+            // 同时请求新旧两种签名标志：getPackageArchiveInfo 对未安装 APK 的
+            // archive 解析在部分系统版本上存在 signingInfo 填充不完整的兼容性问题，
+            // 叠加 GET_SIGNATURES 走遗留路径兜底（v1/v2 签名均可解析出签名者）
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                pm.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(
+                    apk.absolutePath,
+                    PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_SIGNATURES
+                )
             } else {
                 @Suppress("DEPRECATION")
                 pm.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNATURES)
-            } ?: return null // 文件损坏/非 APK/未签名
+            } ?: run {
+                // 此处为 null 说明系统连 PackageInfo 都解析不出来（文件损坏/非 APK）
+                Log.w(TAG, "getPackageArchiveInfo 返回 null（文件损坏或非 APK）: ${apk.name}, size=${apk.length()}")
+                return null
+            }
 
-            val signature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                info.signingInfo?.apkContentsSigners?.firstOrNull()
+            // 提取顺序：signingInfo.apkContentsSigners → signingInfo.signingCertificateHistory → 遗留 signatures
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.signingInfo?.apkContentsSigners
+                    ?: info.signingInfo?.signingCertificateHistory
+                    ?: info.signatures
             } else {
                 @Suppress("DEPRECATION")
-                info.signatures?.firstOrNull()
-            } ?: return null
-            sha256Hex(signature.toByteArray())
+                info.signatures
+            }
+            if (signatures.isNullOrEmpty()) {
+                Log.w(
+                    TAG,
+                    "APK 签名信息为空: ${apk.name}, signingInfo=${info.signingInfo != null}, " +
+                        "signatures=${info.signatures?.size}"
+                )
+                return null
+            }
+            sha256Hex(signatures.first().toByteArray())
         } catch (e: Exception) {
             Log.w(TAG, "解析 APK 签名失败: ${e.message}")
             null
@@ -135,9 +157,14 @@ object ApkVerifier {
                 digest.update(buffer, 0, read)
             }
         }
-        return sha256Hex(digest.digest())
+        return toHex(digest.digest())
     }
 
+    /** 对字节做 SHA-256 哈希后输出十六进制字符串 */
     private fun sha256Hex(bytes: ByteArray): String =
+        toHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+    /** 纯字节转十六进制字符串（不做哈希） */
+    private fun toHex(bytes: ByteArray): String =
         bytes.joinToString("") { String.format(Locale.US, "%02x", it) }
 }

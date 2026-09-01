@@ -18,6 +18,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("MovieStore_key.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "MovieStore123"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "movie_store"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "MovieStore123"
+            // v1 + v2 双签：ApkVerifier 校验走 v1（GET_SIGNATURES 仅支持 v1），
+            // minSdk=24 时 AGP 默认关闭 v1，会导致校验误报"无法解析签名"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -25,6 +38,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
