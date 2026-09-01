@@ -1,11 +1,13 @@
 package com.hpu.mymoviestore.data.repository
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.asLiveData
 import com.hpu.mymoviestore.data.dao.DownloadedVideoIndexDao
 import com.hpu.mymoviestore.data.dao.DownloadTaskDao
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
+import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import java.io.File
 
 /**
@@ -15,6 +17,7 @@ import java.io.File
  * 对上层提供下载任务的创建、查询、控制和删除功能。
  */
 class DownloadRepository(
+    private val appContext: Context,
     private val taskDao: DownloadTaskDao,
     private val indexDao: DownloadedVideoIndexDao
 ) {
@@ -203,6 +206,9 @@ class DownloadRepository(
         }
     }
 
+    /** 所有任务已落盘的弹幕文件路径（供「清理弹幕缓存」甄别保留，避免删掉离线播放依赖的文件） */
+    suspend fun getAllTaskDanmakuFilePaths(): List<String> = taskDao.getAllDanmakuFilePaths()
+
     private fun deleteLocalFiles(task: DownloadTaskEntity) {
         try {
             if (task.localFilePath.isNotEmpty()) {
@@ -215,6 +221,22 @@ class DownloadRepository(
                 val file = File(task.danmakuFilePath)
                 if (file.exists() && file.delete()) {
                     Log.d(TAG, "删除弹幕文件: ${file.absolutePath}")
+                }
+            }
+            // 清理下载分片临时目录：暂停中被删除的任务不会走引擎的终点清理，temp/{taskId} 会永久残留
+            val taskTempDir = File(File(appContext.filesDir, "temp"), task.taskId)
+            if (taskTempDir.exists() && taskTempDir.deleteRecursively()) {
+                Log.d(TAG, "删除临时分片目录: ${taskTempDir.absolutePath}")
+            }
+            // 清理同一次下载生成的弹幕源索引文件 {animeId}_{episodeNum}.json（命名规则与 DanmakuDownloadManager 一致）
+            if (task.danmakuFilePath.isNotEmpty() && task.videoId > 0L) {
+                val animeId = DanmakuPrefs(appContext).getSavedAnimeId(task.videoId)
+                if (animeId > 0L) {
+                    val episodeNum = Regex("""(\d+)""").find(task.episodeTitle)?.value ?: task.episodeTitle
+                    val sourceIndexFile = File(File(appContext.filesDir, "Danmaku"), "${animeId}_${episodeNum}.json")
+                    if (sourceIndexFile.exists() && sourceIndexFile.delete()) {
+                        Log.d(TAG, "删除弹幕源索引文件: ${sourceIndexFile.absolutePath}")
+                    }
                 }
             }
         } catch (t: Throwable) {

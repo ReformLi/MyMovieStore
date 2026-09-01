@@ -91,4 +91,8 @@ interface DownloadTaskDao {
 
     @Query("SELECT COUNT(*) FROM download_task WHERE status = ${DownloadTaskEntity.STATUS_COMPLETED}")
     suspend fun getCompletedCount(): Int
+
+    /** 所有任务已落盘的弹幕文件路径（清理弹幕缓存时用于甄别保留，避免影响离线播放） */
+    @Query("SELECT danmakuFilePath FROM download_task WHERE danmakuFilePath != ''")
+    suspend fun getAllDanmakuFilePaths(): List<String>
 }

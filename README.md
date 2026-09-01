@@ -613,7 +613,7 @@ APK 下载只是 `ApkDownloadManager` 单例内的内存协程，无前台服务
 
 **3. 清理缓存统计/清理范围不一致**
 
-缓存大小计算包含整个 `cacheDir`，但「清理全部缓存」不删 `cacheDir/update/`（APK 更新包），用户会看到清理后大小对不上。建议方案（三选一或组合）：① 清理全部时纳入 `cacheDir/update/`，但下载中（`ApkDownloadManager.isDownloading`）跳过；② 清理缓存弹框增加独立选项「清理更新安装包」；③ 大小统计单独标注「含更新安装包 XX MB」不纳入一键清理。
+~~缓存大小计算包含整个~~ ~~`cacheDir`，但「清理全部缓存」不删~~ ~~`cacheDir/image_cache/`（Coil 图片缓存）~~ 已解决：清理全部缓存现在通过 `Coil.imageLoader(ctx).diskCache?.clear()` 清理图片磁盘缓存，并修复了统计中 WebView 目录被重复计算的问题；Coil 磁盘缓存上限也从默认 250MB 收敛到 128MB。剩余问题：「清理全部缓存」仍不删 `cacheDir/update/`（APK 更新包），用户会看到清理后大小对不上。建议方案（三选一或组合）：① 清理全部时纳入 `cacheDir/update/`，但下载中（`ApkDownloadManager.isDownloading`）跳过；② 清理缓存弹框增加独立选项「清理更新安装包」；③ 大小统计单独标注「含更新安装包 XX MB」不纳入一键清理。
 
 ### 发版流程纪律（持续有效）
 

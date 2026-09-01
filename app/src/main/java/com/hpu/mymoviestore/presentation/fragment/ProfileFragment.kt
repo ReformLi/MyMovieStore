@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -302,11 +303,42 @@ class ProfileFragment : Fragment() {
                 results.add("播放地址缓存 (${rows1 + rows2}条)")
             }
 
-            // 5. 清理弹幕缓存（包括弹幕源选择记录）
+            // 5. 清理弹幕缓存（包括弹幕源选择记录 + 本地弹幕 JSON 文件）
             if (5 in selectedItems || 4 in selectedItems) {
                 DanmakuCache(ctx).clearAll()
                 DanmakuPrefs(ctx).clearSavedAnimeChoices()
-                results.add("弹幕缓存及弹幕源选择记录")
+                // 删除 filesDir/Danmaku/ 下的弹幕 JSON 文件，但保留下载任务引用的弹幕文件（离线播放依赖）
+                var deletedDanmakuFiles = 0
+                val danmakuDir = java.io.File(ctx.filesDir, "Danmaku")
+                if (danmakuDir.exists() && danmakuDir.isDirectory) {
+                    val keptPaths = try {
+                        app.downloadRepository.getAllTaskDanmakuFilePaths().toSet()
+                    } catch (t: Throwable) {
+                        Log.w("ProfileFragment", "查询任务弹幕路径失败，跳过文件删除: ${t.message}")
+                        null
+                    }
+                    if (keptPaths != null) {
+                        danmakuDir.listFiles()?.forEach { f ->
+                            if (f.isFile && f.absolutePath !in keptPaths && f.delete()) {
+                                deletedDanmakuFiles++
+                            }
+                        }
+                    }
+                }
+                results.add(
+                    if (deletedDanmakuFiles > 0) "弹幕缓存及弹幕源选择记录 (${deletedDanmakuFiles}个文件)"
+                    else "弹幕缓存及弹幕源选择记录"
+                )
+            }
+
+            // 6. 清理 Coil 图片磁盘缓存（cacheDir/image_cache，LRU 缓存，删除后自动重建）
+            if (5 in selectedItems) {
+                try {
+                    coil.Coil.imageLoader(ctx).diskCache?.clear()
+                    results.add("图片缓存")
+                } catch (t: Throwable) {
+                    Log.w("ProfileFragment", "清理图片缓存失败: ${t.message}")
+                }
             }
 
             withContext(Dispatchers.Main) {
@@ -344,16 +376,10 @@ class ProfileFragment : Fragment() {
                 }
             }
 
-            // 3. Coil 图片缓存
+            // 3. cacheDir 整体（Coil 图片缓存 + WebView 缓存 + 更新安装包等），已覆盖其全部子目录
             val cacheDir = ctx.cacheDir
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 total += calculateDirSize(cacheDir)
-            }
-
-            // 4. WebView 缓存
-            val webViewCache = java.io.File(ctx.cacheDir, "WebView")
-            if (webViewCache.exists()) {
-                total += calculateDirSize(webViewCache)
             }
         }
         return total

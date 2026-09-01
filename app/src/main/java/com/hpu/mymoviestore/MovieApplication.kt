@@ -20,6 +20,7 @@ import com.hpu.mymoviestore.presentation.settings.ThemeManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 
 /**
@@ -97,7 +98,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
         playHistoryRepository = PlayHistoryRepository(database.playHistoryDao())
         searchHistoryRepository = SearchHistoryRepository(database.searchHistoryDao())
         apiCacheRepository = ApiCacheRepository(database.apiCacheDao())
-        downloadRepository = DownloadRepository(database.downloadTaskDao(), database.downloadedVideoIndexDao())
+        downloadRepository = DownloadRepository(this, database.downloadTaskDao(), database.downloadedVideoIndexDao())
         permissionConfigRepository = PermissionConfigRepository(this, apiCacheRepository)
         Log.d(TAG, "数据仓库初始化完成 (PlayHistory/SearchHistory/ApiCache/Download/PermissionConfig)")
 
@@ -130,15 +131,19 @@ class MovieApplication : Application(), ImageLoaderFactory {
         }
         Log.d(TAG, "VideoSourceConfigManager 初始化完成")
 
-        // 启动时顺手清理过期的爬虫缓存（避免数据库增长）
+        // 启动时顺手清理过期的爬虫缓存（避免数据库增长），并周期性清理
+        // （启动单次清理只覆盖冷启动场景，App 常驻后台不重启时运行期死数据无法回收）
         applicationScope.launch {
-            try {
-                val deleted = apiCacheRepository.cleanExpiredInner()
-                if (deleted > 0) {
-                    Log.d(TAG, "启动时清理过期 api_cache: 共删除 $deleted 行")
+            while (true) {
+                try {
+                    val deleted = apiCacheRepository.cleanExpiredInner()
+                    if (deleted > 0) {
+                        Log.d(TAG, "定时清理过期 api_cache: 共删除 $deleted 行")
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "清理过期缓存失败（非致命）: ${t.message}")
                 }
-            } catch (t: Throwable) {
-                Log.w(TAG, "清理过期缓存失败（非致命）: ${t.message}")
+                delay(CACHE_CLEAN_INTERVAL_MS)
             }
         }
 
@@ -173,6 +178,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
         private const val DOUBAN_IMAGE_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+        /** api_cache 过期记录的周期性清理间隔：6 小时 */
+        private const val CACHE_CLEAN_INTERVAL_MS = 6L * 60 * 60 * 1000
 
         fun get(): MovieApplication {
             return instance ?: throw IllegalStateException("Application not initialized")
@@ -209,6 +217,13 @@ class MovieApplication : Application(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .okHttpClient(imageClient)
             .crossfade(true)
+            // 磁盘缓存：LRU 策略，默认 250MB 偏大，收敛到 128MB
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(128L * 1024 * 1024)
+                    .build()
+            }
             .build()
     }
 
