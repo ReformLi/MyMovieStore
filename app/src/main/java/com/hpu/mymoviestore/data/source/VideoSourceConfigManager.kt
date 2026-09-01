@@ -18,8 +18,10 @@ import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
 import com.hpu.mymoviestore.data.source.impl.NiuerVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
+import com.hpu.mymoviestore.data.source.impl.ShenMaVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
+import com.hpu.mymoviestore.data.source.impl.ZaiXianVideoSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -125,7 +127,9 @@ class VideoSourceConfigManager(
             YinghuaVideoSource::class.java,
             DaMaoVideoSource::class.java,
             HanSenVideoSource::class.java,
-            BaJieVideoSource::class.java
+            BaJieVideoSource::class.java,
+            ZaiXianVideoSource::class.java,
+            ShenMaVideoSource::class.java
         )
     }
 
