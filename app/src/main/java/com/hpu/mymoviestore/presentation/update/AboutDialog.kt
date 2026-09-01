@@ -12,18 +12,14 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.repository.UpdateInfo
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.IOException
 
 /**
  * 关于页（居中卡片 Dialog）。
@@ -35,7 +31,8 @@ import java.io.IOException
  * - App 信息（名称、版本号从 BuildConfig 读取）
  * - 检查更新入口：点击后调用 PermissionConfigRepository.checkUpdate()
  * - 发现新版本：展示更新详情卡片（版本号 + update_details + 立即更新按钮）
- * - 下载中：进度条实时刷新
+ * - 下载中：进度条实时刷新（下载由 [ApkDownloadManager] 全局持有，
+ *   关闭弹窗不中断，重开弹窗自动恢复进度/完成态展示）
  * - 下载完成：跳转系统安装器
  */
 class AboutDialog : DialogFragment() {
@@ -45,8 +42,6 @@ class AboutDialog : DialogFragment() {
 
         fun newInstance(): AboutDialog = AboutDialog()
     }
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private lateinit var tvVersion: TextView
     private lateinit var scrollContent: ScrollView
@@ -64,12 +59,6 @@ class AboutDialog : DialogFragment() {
 
     /** 当前检查到的更新信息（null = 未发现更新） */
     private var updateInfo: UpdateInfo? = null
-
-    /** 下载完成的 APK 文件 */
-    private var downloadedApk: File? = null
-
-    /** 是否正在下载（防止重复触发） */
-    private var downloading = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -100,6 +89,22 @@ class AboutDialog : DialogFragment() {
         layoutCheckUpdate.setOnClickListener { checkUpdate() }
         btnUpdate.setOnClickListener { onUpdateButtonClick() }
         tvClose.setOnClickListener { dismiss() }
+
+        // 订阅全局下载状态：弹窗关闭不中断下载，重开弹窗恢复进度展示
+        viewLifecycleOwner.lifecycleScope.launch {
+            var last: ApkDownloadManager.DownloadState? = null
+            ApkDownloadManager.state.collect { st ->
+                renderDownloadState(st, isFreshTransition = last != null)
+                // 仅在「下载中 → 完成」的瞬间自动拉起安装器；
+                // 重新打开弹窗（初始即 Completed）不重复拉起
+                if (st is ApkDownloadManager.DownloadState.Completed
+                    && last is ApkDownloadManager.DownloadState.Downloading
+                ) {
+                    installApk(st.apk)
+                }
+                last = st
+            }
+        }
     }
 
     override fun onStart() {
@@ -133,14 +138,14 @@ class AboutDialog : DialogFragment() {
 
     /** 检查更新（复用远程配置仓库的 checkUpdate，缓存命中时不联网） */
     private fun checkUpdate() {
-        if (downloading) return
+        if (ApkDownloadManager.isDownloading) return
         tvUpdateTitle.text = "检查更新"
         tvUpdateStatus.text = "正在检查..."
         tvUpdateStatus.visibility = View.VISIBLE
         progressCheck.visibility = View.VISIBLE
         layoutUpdateCard.visibility = View.GONE
 
-        scope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val info = MovieApplication.get().permissionConfigRepository.checkUpdate()
                 progressCheck.visibility = View.GONE
@@ -165,73 +170,70 @@ class AboutDialog : DialogFragment() {
         tvNewVersion.text = "发现新版本 v${info.latestVersion}"
         tvUpdateDetails.text = info.details ?: "优化使用体验，修复已知问题"
         tvUpdateDetails.visibility = if (info.details.isNullOrEmpty()) View.GONE else View.VISIBLE
-        btnUpdate.text = "立即更新"
-        btnUpdate.isEnabled = true
-        progressDownload.visibility = View.GONE
-        tvDownloadProgress.visibility = View.GONE
+        // 按当前全局下载状态渲染按钮（如弹窗重开时已是下载中/已完成）
+        renderDownloadState(ApkDownloadManager.state.value, isFreshTransition = false)
         // 卡片展开后重新计算高度限制
         limitContentHeight()
     }
 
-    /** 「立即更新 / 安装更新」按钮点击 */
+    /** 「立即更新 / 下载中 / 安装更新 / 重新下载」按钮点击 */
     private fun onUpdateButtonClick() {
-        val apk = downloadedApk
-        if (apk != null) {
-            // 已下载完成 → 发起安装
-            installApk(apk)
+        val st = ApkDownloadManager.state.value
+        if (st is ApkDownloadManager.DownloadState.Completed && st.url == updateInfo?.downloadUrl) {
+            installApk(st.apk)
             return
         }
-        if (downloading) return
+        if (ApkDownloadManager.isDownloading) return
         val info = updateInfo ?: return
-        startDownload(info)
+        ApkDownloadManager.start(requireContext(), info.downloadUrl, info.sha256)
     }
 
-    /** 下载 APK 并实时更新进度条 */
-    private fun startDownload(info: UpdateInfo) {
-        downloading = true
-        btnUpdate.text = "下载中..."
-        btnUpdate.isEnabled = false
-        progressDownload.visibility = View.VISIBLE
-        progressDownload.isIndeterminate = true
-        tvDownloadProgress.visibility = View.VISIBLE
-        tvDownloadProgress.text = "正在连接服务器..."
-        tvUpdateStatus.visibility = View.GONE
-
-        val context = context ?: return
-        val downloader = ApkDownloader(context.applicationContext)
-
-        scope.launch {
-            try {
-                val apk = downloader.download(info.downloadUrl) { downloaded, total ->
-                    // IO 线程回调，切主线程更新 UI
-                    scope.launch(Dispatchers.Main) {
-                        if (total > 0) {
-                            progressDownload.isIndeterminate = false
-                            progressDownload.max = 100
-                            progressDownload.progress = ((downloaded * 100) / total).toInt()
-                            tvDownloadProgress.text = formatBytes(downloaded) + " / " + formatBytes(total)
-                        } else {
-                            tvDownloadProgress.text = "已下载 " + formatBytes(downloaded)
-                        }
-                    }
-                }
-                downloadedApk = apk
-                downloading = false
-                // 下载完成 → 切换为安装状态
+    /** 按全局下载状态渲染下载区 UI（进度条 / 按钮文案） */
+    private fun renderDownloadState(st: ApkDownloadManager.DownloadState, isFreshTransition: Boolean) {
+        when (st) {
+            is ApkDownloadManager.DownloadState.Idle -> {
                 progressDownload.visibility = View.GONE
                 tvDownloadProgress.visibility = View.GONE
-                btnUpdate.text = "安装更新"
+                btnUpdate.text = "立即更新"
                 btnUpdate.isEnabled = true
-                Toast.makeText(context, "下载完成", Toast.LENGTH_SHORT).show()
-                installApk(apk)
-            } catch (e: IOException) {
-                Log.e(TAG, "APK 下载失败: ${e.message}", e)
-                downloading = false
+            }
+            is ApkDownloadManager.DownloadState.Downloading -> {
+                progressDownload.visibility = View.VISIBLE
+                tvDownloadProgress.visibility = View.VISIBLE
+                tvUpdateStatus.visibility = View.GONE
+                btnUpdate.text = "下载中..."
+                btnUpdate.isEnabled = false
+                if (st.total > 0) {
+                    progressDownload.isIndeterminate = false
+                    progressDownload.max = 100
+                    progressDownload.progress = ((st.downloaded * 100) / st.total).toInt()
+                    tvDownloadProgress.text = formatBytes(st.downloaded) + " / " + formatBytes(st.total)
+                } else {
+                    progressDownload.isIndeterminate = true
+                    tvDownloadProgress.text = "已下载 " + formatBytes(st.downloaded)
+                }
+            }
+            is ApkDownloadManager.DownloadState.Completed -> {
+                progressDownload.visibility = View.GONE
+                tvDownloadProgress.visibility = View.GONE
+                if (st.url == updateInfo?.downloadUrl) {
+                    btnUpdate.text = "安装更新"
+                    btnUpdate.isEnabled = true
+                } else {
+                    // 已完成的包与当前检查到的更新包不一致（远程换了新包）→ 允许重新下载
+                    btnUpdate.text = "立即更新"
+                    btnUpdate.isEnabled = true
+                }
+            }
+            is ApkDownloadManager.DownloadState.Failed -> {
                 progressDownload.visibility = View.GONE
                 tvDownloadProgress.visibility = View.GONE
                 btnUpdate.text = "重新下载"
                 btnUpdate.isEnabled = true
-                Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
+                // 仅新失败时弹 Toast（弹窗重开恢复 Failed 状态不重复弹）
+                if (isFreshTransition && isAdded) {
+                    Toast.makeText(context, "下载失败：${st.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -239,6 +241,12 @@ class AboutDialog : DialogFragment() {
     /** 发起安装（处理 Android 8.0+ 安装未知应用权限） */
     private fun installApk(apk: File) {
         val context = context ?: return
+        if (!apk.exists()) {
+            // cacheDir 可能被系统清理（存储紧张时随时可能发生）
+            Toast.makeText(context, "安装包已被系统清理，请重新下载", Toast.LENGTH_LONG).show()
+            ApkDownloadManager.resetToIdle()
+            return
+        }
         if (!ApkInstaller.canInstall(context)) {
             // 未授予「安装未知应用」权限 → 跳转系统设置，用户授权后回来再点「安装更新」
             Toast.makeText(context, "请先允许安装未知应用，授权后重试", Toast.LENGTH_LONG).show()
@@ -257,11 +265,5 @@ class AboutDialog : DialogFragment() {
         bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / 1024.0 / 1024.0)
         bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
         else -> "$bytes B"
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        // Dialog 关闭即取消协程（下载中的任务随生命周期终止）
-        scope.cancel()
     }
 }

@@ -29,7 +29,9 @@ data class PermissionConfig(
     val enableUpdate: Boolean = false,
     val forceUpdateUrl: String? = null,
     val updateDetails: String? = null,
-    val latestVersion: String? = null
+    val latestVersion: String? = null,
+    /** 远程配置的 APK 文件 SHA-256（update_sha256），用于下载后完整性校验 */
+    val updateSha256: String? = null
 ) {
     /**
      * 序列化为本地缓存用的 JSON（结构与远程 JSON 无关，仅存解析结果）。
@@ -43,7 +45,8 @@ data class PermissionConfig(
         val details = updateDetails?.replace("\\", "\\\\")
             ?.replace("\"", "\\\"")?.replace("\n", "\\n")?.replace("\r", "") ?: ""
         val version = latestVersion?.replace("\"", "\\\"") ?: ""
-        return """{"search":$searchEnabled,"danmaku":$danmakuEnabled,"enableUpdate":$enableUpdate,"forceUpdateUrl":"$url","updateDetails":"$details","latestVersion":"$version","cached_for_version":"${BuildConfig.VERSION_NAME}"}"""
+        val sha256 = updateSha256?.replace("\"", "\\\"") ?: ""
+        return """{"search":$searchEnabled,"danmaku":$danmakuEnabled,"enableUpdate":$enableUpdate,"forceUpdateUrl":"$url","updateDetails":"$details","latestVersion":"$version","updateSha256":"$sha256","cached_for_version":"${BuildConfig.VERSION_NAME}"}"""
     }
 
     companion object {
@@ -62,7 +65,9 @@ data class PermissionConfig(
 data class UpdateInfo(
     val latestVersion: String,
     val downloadUrl: String,
-    val details: String?
+    val details: String?,
+    /** 远程配置的 APK 文件 SHA-256（update_sha256），供下载后完整性校验；未配置为 null */
+    val sha256: String? = null
 )
 
 /**
@@ -300,7 +305,8 @@ class PermissionConfigRepository(
                 enableUpdate = json.optBoolean("enableUpdate", false),
                 forceUpdateUrl = json.optString("forceUpdateUrl", "").takeIf { it.isNotEmpty() },
                 updateDetails = json.optString("updateDetails", "").takeIf { it.isNotEmpty() },
-                latestVersion = json.optString("latestVersion", "").takeIf { it.isNotEmpty() }
+                latestVersion = json.optString("latestVersion", "").takeIf { it.isNotEmpty() },
+                updateSha256 = json.optString("updateSha256", "").takeIf { it.isNotEmpty() }
             )
         } catch (e: Exception) {
             Log.w(TAG, "本地缓存解析失败，视为无效: ${e.message}")
@@ -403,6 +409,7 @@ class PermissionConfigRepository(
         val remoteVersion = metadataObj?.optString("version", "") ?: ""
         val forceUpdateUrl = stringsObj?.optString("force_update_url", "")?.takeIf { it.isNotEmpty() }
         val updateDetails = stringsObj?.optString("update_details", "")?.takeIf { it.isNotEmpty() }
+        val updateSha256 = stringsObj?.optString("update_sha256", "")?.takeIf { it.isNotEmpty() }
 
         Log.d(TAG, "远程配置: myapp=$myapp, enable_danmaku=$enableDanmaku, enable_update=$enableUpdateSwitch, app_name='$remoteAppName', version='$remoteVersion'")
         Log.d(TAG, "本地配置: app_name='$LOCAL_APP_NAME', version='$LOCAL_VERSION'")
@@ -419,7 +426,8 @@ class PermissionConfigRepository(
             enableUpdate = enableUpdateSwitch && nameMatch,
             forceUpdateUrl = forceUpdateUrl,
             updateDetails = updateDetails,
-            latestVersion = remoteVersion.takeIf { it.isNotEmpty() }
+            latestVersion = remoteVersion.takeIf { it.isNotEmpty() },
+            updateSha256 = updateSha256
         )
     }
 
@@ -468,24 +476,41 @@ class PermissionConfigRepository(
         }
 
         Log.d(TAG, "更新检查：发现新版本 $latest（本地=$LOCAL_VERSION）")
-        return UpdateInfo(latestVersion = latest, downloadUrl = url, details = config.updateDetails)
+        return UpdateInfo(
+            latestVersion = latest,
+            downloadUrl = url,
+            details = config.updateDetails,
+            sha256 = config.updateSha256
+        )
     }
 
     /**
      * 语义化版本比较（按 "." 分段逐位比较数字，位数不足补 0）。
-     * 例：1.10.0 vs 1.9.0 → 1（正确处理字符串比较会出错的场景）
+     * 每段只取前导数字，忽略 "-beta" 等预发布后缀；
+     * 数字部分相同时，正式版 > 预发布版。
+     * 例：1.10.0 vs 1.9.0 → 1；2.0.0 vs 2.0.0-beta → 1
      *
      * @return 正数表示 v1 > v2，负数表示 v1 < v2，0 表示相等
      */
     private fun compareVersion(v1: String, v2: String): Int {
-        val p1 = v1.split(".").map { it.trim().toIntOrNull() ?: 0 }
-        val p2 = v2.split(".").map { it.trim().toIntOrNull() ?: 0 }
+        fun segments(v: String): List<Int> =
+            v.split(".").map { part -> part.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+
+        val p1 = segments(v1)
+        val p2 = segments(v2)
         val maxLen = maxOf(p1.size, p2.size)
         for (i in 0 until maxLen) {
             val a = p1.getOrElse(i) { 0 }
             val b = p2.getOrElse(i) { 0 }
             if (a != b) return a - b
         }
-        return 0
+        // 数字相同：无后缀（正式版）大于有后缀（预发布版），如 2.0.0 > 2.0.0-beta
+        val v1Pre = v1.contains("-")
+        val v2Pre = v2.contains("-")
+        return when {
+            v1Pre && !v2Pre -> -1
+            !v1Pre && v2Pre -> 1
+            else -> 0
+        }
     }
 }
