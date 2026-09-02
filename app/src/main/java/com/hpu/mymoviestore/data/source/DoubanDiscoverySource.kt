@@ -27,7 +27,6 @@ class DoubanDiscoverySource {
     suspend fun fetchHomeAll(): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "========== 豆瓣内容发现：首页全部 开始 ==========")
-            logDoubanHomeResponse()
 
             val tvItems = fetchHotSubjects(type = TYPE_TV, categoryName = "电视剧")
             val movieItems = fetchHotSubjects(type = TYPE_MOVIE, categoryName = "电影")
@@ -107,19 +106,6 @@ class DoubanDiscoverySource {
                 "========== 豆瓣首页-$pageName 抓取开始: supportType=$supportType, " +
                     "category=$pageCategory, type=$safeType, start=$safeStart, limit=$safeLimit =========="
             )
-
-            if (safeStart == 0 && supportType == TYPE_MOVIE) {
-                runCatching {
-                    logDoubanExploreResponse()
-                }.onFailure { pageError ->
-                    Log.w(
-                        TAG,
-                        "豆瓣首页-电影页面 HTML 日志请求失败，但继续请求 JSON 接口: " +
-                            "errorType=${pageError::class.java.name}, message=${pageError.message}",
-                        pageError
-                    )
-                }
-            }
 
             humanDelay()
             val url = buildRecentHotUrl(supportType, pageCategory, safeType, safeStart, safeLimit)
@@ -246,46 +232,6 @@ class DoubanDiscoverySource {
         }
     }
 
-    private suspend fun logDoubanHomeResponse() {
-        humanDelay()
-        val doc = Jsoup.connect(DOUBAN_HOME_URL)
-            .timeout(15_000)
-            .userAgent(USER_AGENT)
-            .referrer(DOUBAN_HOME_URL)
-            .get()
-
-        val recentHot = doc.select("#recent-hot")
-        val gaiaConfigScript = doc.select("script:containsData(gaiaConfig)").first()?.html().orEmpty()
-        Log.d(
-            TAG,
-            "豆瓣首页返回: url=$DOUBAN_HOME_URL, finalLocation=${doc.location()}, " +
-                "title='${doc.title()}', htmlLength=${doc.outerHtml().length}, " +
-                "recentHotNodes=${recentHot.size}, gaiaConfigLength=${gaiaConfigScript.length}"
-        )
-        Log.d(TAG, "豆瓣首页 recent-hot HTML: '${recentHot.outerHtml().take(300)}'")
-        Log.d(TAG, "豆瓣首页 gaiaConfig 片段: '${gaiaConfigScript.take(500)}'")
-    }
-
-    private suspend fun logDoubanExploreResponse() {
-        humanDelay()
-        Log.d(TAG, "请求豆瓣首页-电影页面 HTML: url=$DOUBAN_EXPLORE_URL")
-        val doc = Jsoup.connect(DOUBAN_EXPLORE_URL)
-            .timeout(15_000)
-            .userAgent(USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-            .referrer(DOUBAN_HOME_URL)
-            .get()
-        val configScript = doc.select("script:containsData(support_type)").first()?.html().orEmpty()
-        Log.d(
-            TAG,
-            "豆瓣首页-电影页面返回: url=$DOUBAN_EXPLORE_URL, finalLocation=${doc.location()}, " +
-                "title='${doc.title()}', htmlLength=${doc.outerHtml().length}, appNodes=${doc.select("#app").size}"
-        )
-        Log.d(TAG, "豆瓣首页-电影 #app HTML: '${doc.select("#app").outerHtml().take(300)}'")
-        Log.d(TAG, "豆瓣首页-电影 config 片段: '${configScript.take(500)}'")
-    }
-
     private suspend fun fetchHotSubjects(type: String, categoryName: String): List<VideoItem> {
         humanDelay()
         val url = buildHotSubjectsUrl(type)
@@ -397,8 +343,12 @@ class DoubanDiscoverySource {
         return if (type.isBlank()) "全部" else type
     }
 
+    /**
+     * 请求间随机延迟：模拟真人浏览节奏，降低豆瓣风控触发概率。
+     * 拉长到 2-5 秒（原 0.6-1.2s 对豆瓣反爬过于激进）。
+     */
     private suspend fun humanDelay() {
-        delay(Random.nextLong(600, 1200))
+        delay(Random.nextLong(2_000, 5_000))
     }
 
     companion object {

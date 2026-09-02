@@ -52,6 +52,12 @@ class VideoRepository(
                 "videoSources=${videoSources.size}, discoverySource=${discoverySource != null}"
         )
 
+        // 负缓存命中：最近一次豆瓣请求失败（如封 IP），冷却期内不再请求，直接走本地挡板
+        if (isNegativeCached(HOME_CACHE_KEY_ALL)) {
+            Log.w(TAG, "首页全部负缓存命中（豆瓣冷却中），回退本地挡板")
+            return localSource.loadAllVideos()
+        }
+
         getCachedHomeVideos(HOME_CACHE_KEY_ALL, "首页全部")?.let {
             return it
         }
@@ -69,7 +75,9 @@ class VideoRepository(
                 putHomeVideosCache(HOME_CACHE_KEY_ALL, discoveryList, "首页全部")
                 return discoveryList
             }
-            Log.w(TAG, "豆瓣内容发现为空，首页全部回退本地挡板，不写入缓存")
+            // 失败或为空：写负缓存，避免封禁期间每次启动都反复敲门
+            putNegativeCache(HOME_CACHE_KEY_ALL)
+            Log.w(TAG, "豆瓣内容发现为空/失败，首页全部回退本地挡板，已写负缓存冷却")
         }
 
         Log.d(TAG, "首页全部使用本地挡板数据，不写入 api_cache")
@@ -110,6 +118,13 @@ class VideoRepository(
         val cleanType = type.ifBlank { "全部" }
         val safeStart = start.coerceAtLeast(0)
         val cacheKey = doubanMovieCacheKey(cleanType, safeStart)
+
+        // 负缓存命中：冷却期内不再请求豆瓣，静默返回空结果（不附 error，避免反复弹错误提示）
+        if (isNegativeCached(cacheKey)) {
+            Log.w(TAG, "首页电影[$cleanType] 负缓存命中（豆瓣冷却中）: start=$safeStart")
+            return DoubanMoviePageResult(cleanType, safeStart, limit, 0, emptyList())
+        }
+
         getCachedDoubanMoviePage(cacheKey, cleanType, safeStart)?.let { return it }
 
         val emptyResult = DoubanMoviePageResult(cleanType, safeStart, limit, 0, emptyList())
@@ -133,7 +148,9 @@ class VideoRepository(
                 Log.w(TAG, "首页电影[$cleanType] 首页缓存无剩余时间，本页不写缓存: start=$safeStart")
             }
         } else {
-            Log.w(TAG, "首页电影[$cleanType] 结果为空，不写缓存: start=$safeStart")
+            // 失败或为空：写负缓存，避免封禁期间反复请求
+            putNegativeCache(cacheKey)
+            Log.w(TAG, "首页电影[$cleanType] 结果为空/失败，已写负缓存冷却: start=$safeStart")
         }
 
         return resultWithError
@@ -173,6 +190,13 @@ class VideoRepository(
         val mapping = doubanTvRelatedMapping(category, subType)
         val safeStart = start.coerceAtLeast(0)
         val cacheKey = doubanTvRelatedCacheKey(category, subType, safeStart)
+
+        // 负缓存命中：冷却期内不再请求豆瓣，静默返回空结果（不附 error，避免反复弹错误提示）
+        if (isNegativeCached(cacheKey)) {
+            Log.w(TAG, "首页$category[${mapping.displaySubType}] 负缓存命中（豆瓣冷却中）: start=$safeStart")
+            return DoubanMoviePageResult(mapping.displaySubType, safeStart, limit, 0, emptyList())
+        }
+
         getCachedDoubanMoviePage(cacheKey, "${category}/${mapping.displaySubType}", safeStart)?.let { return it }
 
         val emptyResult = DoubanMoviePageResult(mapping.displaySubType, safeStart, limit, 0, emptyList())
@@ -201,7 +225,9 @@ class VideoRepository(
                 Log.w(TAG, "首页$category[${mapping.displaySubType}] 首页缓存无剩余时间，本页不写缓存: start=$safeStart")
             }
         } else {
-            Log.w(TAG, "首页$category[${mapping.displaySubType}] 结果为空，不写缓存: start=$safeStart")
+            // 失败或为空：写负缓存，避免封禁期间反复请求
+            putNegativeCache(cacheKey)
+            Log.w(TAG, "首页$category[${mapping.displaySubType}] 结果为空/失败，已写负缓存冷却: start=$safeStart")
         }
 
         return resultWithError
@@ -396,6 +422,8 @@ class VideoRepository(
 
     private suspend fun getCachedHomeVideos(cacheKey: String, label: String): List<VideoItem>? {
         val cachedJson = cacheRepository?.get(cacheKey) ?: return null
+        // 哨兵防御：负缓存标记不是合法数据，不 invalidate（保留冷却期），当作未命中处理
+        if (cachedJson == NEGATIVE_CACHE_MARK) return null
         return try {
             val cachedList = videoListAdapter.fromJson(cachedJson)
             if (!cachedList.isNullOrEmpty()) {
@@ -422,12 +450,28 @@ class VideoRepository(
         Log.d(TAG, "$label 写入首页缓存: key=$cacheKey, size=${list.size}, ttl=${ApiCacheEntity.TTL_ONE_DAY}s")
     }
 
+    /**
+     * 写入负缓存：豆瓣请求失败/为空时记录短 TTL 冷却标记，
+     * 冷却期内跳过对豆瓣的重复请求（防止封 IP 期间每次启动反复敲门导致封禁无法解除）。
+     */
+    private suspend fun putNegativeCache(cacheKey: String) {
+        cacheRepository?.put(cacheKey, NEGATIVE_CACHE_MARK, NEGATIVE_CACHE_TTL_SECONDS)
+        Log.w(TAG, "写入负缓存冷却: key=$cacheKey, ttl=${NEGATIVE_CACHE_TTL_SECONDS}s")
+    }
+
+    /** 是否处于负缓存冷却期 */
+    private suspend fun isNegativeCached(cacheKey: String): Boolean {
+        return cacheRepository?.get(cacheKey) == NEGATIVE_CACHE_MARK
+    }
+
     private suspend fun getCachedDoubanMoviePage(
         cacheKey: String,
         type: String,
         start: Int
     ): DoubanMoviePageResult? {
         val cachedJson = cacheRepository?.get(cacheKey) ?: return null
+        // 哨兵防御：负缓存标记不是合法数据，不 invalidate（保留冷却期），当作未命中处理
+        if (cachedJson == NEGATIVE_CACHE_MARK) return null
         return try {
             val cached = doubanMoviePageAdapter.fromJson(cachedJson)
             if (cached != null && cached.items.isNotEmpty()) {
@@ -511,5 +555,11 @@ class VideoRepository(
         private const val HOME_CACHE_KEY_ALL = "home:tab:all:v1"
         private const val HOME_CACHE_KEY_MOVIE_PREFIX = "home:tab:movie:v1:"
         private const val HOME_CACHE_KEY_TV_RELATED_PREFIX = "home:tab:tv_related:v1:"
+
+        /** 负缓存哨兵标记：该值不是合法 JSON，仅用于标记"最近一次请求失败，冷却中" */
+        private const val NEGATIVE_CACHE_MARK = "__DOUBAN_NEGATIVE__"
+
+        /** 负缓存冷却时长：10 分钟内不再请求豆瓣 */
+        private const val NEGATIVE_CACHE_TTL_SECONDS = 10L * 60
     }
 }
