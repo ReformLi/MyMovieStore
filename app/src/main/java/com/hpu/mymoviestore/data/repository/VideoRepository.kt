@@ -46,6 +46,12 @@ class VideoRepository(
     private val doubanMoviePageAdapter = moshi.adapter(DoubanMoviePageResult::class.java)
 
     suspend fun getAllVideos(): List<VideoItem> {
+        // 硬开关：开启时完全禁用豆瓣，直接走本地挡板
+        if (DOUBAN_FORCE_LOCAL_STUB) {
+            Log.w(TAG, "豆瓣硬开关已开启，首页全部直接走本地挡板")
+            return localSource.loadAllVideos()
+        }
+
         Log.d(
             TAG,
             "getAllVideos: preferCrawler=$preferCrawler, " +
@@ -85,6 +91,12 @@ class VideoRepository(
     }
 
     suspend fun getVideosByCategory(category: String): List<VideoItem> {
+        // 硬开关：开启时所有分栏直接走本地挡板，不请求豆瓣
+        if (DOUBAN_FORCE_LOCAL_STUB) {
+            Log.w(TAG, "豆瓣硬开关已开启，首页分栏[$category] 直接走本地挡板")
+            return localSource.loadVideosByCategory(category)
+        }
+
         if (category == "电影") {
             val result = getDoubanMoviePage(type = "全部", start = 0)
             if (result.items.isNotEmpty()) {
@@ -115,6 +127,13 @@ class VideoRepository(
         start: Int,
         limit: Int = DoubanDiscoverySource.EXPLORE_PAGE_LIMIT
     ): DoubanMoviePageResult {
+        // 硬开关：开启时不请求豆瓣，静默返回空结果（UI 层自然回退挡板）
+        if (DOUBAN_FORCE_LOCAL_STUB) {
+            val cleanType0 = type.ifBlank { "全部" }
+            Log.w(TAG, "豆瓣硬开关已开启，首页电影[$cleanType0] 返回空结果: start=${start.coerceAtLeast(0)}")
+            return DoubanMoviePageResult(cleanType0, start.coerceAtLeast(0), limit, 0, emptyList())
+        }
+
         val cleanType = type.ifBlank { "全部" }
         val safeStart = start.coerceAtLeast(0)
         val cacheKey = doubanMovieCacheKey(cleanType, safeStart)
@@ -170,6 +189,12 @@ class VideoRepository(
     }
 
     suspend fun prewarmDoubanTvBundle() {
+        // 硬开关：开启时不做任何豆瓣预热
+        if (DOUBAN_FORCE_LOCAL_STUB) {
+            Log.w(TAG, "豆瓣硬开关已开启，跳过豆瓣分栏预热")
+            return
+        }
+
         val targets = listOf("电视剧" to "综合", "动漫" to "综合", "综艺" to "综合")
         targets.forEach { (category, subType) ->
             val key = doubanTvRelatedCacheKey(category, subType, 0)
@@ -187,6 +212,13 @@ class VideoRepository(
         start: Int,
         limit: Int = DoubanDiscoverySource.EXPLORE_PAGE_LIMIT
     ): DoubanMoviePageResult {
+        // 硬开关：开启时不请求豆瓣，静默返回空结果（UI 层自然回退挡板）
+        if (DOUBAN_FORCE_LOCAL_STUB) {
+            val mapping0 = doubanTvRelatedMapping(category, subType)
+            Log.w(TAG, "豆瓣硬开关已开启，首页$category[${mapping0.displaySubType}] 返回空结果: start=${start.coerceAtLeast(0)}")
+            return DoubanMoviePageResult(mapping0.displaySubType, start.coerceAtLeast(0), limit, 0, emptyList())
+        }
+
         val mapping = doubanTvRelatedMapping(category, subType)
         val safeStart = start.coerceAtLeast(0)
         val cacheKey = doubanTvRelatedCacheKey(category, subType, safeStart)
@@ -555,6 +587,14 @@ class VideoRepository(
         private const val HOME_CACHE_KEY_ALL = "home:tab:all:v1"
         private const val HOME_CACHE_KEY_MOVIE_PREFIX = "home:tab:movie:v1:"
         private const val HOME_CACHE_KEY_TV_RELATED_PREFIX = "home:tab:tv_related:v1:"
+
+        /**
+         * 豆瓣硬开关（默认 false）：
+         * - false：正常流程，走豆瓣请求 + 缓存
+         * - true ：完全禁用豆瓣请求，所有首页数据直接走本地挡板（assets/sample_video_source.json）
+         * 用途：豆瓣封 IP 期间手动开启，让 app 完全静默，等待封禁解除后再改回 false
+         */
+        private const val DOUBAN_FORCE_LOCAL_STUB = false
 
         /** 负缓存哨兵标记：该值不是合法 JSON，仅用于标记"最近一次请求失败，冷却中" */
         private const val NEGATIVE_CACHE_MARK = "__DOUBAN_NEGATIVE__"
