@@ -290,6 +290,8 @@ class NiuerVideoSource(
 
     // ========== 播放地址提取 ==========
 
+    // ========== 播放地址提取（支持 Unicode 转义解码） ==========
+
     override fun extractRealVideoUrl(scriptContent: String): String? {
         Log.d(logTag, "========== extractRealVideoUrl 开始 ==========")
 
@@ -300,6 +302,10 @@ class NiuerVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")  // 反转义斜杠
                 .trim()
+
+            // ===== 【必须】解码 Unicode 转义（如 \u5168\u96c6 → 全集） =====
+            videoUrl = unescapeUnicode(videoUrl)
+
             // URL 解码（防止百分号编码）
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -321,6 +327,10 @@ class NiuerVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+
+            // ===== 【必须】解码 Unicode 转义 =====
+            videoUrl = unescapeUnicode(videoUrl)
+
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -337,6 +347,10 @@ class NiuerVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+
+            // ===== 【必须】解码 Unicode 转义（兜底方案也需要） =====
+            videoUrl = unescapeUnicode(videoUrl)
+
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -349,5 +363,18 @@ class NiuerVideoSource(
         Log.e(logTag, "❌ 未能提取到播放地址")
         Log.d(logTag, "脚本片段预览: ${scriptContent.take(500)}")
         return null
+    }
+
+    /**
+     * 将字符串中的 Unicode 转义序列（如 \u5168\u96c6）转换为实际字符
+     * 例如：\u5168\u96c6 → 全集，\u4e2d\u6587 → 中文
+     */
+    private fun unescapeUnicode(input: String): String {
+        val regex = Regex("\\\\u([0-9a-fA-F]{4})")
+        return regex.replace(input) { matchResult ->
+            val hex = matchResult.groupValues[1]
+            val codePoint = hex.toInt(16)
+            String(Character.toChars(codePoint))
+        }
     }
 }
