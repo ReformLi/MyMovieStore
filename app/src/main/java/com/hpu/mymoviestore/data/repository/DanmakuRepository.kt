@@ -45,11 +45,6 @@ class DanmakuRepository(
         private const val RETRY_INTERVAL_MS = 10_000L  // 10秒
     }
 
-    /** 切换 Base URL */
-    fun setBaseUrl(url: String) {
-        api.setBaseUrl(url)
-    }
-
     fun getBaseUrl(): String = api.getBaseUrl()
 
     // ================== 搜索（带缓存和重试） ==================

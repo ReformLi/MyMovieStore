@@ -34,9 +34,9 @@ class DanmakuApi {
     private val client: OkHttpClient = HttpClientProvider.danmakuClient
 
     object ProxyConfig {
-        const val BASE_URL = "http://localhost:8080"  // 代理网关地址
-        const val PROXY_PATH = "/proxy"               // 代理路由前缀
-        const val TOKEN = "dev-token-123"             // Bearer Token
+        const val BASE_URL = "http://localhost:8080"  // 弹幕api地址 或 代理服务的基础 URL
+        const val PROXY_PATH = "/proxy"                // 如果代理需要路径前缀，可以在这里定义 ，若无则空
+        const val TOKEN = "dev-token-123"             // 代理认证 Token （可选）
     }
 
     private val moshi: Moshi = Moshi.Builder()
@@ -47,15 +47,10 @@ class DanmakuApi {
     private val bangumiAdapter = moshi.adapter(DanmakuBangumiResponse::class.java)
     private val commentAdapter = moshi.adapter(DanmakuCommentResponse::class.java)
 
-    @Volatile
-    private var baseUrl: String = "http://192.168.1.1:4567"//http://192.168.1.1:4567
+//    @Volatile
+//    private var baseUrl: String = "http://192.168.1.1:4567"
 
-    fun setBaseUrl(url: String) {
-        baseUrl = url
-        Log.d(TAG, "弹幕 Base URL 已更新（域名脱敏）")
-    }
-
-    fun getBaseUrl(): String = baseUrl
+    fun getBaseUrl(): String = ProxyConfig.BASE_URL
 
     /**
      * 脱敏 URL：去除域名和 token，只保留接口路径 + query。
@@ -86,13 +81,12 @@ class DanmakuApi {
      */
     @Throws(IOException::class)
     fun searchAnime(keyword: String): List<DanmakuAnime> {
-        val url = "$baseUrl/api/v2/search/anime?keyword=${keyword.urlEncode()}"
-//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/search/anime?keyword=${keyword.urlEncode()}"//代理路径
+        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/search/anime?keyword=${keyword.urlEncode()}"//代理路径
         Log.d(TAG, "搜索弹幕: ${maskUrl(url)}")
 
         val request = Request.Builder()
             .url(url)
-//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")//代理网关token
+            .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -121,13 +115,12 @@ class DanmakuApi {
      */
     @Throws(IOException::class)
     fun getBangumi(animeId: Long): DanmakuBangumi? {
-        val url = "$baseUrl/api/v2/bangumi/$animeId"
-//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/bangumi/$animeId"//代理路径
+        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/bangumi/$animeId"//代理路径
         Log.d(TAG, "获取 bangumi: ${maskUrl(url)}")
 
         val request = Request.Builder()
             .url(url)
-//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")//代理网关token
+            .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -158,13 +151,12 @@ class DanmakuApi {
      */
     @Throws(IOException::class)
     fun getDanmakuComments(episodeId: Long): List<DanmakuComment> {
-        val url = "$baseUrl/api/v2/comment/$episodeId"
-//        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/comment/$episodeId"//代理路径
+        val url = "${ProxyConfig.BASE_URL}${ProxyConfig.PROXY_PATH}/api/v2/comment/$episodeId"//代理路径
         Log.d(TAG, "获取弹幕 JSON: ${maskUrl(url)}")
 
         val request = Request.Builder()
             .url(url)
-//            .addHeader("Authorization", "Bearer ${ProxyConfig.TOKEN}")
+            .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
             .get()
             .build()
         client.newCall(request).execute().use { response ->
