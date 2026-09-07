@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- Cloudflare 人工验证兜底窗口：不透明暗色背景（半透明 Activity 内 WebView 有白屏/表面合成问题） -->
+    <style name="Theme.MyMovieStore.Challenge" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#B3000000</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- ======================== 文本样式 ======================== -->
 
     <!-- H1 大标题 22sp -->

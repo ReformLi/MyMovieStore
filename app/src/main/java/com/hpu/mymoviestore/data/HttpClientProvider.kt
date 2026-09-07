@@ -23,6 +23,15 @@ import java.util.concurrent.TimeUnit
  */
 object HttpClientProvider {
 
+    /**
+     * 爬虫统一 User-Agent（动态）。
+     * Cloudflare 的 cf_clearance Cookie 与 User-Agent 强绑定：
+     * WebView 过盾、OkHttp 爬虫请求必须使用完全相同的 UA，否则 Cookie 会被服务端判定无效。
+     * 取设备 WebView 真实 UA（见 [CloudflareBypassManager.effectiveUserAgent]）——
+     * 伪装高版本 UA 会让 CF 下发老引擎跑不动的新语法挑战脚本。
+     */
+    fun crawlerUserAgent(): String = CloudflareBypassManager.userAgent()
+
     /** 通用请求超时（秒） */
     private const val STANDARD_TIMEOUT = 15L
 
@@ -84,11 +93,7 @@ object HttpClientProvider {
             .addInterceptor { chain ->
                 val original = chain.request()
                 val request = original.newBuilder()
-                    .header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    )
+                    .header("User-Agent", crawlerUserAgent())
                     .build()
                 chain.proceed(request)
             }

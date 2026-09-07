@@ -23,6 +23,7 @@
 | **清理缓存** | **支持分类清理（搜索/首页/详情/播放地址/弹幕/全部），显示缓存大小**   | **`ProfileFragment.showClearCacheDialog()`**                                   |
 | **下载管理** | **M3U8 分片下载、弹幕下载、前台通知、离线播放、播放进度、降低影响策略** | **`DownloadActivity`、`DownloadEngine`、`DownloadService`、`DownloadRepository`** |
 | 爬虫限流     | 每个播放源独立限流队列，同源请求 3 秒最小间隔，优先级抢占           | `RequestRateLimiter`、`CrawlerVideoSource`                                      |
+| **反爬应对** | **Cloudflare 人机验证自动过盾（Cookie 缓存 + 人工兜底），TLS 指纹拦截自动降级 WebView 抓取** | **`CloudflareBypassManager`、`WebViewHtmlFetcher`、`CloudflareChallengeActivity`** |
 | 细粒度错误提示  | 网络失败时展示具体错误原因（DNS 失败、403、验证码、空结果等）       | `CrawlError`、`CrawlErrorType`                                                  |
 
 底部导航当前包含：首页、搜索、我的。历史记录和下载管理已移至"我的"页面内。

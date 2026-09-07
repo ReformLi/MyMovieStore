@@ -50,6 +50,12 @@
             android:name=".presentation.activity.DownloadActivity"
             android:exported="false"
             android:parentActivityName=".presentation.activity.MainActivity" />
+        <!-- Cloudflare 人工验证兜底窗口（自动过盾失败时弹出，透明浮层） -->
+        <activity
+            android:name=".presentation.challenge.CloudflareChallengeActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.MyMovieStore.Challenge" />
         <service
             android:name=".data.download.DownloadService"
             android:exported="false"

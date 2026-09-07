@@ -82,6 +82,7 @@ app/src/main/
 
 - 初始化 Room 数据库 `MovieDatabase`。
 - 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`PermissionConfigRepository`。
+- 初始化 `CloudflareBypassManager`（读取设备 WebView 真实 UA，供过盾与爬虫请求统一使用）。
 - 创建本地挡板源 `VideoSourceManager`。
 - 爬虫源由 `VideoSourceConfigManager` **远程动态加载**（非硬编码），启动时同步缓存或异步重试最多 5 次获取源配置。
 - 创建首页发现源 `DoubanDiscoverySource`。
@@ -98,6 +99,9 @@ app/src/main/
 data/
 ├── cache/
 │   └── DanmakuCache.kt
+├── CloudflareBypassManager.kt
+├── HttpClientProvider.kt
+├── WebViewHtmlFetcher.kt
 ├── dao/
 │   ├── ApiCacheDao.kt
 │   ├── DownloadTaskDao.kt
@@ -160,6 +164,42 @@ data/
         ├── TiantangVideoSource.kt
         └── YinghuaVideoSource.kt
 ```
+
+### 反爬应对组件（data/ 根目录）
+
+爬虫源在请求目标站时可能遇到两类拦截，分别由两组组件应对：
+
+**① Cloudflare 人机验证自动绕过（`CloudflareBypassManager.kt`）**
+
+后台无界面 WebView 过盾 + Cookie 管理 + 引擎兼容性判定：
+
+| 能力 | 说明 |
+|------|------|
+| `init(context)` | Application.onCreate 调用；读取设备 WebView 真实 UA（CF 会按 UA 下发匹配引擎版本的挑战脚本，伪装高版本 UA 反而导致老引擎解析崩溃）并打印内核包版本日志 |
+| `userAgent()` | 统一 UA：过盾 WebView、OkHttp 爬虫请求、人工验证 WebView 三处共用（`cf_clearance` 与 UA 强绑定）；读取失败回退 Chrome/110 移动版兜底 UA |
+| `ensureBypassed(url)` | 过盾主入口：Cookie 缓存命中（30 分钟）直接返回 → 后台 WebView 加载目标页自动执行挑战 → JS 桥（loadUrl 前注入，当前页即生效）+ 轮询脚本检测 `#challenge-form` 自动点击 → 通过后从 CookieManager 取 `cf_clearance`；同域名并发去重 |
+| 交互挑战 | 每 3 秒定位 Turnstile 挑战框位置，用 `dispatchTouchEvent` 派发真实 MotionEvent（`isTrusted=true`，JS 点击会被 CF 拒绝）模拟触屏点击 |
+| 人工兜底 | 自动过盾失败弹 `CloudflareChallengeActivity`（不透明暗色窗口 + 卡片内嵌 WebView），用户点一下勾选框，CookieManager 轮询到 `cf_clearance` 自动关闭；结果经 `completeInteractive()` 回传挂起协程 |
+| 引擎不兼容快速跳过 | WebChromeClient 捕获 challenge-platform 脚本 SyntaxError（设备 WebView 内核 < Chrome 80 无法解析可选链等新语法）→ 置全局 `engineIncompatible` 标记 → 后续过盾入口快速失败、不再弹验证窗；`CrawlerVideoSource` 据此对 CAPTCHA 错误写 1 小时负缓存，搜索静默跳过该源；升级系统 WebView + 重启 App 自愈 |
+| `isCloudflareChallenge(body)` | 挑战页检测：中文标记（正在进行安全验证/请稍候）+ 脚本特征（challenge-platform/_cf_chl），与页面语言无关 |
+| `invalidate(url)` | 过盾后仍被拦截时清除该域名的失效 Cookie 缓存 |
+
+**② TLS 指纹拦截降级抓取（`WebViewHtmlFetcher.kt`）**
+
+部分站点 WAF 按 TLS 握手指纹（JA3）识别并拒绝 OkHttp 等非浏览器客户端（`SSLHandshakeException: Connection reset by peer`，浏览器可正常打开）。WebView 使用浏览器同款 TLS 栈（BoringSSL），指纹与真实浏览器一致，可以绕过：
+
+| 能力 | 说明 |
+|------|------|
+| `fetchHtml(url)` | 后台 WebView 加载页面（复用过盾基建：虚拟视口、统一 UA），加载完成后留 500ms 给 JS 渲染再提取 `outerHTML`，25 秒超时；不依赖 CF 挑战脚本，老引擎设备可用 |
+| 降级触发 | `CrawlerVideoSource.requestDocument` 首次请求捕获 `SSLException` 时自动降级到 WebView 抓取，HTML 交给 Jsoup 解析，后续流程不变；降级也失败才报 NETWORK_ERROR（写 1 小时负缓存） |
+
+**③ 统一 HttpClient（`HttpClientProvider.kt`）**
+
+| 客户端 | 说明 |
+|--------|------|
+| `crawlerClient` | 爬虫专用 OkHttpClient，拦截器统一注入 `CloudflareBypassManager.userAgent()`（动态读取，与过盾 WebView 一致）及浏览器化请求头 |
+
+**`HttpClientProvider.kt`** 整合全部 OkHttpClient 实例（标准/弹幕/下载/爬虫四类），超时 15~20 秒，消除重复配置。
 
 ### 数据库
 
@@ -295,7 +335,7 @@ data/
 
 - `client` (OkHttpClient)、`cacheRepository`、`rateLimiter`、`moshi` 及 adapters
 - `fetchVideoUrl()` / `fetchVideoDetail()` / `fetchVideoUrlByPlayPageUrl()` / `searchVideos()`
-- `requestDocument()` — OkHttp + Jsoup + 限流器调度
+- `requestDocument()` — OkHttp + Jsoup + 限流器调度；请求自动携带过盾 Cookie 缓存，检测到 Cloudflare 挑战页时自动过盾并重试一次；OkHttp 遭遇 TLS 指纹拦截（SSLException）时降级到 `WebViewHtmlFetcher` 用 WebView 抓取 HTML
 - `getFirstPlayPageUrl()` — 缓存首个播放页
 - `extractRealVideoUrl()` — 从 `player_aaaa` 脚本提取 m3u8
 - `buildSearchUrl()` / `getSearchCacheTtlSeconds()` / `searchCacheKey()` / `cacheKey()` / `logLong()`
@@ -461,10 +501,16 @@ presentation/
 │   ├── HistoryAdapter.kt
 │   ├── SearchResultAdapter.kt
 │   └── VideoAdapter.kt
+├── challenge/
+│   └── CloudflareChallengeActivity.kt
 ├── danmaku/
 │   ├── DanmakuManager.kt
 │   ├── DanmakuPrefs.kt
 │   └── DanmakuView.kt
+├── dialog/
+│   ├── ConfirmDialog.kt
+│   ├── EpisodeSelectDialog.kt
+│   └── HelpDialog.kt
 ├── fragment/
 │   ├── HistoryFragment.kt
 │   ├── HomeFragment.kt
@@ -1036,6 +1082,7 @@ Toast 提示清理结果
 - 本地挡板不写入首页 `api_cache`。
 - 搜索结果、详情播放入口和真实播放地址有独立缓存周期，各源缓存前缀不同。
 - 爬虫限流器每个播放源独立，队列容量和间隔为固定值。
+- 反爬应对：Cloudflare 挑战页自动过盾（引擎不兼容的设备限时跳过该类源）；TLS 指纹拦截的站点自动降级 WebView 抓取。详见「反爬应对组件」一节。
 - 下载管理功能已完整实现，支持 M3U8 分片下载、弹幕下载、前台通知、离线播放和降低影响策略。
 - 下载引擎已实现多层限流：并发限制、分片间延迟、速度限制、剧集间解析间隔。
 - 离线播放有独立进度体系，不记录到在线播放历史。

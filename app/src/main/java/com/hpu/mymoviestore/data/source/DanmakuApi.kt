@@ -34,9 +34,9 @@ class DanmakuApi {
     private val client: OkHttpClient = HttpClientProvider.danmakuClient
 
     object ProxyConfig {
-        const val BASE_URL = "http://localhost:8080"  // 弹幕api地址 或 代理服务的基础 URL
-        const val PROXY_PATH = "/proxy"                // 如果代理需要路径前缀，可以在这里定义 ，若无则空
-        const val TOKEN = "dev-token-123"             // 代理认证 Token （可选）
+        const val BASE_URL = "https://cf-pages-proxy-d7i.pages.dev"  // 弹幕api地址 或 代理服务的基础 URL
+        const val PROXY_PATH = ""                // 如果代理需要路径前缀，可以在这里定义 ，若无则空
+        const val TOKEN = "sk_live_asdf123"             // 代理认证 Token （可选）
     }
 
     private val moshi: Moshi = Moshi.Builder()

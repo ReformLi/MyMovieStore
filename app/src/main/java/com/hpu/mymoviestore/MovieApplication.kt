@@ -5,6 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.hpu.mymoviestore.data.CloudflareBypassManager
 import com.hpu.mymoviestore.data.database.MovieDatabase
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
 import com.hpu.mymoviestore.data.repository.DownloadRepository
@@ -88,6 +89,9 @@ class MovieApplication : Application(), ImageLoaderFactory {
 
         // 应用持久化的主题模式（浅色/深色），需在任何 Activity 创建前调用
         ThemeManager.applySaved(this)
+
+        // Cloudflare 人机验证自动绕过管理器（后台 WebView 过盾 + Cookie 缓存）
+        CloudflareBypassManager.init(this)
 
         Log.d(TAG, "========== MovieApplication.onCreate 开始 ==========")
 

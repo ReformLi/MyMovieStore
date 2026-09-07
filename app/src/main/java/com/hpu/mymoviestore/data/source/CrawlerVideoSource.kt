@@ -1,7 +1,9 @@
 package com.hpu.mymoviestore.data.source
 
 import android.util.Log
+import com.hpu.mymoviestore.data.CloudflareBypassManager
 import com.hpu.mymoviestore.data.HttpClientProvider
+import com.hpu.mymoviestore.data.WebViewHtmlFetcher
 import com.hpu.mymoviestore.data.entity.ApiCacheEntity
 import com.hpu.mymoviestore.data.model.CrawlError
 import com.hpu.mymoviestore.data.model.CrawlErrorType
@@ -285,12 +287,17 @@ abstract class CrawlerVideoSource(
             Log.e(logTag, "搜索视频失败", e)
             // 根据错误类型写入对应 TTL 的负缓存，避免反复发网络请求
             val crawlError = (e as? CrawlError) ?: e.toCrawlError(source = sourceName)
-            val (negType, negTtl) = when (crawlError.type) {
-                CrawlErrorType.SERVER_ERROR ->
+            val (negType, negTtl) = when {
+                // WebView 引擎不兼容导致的 CF 过盾失败：限时 1 小时跳过该源
+                // （期间不弹验证窗、不发无效请求；升级系统 WebView 并重启 App 后自动恢复）
+                crawlError.type == CrawlErrorType.CAPTCHA &&
+                    CloudflareBypassManager.engineIncompatible ->
+                    NEG_TYPE_CAPTCHA_ENGINE to ApiCacheEntity.TTL_ONE_HOUR
+                crawlError.type == CrawlErrorType.SERVER_ERROR ->
                     NEG_TYPE_SERVER_ERROR to ApiCacheEntity.TTL_ONE_HOUR
-                CrawlErrorType.CLIENT_ERROR, CrawlErrorType.FORBIDDEN ->
+                crawlError.type == CrawlErrorType.CLIENT_ERROR || crawlError.type == CrawlErrorType.FORBIDDEN ->
                     NEG_TYPE_CLIENT_ERROR to ApiCacheEntity.TTL_ONE_DAY
-                CrawlErrorType.TIMEOUT, CrawlErrorType.NETWORK_ERROR, CrawlErrorType.DNS_FAILURE ->
+                crawlError.type == CrawlErrorType.TIMEOUT || crawlError.type == CrawlErrorType.NETWORK_ERROR || crawlError.type == CrawlErrorType.DNS_FAILURE ->
                     NEG_TYPE_TIMEOUT to ApiCacheEntity.TTL_ONE_HOUR
                 else -> null to 0L
             }
@@ -361,14 +368,74 @@ abstract class CrawlerVideoSource(
 
     /**
      * 通过限流器调度的网络请求 + Jsoup 解析。
+     *
+     * Cloudflare 人机验证处理流程：
+     * 1. 若本地已有有效的过盾 Cookie，直接携带发起请求（避免先吃一次 403）；
+     * 2. 响应命中 Cloudflare 挑战页（"正在进行安全验证"等）→ 调用
+     *    [CloudflareBypassManager.ensureBypassed] 后台 WebView 过盾；
+     * 3. 拿到过盾 Cookie 后重试一次；重试仍被拦截则抛 CAPTCHA 错误。
      */
     protected open suspend fun requestDocument(
         url: String,
         priority: RequestRateLimiter.Priority
     ): Document = rateLimiter.submit(priority, url) { handle ->
-        val request = Request.Builder()
+        val (code, body) = try {
+            executeCrawlRequest(url, handle, CloudflareBypassManager.getCachedCookie(url))
+        } catch (e: javax.net.ssl.SSLException) {
+            // TLS 握手被拒（站点 WAF 按 TLS 指纹拦截 OkHttp 等 connect reset）：
+            // 降级为后台 WebView 抓取——WebView 用浏览器 TLS 栈，指纹与真实浏览器一致
+            Log.w(logTag, "OkHttp TLS 握手被拒，降级为 WebView 抓取: ${e.message}")
+            val html = WebViewHtmlFetcher.fetchHtml(url)
+                ?: throw CrawlError(
+                    type = CrawlErrorType.NETWORK_ERROR,
+                    source = sourceName,
+                    detail = "TLS 握手失败且 WebView 降级抓取也未成功: $url",
+                    cause = e
+                )
+            return@submit Jsoup.parse(html, url)
+        }
+
+        if (!CloudflareBypassManager.isCloudflareChallenge(body)) {
+            return@submit Jsoup.parse(body, url)
+        }
+
+        Log.w(logTag, "检测到 Cloudflare 人机验证（HTTP $code），启动自动过盾: $url")
+        val cookie = CloudflareBypassManager.ensureBypassed(url)
+        if (cookie.isNullOrBlank()) {
+            throw CrawlError(
+                type = CrawlErrorType.CAPTCHA,
+                source = sourceName,
+                detail = "Cloudflare 过盾失败（自动+人工验证均未通过）: $url"
+            )
+        }
+
+        val (retryCode, retryBody) = executeCrawlRequest(url, handle, cookie)
+        if (CloudflareBypassManager.isCloudflareChallenge(retryBody)) {
+            // 过盾 Cookie 无效，清除缓存避免后续请求继续使用
+            CloudflareBypassManager.invalidate(url)
+            throw CrawlError(
+                type = CrawlErrorType.CAPTCHA,
+                source = sourceName,
+                detail = "过盾后仍被人机验证拦截（HTTP $retryCode）: $url"
+            )
+        }
+        Log.i(logTag, "Cloudflare 过盾成功，重试请求已通过: $url")
+        Jsoup.parse(retryBody, url)
+    }
+
+    /**
+     * 执行单次爬虫 HTTP 请求。
+     * @param cookie 过盾 Cookie，非空时以 Cookie 头携带
+     * @return HTTP 状态码 + 响应体（挑战页响应不抛错，交由调用方检测）
+     */
+    private fun executeCrawlRequest(
+        url: String,
+        handle: RequestRateLimiter.Handle,
+        cookie: String?
+    ): Pair<Int, String> {
+        val builder = Request.Builder()
             .url(url)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", HttpClientProvider.crawlerUserAgent())
             .header(
                 "Accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
@@ -382,9 +449,11 @@ abstract class CrawlerVideoSource(
             .header("Sec-Fetch-Site", "none")
             .header("Sec-Fetch-User", "?1")
             .get()
-            .build()
+        if (!cookie.isNullOrBlank()) {
+            builder.header("Cookie", cookie)
+        }
 
-        val call = client.newCall(request)
+        val call = client.newCall(builder.build())
         // 注册到限流器，使外部取消能直接 cancel 该 Call
         handle.registerCall(call)
 
@@ -392,7 +461,8 @@ abstract class CrawlerVideoSource(
         response.use { resp ->
             val code = resp.code
             val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
+            // 挑战页通常伴随 403/503：先交给调用方做过盾检测，不能直接抛错
+            if (!resp.isSuccessful && !CloudflareBypassManager.isCloudflareChallenge(body)) {
                 throw CrawlError(
                     type = when (code) {
                         403 -> {
@@ -409,7 +479,7 @@ abstract class CrawlerVideoSource(
                     cause = null
                 )
             }
-            Jsoup.parse(body, url)
+            return code to body
         }
     }
 
@@ -466,8 +536,8 @@ abstract class CrawlerVideoSource(
     }
 
     companion object {
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+        // 爬虫统一 User-Agent 已迁移至 HttpClientProvider.CRAWLER_USER_AGENT
+        // （cf_clearance 与 UA 绑定，WebView 过盾与 OkHttp 请求必须一致）
 
         /** 详情页解析出的首个播放页链接：等价于当前的剧集播放模板，缓存 1 天 */
         private const val cachePrefixFirstPlayPage = ":detail:first_play_page"
@@ -496,6 +566,9 @@ abstract class CrawlerVideoSource(
 
         /** 负缓存类型：连接超时 / 网络不可达（TTL 1 小时） */
         private const val NEG_TYPE_TIMEOUT = "TIMEOUT"
+
+        /** 负缓存类型：WebView 引擎不兼容导致 CF 过盾失败（TTL 1 小时，升级 WebView 后自愈） */
+        private const val NEG_TYPE_CAPTCHA_ENGINE = "CAPTCHA_ENGINE"
         // ────────────────────────────────────────────────────────────────────
 
         fun defaultClient(): OkHttpClient = HttpClientProvider.crawlerClient
