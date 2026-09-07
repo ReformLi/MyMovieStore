@@ -90,7 +90,7 @@ class PermissionConfigRepository(
 
     companion object {
         private const val TAG = "PermissionConfigRepo"
-        private const val PERMISSION_URL = "https://cdn.jsdelivr.net/gh/ReformLi/tvbox@refs/heads/main/mytvbox.json"
+        private const val PERMISSION_URL = "https:www.******.json"
         private const val CACHE_KEY = "permission_config_result"
         private const val PREFS_NAME = "permission_config_prefs"
         private const val PREFS_KEY_CONFIG = "permission_config_json"
