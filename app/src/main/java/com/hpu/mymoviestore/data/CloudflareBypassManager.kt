@@ -99,11 +99,12 @@ private val CHALLENGE_BODY_MARKERS = listOf(
  * - WebView 给定真实屏幕尺寸的视口（0×0 会被 CF 完整性检测判异常）；
  * - WebChromeClient 捕获挑战脚本 SyntaxError（引擎过老），提前失败转人工。
  *
- * ## 第二阶段：人工验证兜底（串行队列）
- * 自动过盾失败时弹出 [CloudflareChallengeActivity]，用户手动完成挑战，
- * Cookie 拿到后窗口自动关闭并缓存 30 分钟。
- * 全局同一时刻至多一个验证窗口：多个域名需要验证时后续请求入队，
+ * ## 第二阶段：人工验证兜底（串行队列，开关默认关闭）
+ * [interactiveVerificationEnabled] 为 true 时：自动过盾失败才弹出
+ * [CloudflareChallengeActivity]，用户手动完成挑战，Cookie 拿到后窗口自动关闭
+ * 并缓存 30 分钟。全局同一时刻至多一个验证窗口：多个域名需要验证时后续请求入队，
  * 同一窗口逐个完成，不会连续/叠加弹窗。
+ * 开关为 false（默认）时：自动过盾失败直接跳过该源，不弹任何窗口。
  */
 object CloudflareBypassManager {
 
@@ -118,6 +119,16 @@ object CloudflareBypassManager {
 
     /** 人工验证界面等待时长 */
     private const val INTERACTIVE_TIMEOUT_MS = 180_000L
+
+    /**
+     * 人工验证窗口总开关（默认关闭）。
+     * - false：自动过盾失败时**不弹窗**，直接返回 null（调用方按失败处理，
+     *   该源本轮/负缓存期内被跳过），全程无任何打扰；
+     * - true：自动过盾失败时弹出 [CloudflareChallengeActivity] 人工验证窗口
+     *   （串行队列，同一窗口逐个完成待验证域名）。
+     */
+    @Volatile
+    var interactiveVerificationEnabled: Boolean = false
 
     private lateinit var appContext: Context
 
@@ -272,11 +283,13 @@ object CloudflareBypassManager {
             Log.i(TAG, "启动后台 WebView 自动过盾: $url")
             var result = runWebViewBypass(url)
 
-            // ── 第二阶段：人工验证兜底（引擎不兼容时跳过——挑战脚本跑不起来，
-            //    弹窗必然白屏无意义；正常设备自动失败才弹窗，用户点一下即可）──
+            // ── 第二阶段：人工验证兜底（默认关闭；开关关闭时自动过盾失败即跳过）──
+            // 引擎不兼容时跳过弹窗——挑战脚本跑不起来，弹窗必然白屏无意义
             if (result.isNullOrBlank()) {
                 if (engineIncompatible) {
                     Log.w(TAG, "引擎不兼容，跳过人工验证（弹窗无法完成挑战）: $url")
+                } else if (!interactiveVerificationEnabled) {
+                    Log.i(TAG, "自动过盾失败，人工验证开关未开启（interactiveVerificationEnabled=false），跳过该源: $url")
                 } else {
                     Log.w(TAG, "自动过盾失败，启动人工验证窗口: $url")
                     result = awaitInteractiveBypass(url, deferred)
