@@ -53,11 +53,12 @@ import java.util.concurrent.TimeUnit
  * ```json
  * {
  *   "video_sources": [
- *     { "source_id": "crawler_jju", "name": "剧集屋", "base_url": "https://www.******.com" },
- *     { "source_id": "crawler_yinghua", "name": "樱花动漫", "base_url": "https://www.******.com" }
+ *     { "source_id": "crawler_jju", "name": "剧集屋", "base_url": "https://www.******.com", "enabled": true },
+ *     { "source_id": "crawler_yinghua", "name": "樱花动漫", "base_url": "https://www.******.com", "enabled": false }
  *   ]
  * }
  * ```
+ * `enabled` 与 `name` 同级，缺省视为 true；false 时该源不可用（不构建、不参与搜索、不出现在源管理列表）。
  */
 class VideoSourceConfigManager(
     private val context: Context,
@@ -79,7 +80,9 @@ class VideoSourceConfigManager(
     data class SourceConfig(
         val sourceId: String,
         val name: String,
-        val baseUrl: String
+        val baseUrl: String,
+        /** 远程可用性开关：false 时该源不构建、不参与搜索/详情，也不出现在源管理列表 */
+        val enabled: Boolean = true
     )
 
     companion object {
@@ -377,6 +380,10 @@ class VideoSourceConfigManager(
 
         val result = mutableListOf<CrawlerVideoSource>()
         for (cfg in configs) {
+            if (!cfg.enabled) {
+                Log.d(TAG, "远程配置标记源 '${cfg.sourceId}' 不可用，跳过构建")
+                continue
+            }
             val source = availableSources[cfg.sourceId]
             if (source == null) {
                 Log.w(TAG, "远程配置包含未知源 ID '${cfg.sourceId}'，代码中无对应实现，跳过")
@@ -406,8 +413,10 @@ class VideoSourceConfigManager(
                 val sourceId = item.optString("source_id", "")
                 val name = item.optString("name", "")
                 val baseUrl = item.optString("base_url", "")
+                // enabled 与 name 同级，缺省视为 true（向后兼容旧配置）
+                val enabled = item.optBoolean("enabled", true)
                 if (sourceId.isNotEmpty()) {
-                    result.add(SourceConfig(sourceId, name, baseUrl))
+                    result.add(SourceConfig(sourceId, name, baseUrl, enabled))
                 }
             }
         } catch (e: Exception) {

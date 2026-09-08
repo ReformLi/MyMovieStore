@@ -461,7 +461,7 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 ### `VideoSourceConfigManager`
 
-`VideoSourceConfigManager` 负责从远程动态配置读取播放源名称和 URL，启动时先同步本地缓存（毫秒级），随后异步发起 HTTP 请求获取最新配置；失败最多重试 5 次，每次间隔 10 秒。加载成功后通过 `MovieApplication.updateVideoSources()` 更新全局源列表并注入到 `VideoRepository`。
+`VideoSourceConfigManager` 负责从远程动态配置读取播放源名称和 URL，启动时先同步本地缓存（毫秒级），随后异步发起 HTTP 请求获取最新配置；失败最多重试 5 次，每次间隔 10 秒。远程 JSON 每个源条目支持 `enabled` 字段（与 `name` 同级，缺省视为 `true`）：为 `false` 时该源直接跳过构建——不参与搜索/详情，也不出现在视频源管理列表。加载成功后通过 `MovieApplication.updateVideoSources()` 更新全局源列表并注入到 `VideoRepository`。
 
 ## 缓存策略
 
