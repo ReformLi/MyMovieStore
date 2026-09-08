@@ -99,9 +99,11 @@ private val CHALLENGE_BODY_MARKERS = listOf(
  * - WebView 给定真实屏幕尺寸的视口（0×0 会被 CF 完整性检测判异常）；
  * - WebChromeClient 捕获挑战脚本 SyntaxError（引擎过老），提前失败转人工。
  *
- * ## 第二阶段：人工验证兜底
+ * ## 第二阶段：人工验证兜底（串行队列）
  * 自动过盾失败时弹出 [CloudflareChallengeActivity]，用户手动完成挑战，
  * Cookie 拿到后窗口自动关闭并缓存 30 分钟。
+ * 全局同一时刻至多一个验证窗口：多个域名需要验证时后续请求入队，
+ * 同一窗口逐个完成，不会连续/叠加弹窗。
  */
 object CloudflareBypassManager {
 
@@ -144,6 +146,16 @@ object CloudflareBypassManager {
 
     /** 同域名并发去重：自动 + 人工两阶段共用同一个 Deferred */
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<String?>>()
+
+    /** 待人工验证的排队 URL（验证窗口已在展示时，后续域名入队串行处理，不叠加弹窗） */
+    private val pendingChallengeUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+    /** 验证窗口是否正在展示（同一时刻至多一个，配合串行队列） */
+    @Volatile
+    private var challengeActivityActive = false
+
+    /** 保护「窗口激活状态 + 队列」的锁（窗口销毁重拉与入队的竞态） */
+    private val challengeLock = Any()
 
     private data class CookieEntry(val cookie: String, val fetchedAtElapsed: Long)
 
@@ -431,24 +443,61 @@ object CloudflareBypassManager {
         obj.getDouble("x").toFloat() to obj.getDouble("y").toFloat()
     }.getOrNull()
 
-    // ===================== 第二阶段：人工验证兜底 =====================
+    // ===================== 第二阶段：人工验证兜底（串行队列） =====================
 
     /**
-     * 启动人工验证窗口并等待结果。
+     * 启动人工验证窗口并等待结果（串行队列）。
      * 复用 [inFlight] 中当前域名的 Deferred，[CloudflareChallengeActivity]
      * 完成后通过 [completeInteractive] 回填结果。
+     *
+     * 验证窗口已在展示时当前域名入队，由窗口完成当前验证后自动串行处理
+     * （[CloudflareChallengeActivity.nextChallengeUrl] 取下一项），不会叠加多个窗口。
      */
     private suspend fun awaitInteractiveBypass(
         url: String,
         deferred: CompletableDeferred<String?>
     ): String? {
-        withContext(Dispatchers.Main) {
-            val intent = android.content.Intent(appContext, CloudflareChallengeActivity::class.java)
-                .putExtra(CloudflareChallengeActivity.EXTRA_URL, url)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            appContext.startActivity(intent)
-        }
+        withContext(Dispatchers.Main) { launchInteractiveWindow(url) }
         return withTimeoutOrNull(INTERACTIVE_TIMEOUT_MS) { deferred.await() }
+    }
+
+    /** 拉起验证窗口或入队（须在主线程调用；窗口激活状态与队列由 [challengeLock] 保护） */
+    private fun launchInteractiveWindow(url: String) {
+        synchronized(challengeLock) {
+            if (challengeActivityActive) {
+                pendingChallengeUrls.add(url)
+                Log.d(TAG, "验证窗口展示中，入队等待: $url（队列 ${pendingChallengeUrls.size}）")
+            } else {
+                challengeActivityActive = true
+                Log.i(TAG, "启动人工验证窗口: $url")
+                val intent = android.content.Intent(appContext, CloudflareChallengeActivity::class.java)
+                    .putExtra(CloudflareChallengeActivity.EXTRA_URL, url)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
+            }
+        }
+    }
+
+    /** 验证窗口完成当前域名后调用：取下一个排队的验证 URL，无则返回 null */
+    fun nextChallengeUrl(): String? = synchronized(challengeLock) { pendingChallengeUrls.poll() }
+
+    /**
+     * 验证窗口即将销毁时调用：解除激活标记；
+     * 队列仍有待验证项时自动重拉窗口（兜底「入队与窗口销毁」的竞态漏单）。
+     */
+    fun onChallengeActivityDestroyed() {
+        synchronized(challengeLock) {
+            challengeActivityActive = false
+            val next = pendingChallengeUrls.poll()
+            if (next != null) {
+                challengeActivityActive = true
+                Log.i(TAG, "验证窗口销毁但队列非空，重拉窗口: $next")
+                val intent = android.content.Intent(appContext, CloudflareChallengeActivity::class.java)
+                    .putExtra(CloudflareChallengeActivity.EXTRA_URL, next)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
+            }
+        }
     }
 
     /** 提取 scheme://host 作为缓存 key（忽略路径/参数差异） */

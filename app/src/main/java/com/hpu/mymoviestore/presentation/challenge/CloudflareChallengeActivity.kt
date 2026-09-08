@@ -22,23 +22,31 @@ import com.hpu.mymoviestore.data.CloudflareBypassManager
 /**
  * Cloudflare 人工验证兜底窗口。
  *
- * 自动过盾失败时由 [CloudflareBypassManager] 拉起：全屏半透明遮罩 + 暗色圆角卡片
+ * 自动过盾失败时由 [CloudflareBypassManager] 拉起：全屏遮罩 + 暗色圆角卡片
  * 内嵌真实 WebView，用户手动完成挑战（通常点一下勾选框）。
- * CookieManager 轮询到 `cf_clearance` 后自动关闭并回传结果。
+ * CookieManager 轮询到 `cf_clearance` 后自动回传结果。
+ *
+ * **串行队列**：多个域名需要验证时不叠加弹窗——完成当前域名后自动从
+ * [CloudflareBypassManager.nextChallengeUrl] 取下一个排队 URL，同一窗口
+ * 原地切换继续验证，队列耗尽才关闭。
  *
  * 布局为程序化构建（仅此一处使用，无需资源文件）；主题为半透明透明背景
  * （Theme.MyMovieStore.Challenge），透出下层页面，视觉上是"浮层"而非跳页。
  */
 class CloudflareChallengeActivity : AppCompatActivity() {
 
-    private lateinit var targetUrl: String
+    /** 当前验证的 URL（串行切换域名时更新；默认空串防 EXTRA_URL 缺失时 onDestroy 崩溃） */
+    private var targetUrl: String = ""
     private lateinit var statusText: TextView
     private var webView: WebView? = null
 
     private val handler = Handler(Looper.getMainLooper())
 
-    /** 是否已回传结果（通过/取消/超时），保证只回调一次 */
+    /** 是否已回传结果（通过/取消/超时），切换下一域名时重置 */
     private var completed = false
+
+    /** 当前域名的 Cookie 轮询已等待时长（切换下一域名时重置） */
+    private var elapsedMs = 0L
 
     private val cookiePollRunnable = object : Runnable {
         override fun run() {
@@ -52,15 +60,13 @@ class CloudflareChallengeActivity : AppCompatActivity() {
             }
             elapsedMs += POLL_INTERVAL_MS
             if (elapsedMs >= MAX_WAIT_MS) {
-                Log.w(TAG, "人工验证超时（${MAX_WAIT_MS / 1000}s）")
+                Log.w(TAG, "人工验证超时（${MAX_WAIT_MS / 1000}s）: $targetUrl")
                 finishWithResult(null)
                 return
             }
             handler.postDelayed(this, POLL_INTERVAL_MS)
         }
     }
-
-    private var elapsedMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -287,20 +293,42 @@ class CloudflareChallengeActivity : AppCompatActivity() {
         }, 12_000L)
     }
 
+    /**
+     * 当前域名验证结束（通过/取消/超时）：
+     * 回传结果 → 从串行队列取下一个待验证域名，有则原窗口切换继续，无则关闭。
+     */
     private fun finishWithResult(cookie: String?) {
         if (completed) return
         completed = true
+        handler.removeCallbacks(cookiePollRunnable)
         CloudflareBypassManager.completeInteractive(targetUrl, cookie)
-        finish()
+
+        val next = CloudflareBypassManager.nextChallengeUrl()
+        if (next != null) {
+            Log.d(TAG, "切换到下一个待验证域名: $next")
+            targetUrl = next
+            completed = false
+            elapsedMs = 0
+            statusText.text = "正在加载验证页…"
+            webView?.let {
+                it.stopLoading()
+                it.loadUrl(next)
+            }
+            handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
+        } else {
+            finish()
+        }
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        // 用户按返回键退出等未回传场景：补发 null 结果（已回传时为 no-op）
-        if (!completed) {
+        // 用户按返回键退出等未回传场景：补发当前域名 null 结果（已回传时为 no-op）
+        if (!completed && targetUrl.isNotBlank()) {
             completed = true
             CloudflareBypassManager.completeInteractive(targetUrl, null)
         }
+        // 通知管理器窗口已销毁（队列仍有待验证项时由管理器重拉窗口）
+        CloudflareBypassManager.onChallengeActivityDestroyed()
         webView?.apply {
             runCatching { stopLoading() }
             runCatching { destroy() }
