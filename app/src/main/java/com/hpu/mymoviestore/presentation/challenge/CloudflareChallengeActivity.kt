@@ -205,6 +205,13 @@ class CloudflareChallengeActivity : AppCompatActivity() {
             domStorageEnabled = true
             // 与 OkHttp 爬虫请求一致的 UA（cf_clearance 绑定 UA；用设备真实 UA）
             userAgentString = CloudflareBypassManager.userAgent()
+            // 概览模式：页面按桌面宽度渲染后整体缩小到容器一屏内展示，
+            // 验证按钮一出来就可见，无需手动缩小或上下滑动找按钮；支持双指放大点击
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            supportZoom()
+            builtInZoomControls = true
+            displayZoomControls = false
         }
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
