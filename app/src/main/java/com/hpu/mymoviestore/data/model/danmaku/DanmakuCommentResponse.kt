@@ -41,6 +41,8 @@ data class DanmakuComment(
     @Json(name = "cid") val cid: Long = 0,
     @Json(name = "p") val p: String = "",
     @Json(name = "m") val m: String = "",  // 弹幕文本
-    @Json(name = "t") val t: Int = 0,
+    // 服务端偶发返回小数秒（如 0.1），Int 会因 Moshi 严格类型校验导致整个弹幕 JSON 解析失败；
+    // 本字段不参与渲染（渲染用 p 字段第一位），Double 兼容整数/小数两种返回
+    @Json(name = "t") val t: Double = 0.0,
     @Json(name = "like") val like: Int = 0
 )

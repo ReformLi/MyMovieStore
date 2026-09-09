@@ -87,6 +87,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
+            .header("User-Agent", "curl/8.21.0") // 临时修改
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -94,6 +95,7 @@ class DanmakuApi {
                 throw IOException("搜索请求失败: code=${response.code}")
             }
             val body = response.body?.string() ?: throw IOException("搜索响应体为空")
+//            Log.d(TAG, "搜索弹幕1: ${body}")
             val parsed = try {
                 searchAdapter.fromJson(body)
             } catch (t: Throwable) {
@@ -121,6 +123,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
+            .header("User-Agent", "curl/8.21.0") // 临时修改
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -128,6 +131,7 @@ class DanmakuApi {
                 throw IOException("bangumi 请求失败: code=${response.code}")
             }
             val body = response.body?.string() ?: throw IOException("bangumi 响应体为空")
+//            Log.d(TAG, "搜索弹幕2: ${body}")
             val parsed = try {
                 bangumiAdapter.fromJson(body)
             } catch (t: Throwable) {
@@ -157,6 +161,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
+            .header("User-Agent", "curl/8.21.0") // 临时修改
             .get()
             .build()
         client.newCall(request).execute().use { response ->

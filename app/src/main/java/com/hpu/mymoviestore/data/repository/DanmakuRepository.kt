@@ -245,14 +245,16 @@ class DanmakuRepository(
 
         val preferred = preferredEpisodeNumber?.takeIf { it.isNotBlank() }
         if (preferred != null) {
-            val num = Regex("\\d+").find(preferred)?.value ?: preferred.trim()
-            val matched = eps.firstOrNull { it.episodeNumber == num }
+            // 归一化后比较（"01" → "1"）：视频标题「第01集」与弹幕源 episodeNumber"1"
+            // 仅去前导零归一，不改变本地文件命名
+            val num = normalizeEpisodeNum(preferred)
+            val matched = eps.firstOrNull { normalizeEpisodeNum(it.episodeNumber) == num }
             if (matched != null) {
-                Log.d(TAG, "按集数匹配到: episodeNumber=$num")
+                Log.d(TAG, "按集数匹配到: episodeNumber=${matched.episodeNumber}")
                 return matched
             }
             val matchedByTitle = eps.firstOrNull { ep ->
-                Regex("\\d+").find(ep.episodeTitle)?.value == num
+                normalizeEpisodeNum(ep.episodeTitle) == num
             }
             if (matchedByTitle != null) {
                 Log.d(TAG, "按标题匹配到: ${matchedByTitle.episodeTitle}")
@@ -266,6 +268,16 @@ class DanmakuRepository(
         return eps.singleOrNull().also {
             Log.d(TAG, if (it != null) "无集数偏好且仅有单集，使用: ${it.episodeTitle}" else "无集数偏好且多集，无法匹配")
         }
+    }
+
+    /**
+     * 集数归一化：提取首个数字串并去掉前导零（"01" → "1"），
+     * 用于「第01集」与弹幕源「第1集」/episodeNumber"1" 的匹配。
+     * 无数字时返回原文（trim 后），保持旧行为。
+     */
+    private fun normalizeEpisodeNum(raw: String): String {
+        val digits = Regex("\\d+").find(raw)?.value ?: raw.trim()
+        return digits.toLongOrNull()?.toString() ?: digits
     }
 
     // ================== 清除任务缓存 ==================
