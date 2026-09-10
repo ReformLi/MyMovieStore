@@ -34,10 +34,13 @@ class DanmakuDownloadManager private constructor(context: Context) {
     companion object {
         private const val TAG = "DanmakuDownloadMgr"
 
-        /** 自动重试最大次数 */
-        private const val MAX_AUTO_RETRY = 3
+        /**
+         * 自动重试次数：0 = 失败立即终态，不再自动重试
+         * （有下载页「重试弹幕」手动入口兜底）。
+         */
+        private const val MAX_AUTO_RETRY = 0
 
-        /** 自动重试固定间隔（毫秒）：1min */
+        /** 自动重试固定间隔（毫秒）：已禁用自动重试，保留字段备用 */
         private const val BASE_RETRY_DELAY_MS = 60_000L
 
         @Volatile

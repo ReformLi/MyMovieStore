@@ -11,7 +11,6 @@ import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuEpisode
 import com.hpu.mymoviestore.data.source.DanmakuApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -28,9 +27,9 @@ import kotlinx.coroutines.withContext
  *  - 后续获取其他集时，搜索和分集缓存跟随已有缓存的剩余时间
  *
  * 重试策略：
- *  - 网络失败时自动重试，最多 3 次
- *  - 每次重试间隔 10 秒
- *  - 成功/最终失败时通过回调通知 UI
+ *  - 自动重试已移除：网络失败只试一次，立即返回失败
+ *  - 失败后由 UI 手动重试兜底（播放页点击重试 / 下载页重试弹幕）
+ *  - 成功/失败时通过回调通知 UI
  */
 class DanmakuRepository(
     private val api: DanmakuApi = DanmakuApi(),
@@ -41,8 +40,12 @@ class DanmakuRepository(
 
     companion object {
         private const val TAG = "DanmakuRepo"
-        private const val MAX_RETRY = 3
-        private const val RETRY_INTERVAL_MS = 10_000L  // 10秒
+
+        /**
+         * 网络请求尝试次数：1 = 只试一次，失败立即返回（自动重试已移除）。
+         * 失败后由 UI 层的手动重试入口兜底（点击重试/换源）。
+         */
+        private const val MAX_RETRY = 1
     }
 
     fun getBaseUrl(): String = api.getBaseUrl()
@@ -207,10 +210,10 @@ class DanmakuRepository(
     // ================== 重试机制 ==================
 
     /**
-     * 带退避重试的执行器
+     * 单次执行器（自动重试已移除：MAX_RETRY=1 只试一次）。
      * @param operation 要执行的网络操作
-     * @param onRetry 每次重试前的回调 (attempt, exception)
-     * @return 成功返回结果，全部重试失败后返回 null
+     * @param onRetry 保留参数兼容调用方（实际不会触发）
+     * @return 成功返回结果，失败返回 null
      */
     private suspend fun <T> retryWithBackoff(
         operation: suspend () -> T,
@@ -226,11 +229,10 @@ class DanmakuRepository(
                 lastException = e
                 if (attempt < MAX_RETRY) {
                     onRetry?.invoke(attempt, e)
-                    delay(RETRY_INTERVAL_MS)
                 }
             }
         }
-        Log.e(TAG, "操作失败，已重试 $MAX_RETRY 次", lastException)
+        Log.e(TAG, "操作失败（自动重试已禁用）", lastException)
         return null
     }
 
