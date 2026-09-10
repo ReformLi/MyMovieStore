@@ -55,9 +55,20 @@ class DanmakuPrefs(private val context: Context) {
         editor.apply()
     }
 
+    /** 弹幕显示区域高度比例（占播放器高度）：0.25/0.5/0.75/1.0，默认 1/4 屏 */
+    fun getDisplayAreaRatio(): Float =
+        prefs.getFloat(KEY_DANMAKU_AREA_RATIO, DEFAULT_DANMAKU_AREA_RATIO)
+
+    fun setDisplayAreaRatio(ratio: Float) {
+        prefs.edit().putFloat(KEY_DANMAKU_AREA_RATIO, ratio).apply()
+        Log.d(TAG, "保存弹幕显示区域比例: $ratio")
+    }
+
     companion object {
         private const val TAG = "DanmakuPrefs"
         private const val PREFS_NAME = "danmu_prefs"
         private const val KEY_MASTER_ENABLED = "master_enabled"
+        private const val KEY_DANMAKU_AREA_RATIO = "danmaku_area_ratio"
+        const val DEFAULT_DANMAKU_AREA_RATIO = 0.25f
     }
 }

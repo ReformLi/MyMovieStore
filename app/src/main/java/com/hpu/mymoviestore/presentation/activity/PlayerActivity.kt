@@ -802,11 +802,50 @@ class PlayerActivity : AppCompatActivity() {
     private fun showCategoryPopup(anchor: View) {
         PopupMenu(this, anchor).apply {
             menu.add(0, 0, 0, "播放速度")
+            menu.add(0, 2, 0, "弹幕设置")
             menu.add(0, 1, 0, "画质选择")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     0 -> showSpeedPopup(anchor)
                     1 -> Toast.makeText(this@PlayerActivity, "画质选择暂不可用", Toast.LENGTH_SHORT).show()
+                    2 -> showDanmakuAreaPopup(anchor)
+                }
+                true
+            }
+            show()
+        }
+    }
+
+    /** 弹幕显示区域高度比例（0.25/0.5/0.75/1.0）—— 动态调整 danmakuContainer 约束高度 */
+    private fun applyDanmakuDisplayArea(ratio: Float) {
+        val lp = binding.danmakuContainer.layoutParams as?
+            androidx.constraintlayout.widget.ConstraintLayout.LayoutParams ?: return
+        lp.height = 0
+        lp.matchConstraintPercentHeight = ratio.coerceIn(0.25f, 1.0f)
+        binding.danmakuContainer.layoutParams = lp
+        Log.d(TAG, "弹幕显示区域比例应用: ${lp.matchConstraintPercentHeight}")
+    }
+
+    private fun showDanmakuAreaPopup(anchor: View) {
+        val labels = arrayOf("1/4 屏", "1/2 屏", "3/4 屏", "全屏")
+        val ratios = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f)
+        val prefs = DanmakuPrefs(this)
+        val current = prefs.getDisplayAreaRatio()
+        val checkedIndex = ratios.indexOfFirst { abs(it - current) < 0.01f }.coerceAtLeast(0)
+
+        PopupMenu(this, anchor).apply {
+            labels.forEachIndexed { i, label ->
+                menu.add(0, i, 0, "弹幕显示区域 · $label").apply {
+                    isCheckable = true
+                    isChecked = i == checkedIndex
+                }
+            }
+            setOnMenuItemClickListener { item ->
+                if (item.itemId in ratios.indices) {
+                    val r = ratios[item.itemId]
+                    prefs.setDisplayAreaRatio(r)
+                    applyDanmakuDisplayArea(r)
+                    Toast.makeText(this@PlayerActivity, "弹幕显示区域: ${labels[item.itemId]}", Toast.LENGTH_SHORT).show()
                 }
                 true
             }
@@ -858,6 +897,8 @@ class PlayerActivity : AppCompatActivity() {
         this.danmakuManager = dm
 
         val prefs = DanmakuPrefs(this)
+        // 恢复上次保存的弹幕显示区域（默认 1/4 屏）
+        applyDanmakuDisplayArea(prefs.getDisplayAreaRatio())
         val masterEnabled = prefs.isMasterEnabled()
         val subEnabled = masterEnabled
         switchDanmaku.isChecked = subEnabled
