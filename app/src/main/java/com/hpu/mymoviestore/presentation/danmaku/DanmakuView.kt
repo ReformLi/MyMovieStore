@@ -20,12 +20,13 @@ import kotlin.math.max
  *  - 扫描游标每帧按时间窗口二分重定位，时间跳变等异常可自动恢复
  *  - 墙钟跳变防御：系统时间前跳（NTP 校时等）时跳过当帧弹幕添加，等待校准恢复
  *
- * p 字段格式（逗号分隔）：
- * - 0: 出现时间（秒）
- * - 1: 类型（1/2/3/6=滚动，4/8=底部，5/7=顶部）
- * - 2: 字号（18/25/36）
- * - 3: 颜色（十进制整数）
- * - 4~7: 其他属性
+ * p 字段格式（逗号分隔）—— 本项目服务端为 danmu_api / 弹弹play v2 兼容：
+ * - time,mode,color,来源   例 "1920.54,1,16777215,[imgo]"
+ *   - 0: 出现时间（秒）
+ *   - 1: 类型（1=滚动，4=底部，5=顶部；兼容 2/3/6 滚动、7/8 其它）
+ *   - 2: 颜色（十进制 RGB）
+ *   - 3: 来源平台标签（如 [imgo]），非数字，仅备注用
+ * 同时兼容 B 站标准格式 time,mode,字号,color,...（index3 为纯数字时按此解析）
  */
 class DanmakuView(context: Context) : View(context) {
 
@@ -226,12 +227,24 @@ class DanmakuView(context: Context) : View(context) {
         if (p.isBlank() || text.isBlank()) return null
 
         val fields = p.split(',')
-        if (fields.size < 4) return null
+        if (fields.size < 3) return null  // 至少 时间,模式,颜色
 
         val timeSec = fields[0].toFloatOrNull() ?: return null
         val type = fields[1].toIntOrNull() ?: 1
-        val size = fields[2].toFloatOrNull() ?: 25f
-        val colorInt = fields[3].toLongOrNull() ?: 16777215L
+
+        // 兼容两种 p 格式：
+        //  · danmu_api / 弹弹play v2（本项目服务端）：time,mode,color,来源
+        //    例 "1920.54,1,16777215,[imgo]" → 颜色在 index2，index3 是 [imgo] 等非数字来源标签
+        //  · B 站标准：time,mode,字号,color,时间戳,...
+        //    → 字号在 index2，颜色在 index3（纯数字）
+        // 判据：index3 为纯数字 → B 站格式；否则 → danmu_api 格式（颜色取 index2）
+        var size = 25f
+        val colorInt: Long = if (fields.size >= 4 && fields[3].trim().toLongOrNull() != null) {
+            size = fields[2].trim().toFloatOrNull() ?: 25f
+            fields[3].trim().toLongOrNull() ?: 16777215L
+        } else {
+            fields[2].trim().toLongOrNull() ?: 16777215L
+        }
 
         // 十进制 0xRRGGBB → 带 alpha = TEXT_ALPHA（当前的 80%，原为 0xFF）
         val color = (TEXT_ALPHA shl 24) or (colorInt.toInt() and 0xFFFFFF)
