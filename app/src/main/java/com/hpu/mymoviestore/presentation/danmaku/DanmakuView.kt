@@ -251,7 +251,7 @@ class DanmakuView(context: Context) : View(context) {
 
         // cid 去重键：API 返回 cid 则直接用，否则用文本+时间生成伪唯一键
         val cid = if (comment.cid > 0) comment.cid
-            else (text.hashCode().toLong() and 0x7FFFFFFFL) * 1_000_000L + (timeSec.toLong() * 1000L)
+        else (text.hashCode().toLong() and 0x7FFFFFFFL) * 1_000_000L + (timeSec.toLong() * 1000L)
 
         return DanmakuItem(cid, timeSec, type, size, color, text)
     }
@@ -343,12 +343,12 @@ class DanmakuView(context: Context) : View(context) {
                 markRemoved(item)
                 continue
             }
-            val row = findScrollRow(tw, viewWidth, maxRows, minRowGapPx)
+            // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+            val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
+            val initialX = viewWidth.toFloat() + tw
+            val x = initialX - scrollSpeedPxPerMs * effectiveMs
+            val row = findScrollRow(tw, x, maxRows, minRowGapPx)
             if (row >= 0) {
-                val initialX = viewWidth.toFloat() + tw
-                // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
-                val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
-                val x = initialX - scrollSpeedPxPerMs * effectiveMs
                 if (x + tw > 0) {
                     activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
                     pendingIt.remove()
@@ -373,12 +373,12 @@ class DanmakuView(context: Context) : View(context) {
                     continue
                 }
                 var placed = false
-                val row = findScrollRow(tw, viewWidth, maxRows, minRowGapPx)
+                // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+                val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
+                val initialX = viewWidth.toFloat() + tw
+                val x = initialX - scrollSpeedPxPerMs * effectiveMs
+                val row = findScrollRow(tw, x, maxRows, minRowGapPx)
                 if (row >= 0) {
-                    // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
-                    val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
-                    val initialX = viewWidth.toFloat() + tw
-                    val x = initialX - scrollSpeedPxPerMs * effectiveMs
                     if (x + tw > 0) {
                         activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
                         markAdded(item, currentVideoMs)
@@ -440,15 +440,15 @@ class DanmakuView(context: Context) : View(context) {
 
             when (item.type) {
                 in listOf(1, 2, 3, 6) -> {
-                    val row = findScrollRow(tw, viewWidth, maxRows, minRowGapPx)
+                    // 计算弹幕已经"飞行"了多久（当前视频时间 - 弹幕出现时间）
+                    val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                    // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
+                    val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
+                    // 初始 x = viewWidth + tw，每毫秒移动 scrollSpeedPxPerMs
+                    val initialX = viewWidth.toFloat() + tw
+                    val x = initialX - scrollSpeedPxPerMs * effectiveMs
+                    val row = findScrollRow(tw, x, maxRows, minRowGapPx)
                     if (row >= 0) {
-                        // 计算弹幕已经"飞行"了多久（当前视频时间 - 弹幕出现时间）
-                        val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
-                        // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
-                        val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
-                        // 初始 x = viewWidth + tw，每毫秒移动 scrollSpeedPxPerMs
-                        val initialX = viewWidth.toFloat() + tw
-                        val x = initialX - scrollSpeedPxPerMs * effectiveMs
                         if (x + tw > 0) {  // 还没完全移出屏幕才添加
                             activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
                             markAdded(item, currentVideoMs)
@@ -485,14 +485,14 @@ class DanmakuView(context: Context) : View(context) {
                     }
                 }
                 else -> {
-                    val row = findScrollRow(tw, viewWidth, maxRows, minRowGapPx)
+                    val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
+                    val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
+                    // 与主流类型一致：从 viewWidth + tw 入场（漏加 tw 会比假定位置
+                    // 提前一个字宽，直接压到前一条弹幕尾部造成重叠）
+                    val initialX = viewWidth.toFloat() + tw
+                    val x = initialX - scrollSpeedPxPerMs * effectiveMs
+                    val row = findScrollRow(tw, x, maxRows, minRowGapPx)
                     if (row >= 0) {
-                        val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
-                        val effectiveMs = elapsedMs.coerceIn(0L, MAX_ENTRY_DELAY_MS)
-                        // 与主流类型一致：从 viewWidth + tw 入场（漏加 tw 会比假定位置
-                        // 提前一个字宽，直接压到前一条弹幕尾部造成重叠）
-                        val initialX = viewWidth.toFloat() + tw
-                        val x = initialX - scrollSpeedPxPerMs * effectiveMs
                         if (x + tw > 0) {
                             activeScroll.add(ActiveDanmaku(item, x, row, (item.timeSec * 1000f).toLong(), tw))
                             markAdded(item, currentVideoMs)
@@ -561,20 +561,19 @@ class DanmakuView(context: Context) : View(context) {
      * 查找可放置的滚动行：
      * 遍历所有行，找到一行使得：
      *   1. 该行弹幕数 < MAX_DANMAKU_PER_ROW
-     *   2. 该行最右侧尾部 + 最小间距 <= 屏幕宽度 + 新弹幕宽度
+     *   2. 该行最右侧尾部 + 最小间距 <= 新弹幕的实际起始位置 startX
      *
-     * 说明：新弹幕从 viewWidth + textWidth 处入场，与现有弹幕同速左移，
-     * 只要现有弹幕尾部 + gapPx <= viewWidth + textWidth，
+     * 说明：新弹幕从 startX 处入场（可能因入场延迟而比 viewWidth + textWidth 更靠左），
+     * 与现有弹幕同速左移，只要现有弹幕尾部 + gapPx <= startX，
      * 两者间距始终 >= gapPx，不会首尾紧贴或重叠。
      * gapPx 由调用方传入（当前为 2 个字宽，随字体大小自适应）。
      */
     private fun findScrollRow(
         textWidth: Float,
-        screenWidth: Int,
+        startX: Float,
         maxRows: Int,
         gapPx: Float
     ): Int {
-        val sw = screenWidth.toFloat()
         val rowTailX = FloatArray(maxRows) { -1f }
         val rowCount = IntArray(maxRows) { 0 }
         for (ad in activeScroll) {
@@ -589,7 +588,7 @@ class DanmakuView(context: Context) : View(context) {
         var bestTail = Float.MAX_VALUE
         for (row in 0 until maxRows) {
             if (rowCount[row] < MAX_DANMAKU_PER_ROW
-                && rowTailX[row] + gapPx <= sw + textWidth
+                && rowTailX[row] + gapPx <= startX
             ) {
                 if (rowTailX[row] < bestTail) {
                     bestTail = rowTailX[row]
@@ -629,7 +628,7 @@ class DanmakuView(context: Context) : View(context) {
         /** 同文本去重窗口（毫秒）：相同文本在此窗口内只显示一条 */
         private const val DEDUP_WINDOW_MS: Long = 3_000L
         /** 弹幕允许的最大入场延迟（毫秒）：超过此延迟的弹幕从右边缘开始，避免从中间出现 */
-        private const val MAX_ENTRY_DELAY_MS: Long = 500L
+        private const val MAX_ENTRY_DELAY_MS: Long = 300L
         /** 墙钟偏移帧间增量阈值（毫秒）：超过则判定系统时间前跳，跳过本帧弹幕添加 */
         private const val MAX_CLOCK_JUMP_MS: Long = 3_000L
         /** 弹幕文字 alpha：原先 100%(0xFF) 的 80% → 0xCC(≈255*0.8) */
