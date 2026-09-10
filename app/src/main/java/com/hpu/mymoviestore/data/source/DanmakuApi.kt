@@ -33,6 +33,8 @@ class DanmakuApi {
 
     private val client: OkHttpClient = HttpClientProvider.danmakuClient
 
+    private val USER_AGENT : String = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
+
     object ProxyConfig {
         const val BASE_URL = "http://localhost:8080"  // 弹幕api地址 或 代理服务的基础 URL
         const val PROXY_PATH = "/proxy"                // 如果代理需要路径前缀，可以在这里定义 ，若无则空
@@ -87,7 +89,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
-            .header("User-Agent", "curl/8.21.0") // 临时修改
+            .header("User-Agent", USER_AGENT)
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -123,7 +125,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
-            .header("User-Agent", "curl/8.21.0") // 临时修改
+            .header("User-Agent", USER_AGENT)
             .get()
             .build()
         client.newCall(request).execute().use { response ->
@@ -161,7 +163,7 @@ class DanmakuApi {
         val request = Request.Builder()
             .url(url)
             .addHeader("X-API-Key", ProxyConfig.TOKEN) //代理网关token
-            .header("User-Agent", "curl/8.21.0") // 临时修改
+            .header("User-Agent", USER_AGENT)
             .get()
             .build()
         client.newCall(request).execute().use { response ->
