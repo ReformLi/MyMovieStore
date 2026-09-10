@@ -233,8 +233,8 @@ class DanmakuView(context: Context) : View(context) {
         val size = fields[2].toFloatOrNull() ?: 25f
         val colorInt = fields[3].toLongOrNull() ?: 16777215L
 
-        // 十进制 0xRRGGBB → 带 alpha = FF
-        val color = 0xFF000000.toInt() or (colorInt.toInt() and 0xFFFFFF)
+        // 十进制 0xRRGGBB → 带 alpha = TEXT_ALPHA（当前的 80%，原为 0xFF）
+        val color = (TEXT_ALPHA shl 24) or (colorInt.toInt() and 0xFFFFFF)
 
         // cid 去重键：API 返回 cid 则直接用，否则用文本+时间生成伪唯一键
         val cid = if (comment.cid > 0) comment.cid
@@ -619,5 +619,7 @@ class DanmakuView(context: Context) : View(context) {
         private const val MAX_ENTRY_DELAY_MS: Long = 500L
         /** 墙钟偏移帧间增量阈值（毫秒）：超过则判定系统时间前跳，跳过本帧弹幕添加 */
         private const val MAX_CLOCK_JUMP_MS: Long = 3_000L
+        /** 弹幕文字 alpha：原先 100%(0xFF) 的 80% → 0xCC(≈255*0.8) */
+        private const val TEXT_ALPHA = 0xCC
     }
 }
