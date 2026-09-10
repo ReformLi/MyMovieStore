@@ -16,6 +16,7 @@ import com.hpu.mymoviestore.data.source.impl.DoujiaoVideoSource
 import com.hpu.mymoviestore.data.source.impl.HanSenVideoSource
 import com.hpu.mymoviestore.data.source.impl.HantvVideoSource
 import com.hpu.mymoviestore.data.source.impl.JujiwuVideoSource
+import com.hpu.mymoviestore.data.source.impl.KaCheVideoSource
 import com.hpu.mymoviestore.data.source.impl.NiuerVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
@@ -136,7 +137,8 @@ class VideoSourceConfigManager(
             ZaiXianVideoSource::class.java,
             ShenMaVideoSource::class.java,
             A38TvVideoSource::class.java,
-            XingChenVideoSource::class.java
+            XingChenVideoSource::class.java,
+            KaCheVideoSource::class.java
         )
     }
 
