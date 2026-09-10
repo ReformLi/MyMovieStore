@@ -6,6 +6,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.hpu.mymoviestore.data.HttpClientProvider
 import com.hpu.mymoviestore.data.repository.ApiCacheRepository
+import com.hpu.mymoviestore.data.source.impl.A38TvVideoSource
 import com.hpu.mymoviestore.data.source.impl.BaJieVideoSource
 import com.hpu.mymoviestore.data.source.impl.CechiVideoSource
 import com.hpu.mymoviestore.data.source.impl.ChongchongVideoSource
@@ -20,6 +21,7 @@ import com.hpu.mymoviestore.data.source.impl.NongminTvVideoSource
 import com.hpu.mymoviestore.data.source.impl.NongmingVideoSource
 import com.hpu.mymoviestore.data.source.impl.ShenMaVideoSource
 import com.hpu.mymoviestore.data.source.impl.TiantangVideoSource
+import com.hpu.mymoviestore.data.source.impl.XingChenVideoSource
 import com.hpu.mymoviestore.data.source.impl.YinghuaVideoSource
 import com.hpu.mymoviestore.data.source.impl.ZaiXianVideoSource
 import kotlinx.coroutines.CoroutineScope
@@ -132,7 +134,9 @@ class VideoSourceConfigManager(
             HanSenVideoSource::class.java,
             BaJieVideoSource::class.java,
             ZaiXianVideoSource::class.java,
-            ShenMaVideoSource::class.java
+            ShenMaVideoSource::class.java,
+            A38TvVideoSource::class.java,
+            XingChenVideoSource::class.java
         )
     }
 
