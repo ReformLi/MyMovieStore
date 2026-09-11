@@ -25,6 +25,7 @@ import android.view.GestureDetector
 import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
@@ -65,6 +66,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.PI
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -135,34 +138,44 @@ class PlayerActivity : AppCompatActivity() {
 
     // 手势相关
     private lateinit var gestureDetector: GestureDetector
-    private var isLongPressing = false
-    private var longPressStartX = 0f
-    private var longPressStartY = 0f
+    private var isGesturing = false
+    private var gestureStartX = 0f
+    private var gestureStartY = 0f
     private var screenWidth = 0
     private var screenHeight = 0
     private val handler = Handler(Looper.getMainLooper())
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private val touchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
 
-    // 亮度/音量
-    private var currentBrightness = -1f
-    private var currentVolume = -1
-    private var currentVolumeFloat = -1f  // 音量浮点数，用于连续调节
+    // 亮度/音量（垂直手势的起始值，手势中按绝对位移线性映射）
+    private var gestureStartBrightness = 0.5f
+    private var gestureStartVolumeFloat = 0f
+    private var gestureVolumeApplied = -1   // 手势中上次实际写入的音量档位
     private var maxVolume = 0
 
-    // 手势方向锁定：长按触发后确定方向，整个手势过程不再切换
+    // 手势方向锁定：位移超过 touchSlop 后按轨迹角度判定，整个手势过程不再切换
     // 0=未锁定, 1=水平(快进), 2=垂直(亮度/音量)
     private var gestureDirection = 0
 
-    // 快进拖拽：记录长按触发时的播放位置，MOVE 时只更新预览偏移
-    private var seekBaseMs = 0L     // 长按触发时的 currentPosition
+    // 快进拖拽：记录手势锁定时的播放位置，MOVE 时只更新预览偏移（不真正 seek）
+    private var seekBaseMs = 0L     // 手势锁定时的 currentPosition
     private var seekTargetMs = 0L    // 手指抬起时要 seek 到的位置
 
-    // 手势节流（避免每帧 IPC/重布局导致卡顿）
-    private val GESTURE_THROTTLE_MS = 50L
+    // 手势 UI 节流（帧级，避免高频 setText 重布局卡顿）
+    private val GESTURE_THROTTLE_MS = 16L
     private var lastGestureApplyMs = 0L
 
-    // 拖拽 seek 时的播放状态（用于在 seek 完成后恢复播放）
-    private var wasPlayingBeforeSeek = false
+    // 手势结束时间（短时间内的 DOWN 不喂 gestureDetector，避免轻扫后快速触摸误触发双击）
+    private var lastGestureEndTimeMs = 0L
+
+    // 手势起点是否落在系统进度条区域（DOWN 时判定一次）
+    private var onProgressBarAtDown = false
+
+    // 播放器控制器当前是否显示（由 ControllerVisibilityListener 维护）
+    private var isControllerVisible = false
+
+    // 手势 seek 后短时间内抑制广告回滚检测（用户主动拖回片头不是广告）
+    private var suppressAdRollbackCheckUntilMs = 0L
 
     // 屏幕锁定
     private var isScreenLocked = false
@@ -180,7 +193,6 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PlayerActivity"
-        private const val LONG_PRESS_THRESHOLD_MS = 300L
         private const val SEEK_STEP_MS = 10_000L
         private const val PIP_ACTION_REWIND = "pip_action_rewind"
         private const val PIP_ACTION_PLAY_PAUSE = "pip_action_play_pause"
@@ -641,7 +653,9 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 // 检测广告时间戳回滚：已播放较长时间后位置突然跳回接近 0
-                if (maxPositionSeenMs > 30_000L && currentMs < 5_000L &&
+                //（手势主动 seek 后的短时间内抑制，避免用户拖回片头被误判为广告）
+                if (SystemClock.elapsedRealtime() >= suppressAdRollbackCheckUntilMs &&
+                    maxPositionSeenMs > 30_000L && currentMs < 5_000L &&
                     lastSyncPositionMs > 30_000L && lastSyncPositionMs - currentMs > 15_000L
                 ) {
                     Log.w(TAG, "检测到广告时间戳回滚: maxSeen=${maxPositionSeenMs}ms, " +
@@ -786,6 +800,7 @@ class PlayerActivity : AppCompatActivity() {
         // 弹幕控制条跟随播放器控制栏显示/隐藏
         val listener = object : androidx.media3.ui.PlayerView.ControllerVisibilityListener {
             override fun onVisibilityChanged(visibility: Int) {
+                isControllerVisible = visibility == View.VISIBLE
                 binding.topControls.visibility = visibility
                 binding.statusContainer.visibility = visibility
                 if (!isScreenLocked) {
@@ -1278,58 +1293,66 @@ class PlayerActivity : AppCompatActivity() {
             return super.dispatchTouchEvent(event)
         }
 
-        // 检测触摸是否在进度条区域（ExoPlayer 的 DefaultTimeBar）
-        if (isTouchOnProgressBar(event)) {
-            // 进度条上的触摸：如果正在长按手势，先结束
-            if (isLongPressing) {
-                finishLongPressGesture()
-            }
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> handler.removeCallbacks(longPressRunnable)
-            }
-            return super.dispatchTouchEvent(event)
-        }
-
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // 正在长按手势时，忽略新的 ACTION_DOWN（华为 HiTouch 会注入假的 DOWN 事件）
-                if (isLongPressing) {
-                    Log.d(TAG, "长按手势中收到 ACTION_DOWN，已忽略（华为 HiTouch 干扰）")
+                // 正在拖动手势时，忽略新的 ACTION_DOWN（华为 HiTouch 会注入假的 DOWN 事件）
+                if (isGesturing) {
+                    Log.d(TAG, "拖动手势中收到 ACTION_DOWN，已忽略（华为 HiTouch 干扰）")
                     return true
                 }
-                isLongPressing = false
                 gestureDirection = 0
                 seekBaseMs = 0L
                 seekTargetMs = 0L
-                longPressStartX = event.x
-                longPressStartY = event.y
-                currentBrightness = -1f
-                currentVolume = -1
-                currentVolumeFloat = -1f
-                handler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD_MS)
+                gestureStartX = event.x
+                gestureStartY = event.y
+                // 控制器显示中：触摸优先交给控制器控件（按钮/开关/进度条），不启动拖动手势
+                if (isControllerVisible) {
+                    return super.dispatchTouchEvent(event)
+                }
+                // 弹幕状态区（含点击重试）可见时，落点在其区域内交给它处理，避免轻点被误判为拖动
+                if (binding.statusContainer.visibility == View.VISIBLE &&
+                    isPointInsideView(event, binding.statusContainer)
+                ) {
+                    return super.dispatchTouchEvent(event)
+                }
+                // DOWN 时一次性判定是否落在进度条区域，之后整个手势不再重复计算
+                onProgressBarAtDown = isTouchOnProgressBar(event)
+                if (onProgressBarAtDown) {
+                    // 进度条区域交给 ExoPlayer 的 DefaultTimeBar 处理 scrub
+                    return super.dispatchTouchEvent(event)
+                }
+                // 刚结束手势后的快速触摸不喂 gestureDetector，
+                // 避免轻扫后快速二次触摸被误判为双击（触发播放/暂停）
+                if (SystemClock.elapsedRealtime() - lastGestureEndTimeMs < 300L) {
+                    return super.dispatchTouchEvent(event)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (isLongPressing) {
-                    handleLongPressMove(event)
+                if (onProgressBarAtDown) return super.dispatchTouchEvent(event)
+                if (!isGesturing) {
+                    tryLockGestureDirection(event)
+                }
+                if (isGesturing) {
+                    handleGestureMove(event)
                     return true
                 }
             }
             MotionEvent.ACTION_UP -> {
-                handler.removeCallbacks(longPressRunnable)
-                if (isLongPressing) {
-                    finishLongPressGesture()
+                if (onProgressBarAtDown) return super.dispatchTouchEvent(event)
+                if (isGesturing) {
+                    finishGesture()
                     return true
                 }
-                gestureDirection = 0
+                resetGestureState()
             }
             MotionEvent.ACTION_CANCEL -> {
-                handler.removeCallbacks(longPressRunnable)
-                // 正在长按手势时，忽略 ACTION_CANCEL（华为 HiTouch 会触发 CANCEL 导致手势中断）
-                if (isLongPressing) {
-                    Log.d(TAG, "长按手势中收到 ACTION_CANCEL，已忽略（华为 HiTouch 干扰）")
+                if (onProgressBarAtDown) return super.dispatchTouchEvent(event)
+                // 正在拖动手势时，忽略 ACTION_CANCEL（华为 HiTouch 会触发 CANCEL 导致手势中断）
+                if (isGesturing) {
+                    Log.d(TAG, "拖动手势中收到 ACTION_CANCEL，已忽略（华为 HiTouch 干扰）")
                     return true
                 }
-                gestureDirection = 0
+                resetGestureState()
             }
         }
 
@@ -1366,162 +1389,162 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private val longPressRunnable = Runnable {
-        isLongPressing = true
-        gestureDirection = 0 // 尚未锁定方向，等第一次 MOVE 再决定
-        Log.d(TAG, "长按触发，等待方向锁定")
+    /** 判断触摸落点是否在指定 View 的屏幕区域内 */
+    private fun isPointInsideView(event: MotionEvent, view: View): Boolean {
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return event.rawX >= location[0] && event.rawX <= location[0] + view.width &&
+            event.rawY >= location[1] && event.rawY <= location[1] + view.height
     }
 
     /**
-     * 长按触发后，第一次 MOVE 时根据滑动方向锁定手势类型：
-     * - 水平滑动 → 快进/快退（整手势过程不再响应垂直）
-     * - 垂直滑动 → 亮度/音量（整手势过程不再响应水平）
-     *
-     * 快进逻辑：实时显示预览位置（基于按下时的进度 + 拖拽偏移），
-     *           手指抬起时才真正 seek，避免频繁 seek 导致卡顿。
+     * 尝试根据累计位移锁定手势方向（未锁定状态下的每次 MOVE 调用）：
+     * - 位移超过系统 touchSlop 后按轨迹角度判定：±30° 内为水平，±60° 外为垂直
+     * - 30°~60° 模糊区继续等待轨迹明朗，避免斜向滑动被误判
+     * - 累计超过 3 倍 touchSlop 仍处于模糊区（近似 45° 斜线）时按分量大小兜底
      */
-    private fun handleLongPressMove(event: MotionEvent) {
-        val deltaX = event.x - longPressStartX
-        val deltaY = event.y - longPressStartY
-        val absX = abs(deltaX)
-        val absY = abs(deltaY)
+    private fun tryLockGestureDirection(event: MotionEvent) {
+        val totalDx = event.x - gestureStartX
+        val totalDy = event.y - gestureStartY
+        if (abs(totalDx) < touchSlop && abs(totalDy) < touchSlop) return
 
-        // 首次 MOVE：根据方向锁定手势类型，并立即执行对应调节
-        if (gestureDirection == 0) {
-            if (absX < 15 && absY < 15) return // 忽略微小移动
-            gestureDirection = if (absX >= absY) GESTURE_DIR_HORIZONTAL else GESTURE_DIR_VERTICAL
+        val angle = abs(atan2(totalDy, totalDx)) // 0=水平方向，π/2=垂直方向
+        val locked = when {
+            angle < PI / 6 -> GESTURE_DIR_HORIZONTAL
+            angle > PI / 3 -> GESTURE_DIR_VERTICAL
+            abs(totalDx) > touchSlop * 3 || abs(totalDy) > touchSlop * 3 ->
+                if (abs(totalDx) >= abs(totalDy)) GESTURE_DIR_HORIZONTAL else GESTURE_DIR_VERTICAL
+            else -> 0 // 模糊区：继续等待轨迹明朗
+        }
+        if (locked == 0) return
+
+        isGesturing = true
+        gestureDirection = locked
+        Log.d(TAG, "手势方向锁定: ${if (locked == GESTURE_DIR_HORIZONTAL) "水平(进度)" else "垂直(亮度/音量)"}")
+
+        if (locked == GESTURE_DIR_HORIZONTAL) {
+            // 进入进度预览模式：拖动过程只更新 UI，不动播放器，手指抬起才真正 seek
             seekBaseMs = player?.currentPosition ?: 0L
             seekTargetMs = seekBaseMs
-            Log.d(TAG, "手势方向锁定: ${if (gestureDirection == GESTURE_DIR_HORIZONTAL) "水平(快进)" else "垂直(亮度/音量)"}")
-            // 锁定后立即用已累积的位移执行调节，不浪费这次 MOVE
-            if (gestureDirection == GESTURE_DIR_VERTICAL && absY >= 5) {
-                if (event.x < screenWidth / 2) {
-                    adjustBrightness(deltaY)
-                } else {
-                    adjustVolume(deltaY)
-                }
-            } else if (gestureDirection == GESTURE_DIR_HORIZONTAL) {
-                seekTargetMs = seekBaseMs
-                wasPlayingBeforeSeek = player?.isPlaying ?: false
-                binding.playerView.useController = false
-                binding.playerView.hideController()
-                binding.topControls.visibility = View.GONE
-                binding.statusContainer.visibility = View.GONE
-                binding.btnLock.visibility = View.GONE
-                binding.lockedProgressBar.visibility = View.VISIBLE
-                player?.pause()
-                danmakuManager?.pause()
-                updateLockedProgress()
-                showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
-            }
-            // 重置起始位置，使后续 MOVE 基于当前位置计算增量
-            longPressStartX = event.x
-            longPressStartY = event.y
-            return
+            binding.playerView.useController = false
+            binding.playerView.hideController()
+            binding.topControls.visibility = View.GONE
+            binding.statusContainer.visibility = View.GONE
+            binding.btnLock.visibility = View.GONE
+            binding.lockedProgressBar.visibility = View.VISIBLE
+        } else {
+            // 垂直手势：记录起始亮度/音量，之后按绝对位移线性映射
+            gestureStartBrightness = window.attributes.screenBrightness.let { if (it < 0) 0.5f else it }
+            gestureStartVolumeFloat = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+            gestureVolumeApplied = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         }
+        // 锁定后立即用已累积的位移执行一次调节，不浪费这次 MOVE
+        handleGestureMove(event)
+    }
 
+    /**
+     * 拖动手势的 MOVE 处理（绝对位移线性映射，手感与触摸采样率无关）：
+     * - 水平：手势起点到当前位置的总位移 → 预览 seek 位置（只更新 UI，不真正 seek）
+     * - 垂直：总位移 → 亮度/音量（左半屏亮度，右半屏音量）
+     */
+    private fun handleGestureMove(event: MotionEvent) {
         when (gestureDirection) {
             GESTURE_DIR_HORIZONTAL -> {
-                val maxSeekMs = player?.duration?.coerceAtLeast(1L) ?: 90_000L
-                val offsetMs = (deltaX / screenWidth * maxSeekMs).toLong()
-                seekTargetMs = (seekBaseMs + offsetMs).coerceIn(0L, player?.duration ?: 0L)
+                val durationMs = player?.duration ?: 0L
+                val maxSeekMs = durationMs.coerceAtLeast(1L)
+                val offsetMs = ((event.x - gestureStartX) / screenWidth * maxSeekMs).toLong()
+                seekTargetMs = (seekBaseMs + offsetMs).coerceIn(0L, durationMs)
 
+                // 帧级节流：仅限制 UI 重绘频率，seek 在抬手时才执行一次
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastGestureApplyMs >= GESTURE_THROTTLE_MS) {
                     lastGestureApplyMs = now
-                    player?.seekTo(seekTargetMs)
-                    effectivePositionMs = seekTargetMs
-                    updateLockedProgress()
-                    showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(player?.duration ?: 0L)}")
-                    // 重置基准，使下次 MOVE 基于当前手指位置计算微调
-                    seekBaseMs = seekTargetMs
-                    longPressStartX = event.x
+                    updateSeekPreview()
                 }
             }
             GESTURE_DIR_VERTICAL -> {
-                // 死区：忽略小于 5px 的抖动（华为 HiTouch 会导致微小反方向抖动）
-                if (abs(deltaY) >= 5) {
-                    if (event.x < screenWidth / 2) {
-                        adjustBrightness(deltaY)
-                    } else {
-                        adjustVolume(deltaY)
-                    }
-                    // 更新起始 Y，使下次 MOVE 基于当前位置计算增量
-                    longPressStartY = event.y
+                val totalDeltaY = event.y - gestureStartY
+                if (event.x < screenWidth / 2) {
+                    adjustBrightness(totalDeltaY)
+                } else {
+                    adjustVolume(totalDeltaY)
                 }
             }
         }
     }
 
+    /** 更新拖动过程中的进度预览 UI（只改显示，不 seek） */
+    private fun updateSeekPreview() {
+        val durationMs = player?.duration ?: 0L
+        binding.tvLockedPosition.text = formatTime(seekTargetMs)
+        binding.tvLockedDuration.text = formatTime(durationMs)
+        if (durationMs > 0) {
+            binding.progressBarLocked.max = durationMs.toInt().coerceAtLeast(1)
+            binding.progressBarLocked.progress = seekTargetMs.toInt()
+        }
+        showGestureTip("${formatTime(seekTargetMs)} / ${formatTime(durationMs)}")
+    }
+
     /**
-     * 长按手势结束（手指抬起）：
-     * - 水平方向：真正 seek 到预览位置
+     * 拖动手势结束（手指抬起）：
+     * - 水平方向：真正 seek 到预览位置（整个手势只 seek 这一次），并同步弹幕时间轴
      * - 垂直方向：清除提示
      */
-    private fun finishLongPressGesture() {
+    private fun finishGesture() {
         if (gestureDirection == GESTURE_DIR_HORIZONTAL) {
             player?.let { p ->
                 val finalMs = seekTargetMs.coerceIn(0L, p.duration)
                 p.seekTo(finalMs)
-                Log.d(TAG, "快进/快退完成: seekTo=${finalMs}ms")
+                danmakuManager?.seekTo(finalMs)
+                effectivePositionMs = finalMs
+                // 用户主动拖动（尤其拖回片头）不应触发广告回滚检测，抑制一小段时间
+                suppressAdRollbackCheckUntilMs = SystemClock.elapsedRealtime() + 1500L
+                Log.d(TAG, "拖动快进/快退完成: seekTo=${finalMs}ms")
             }
             binding.playerView.useController = true
             binding.lockedProgressBar.visibility = View.GONE
-            if (wasPlayingBeforeSeek) {
-                player?.play()
-                danmakuManager?.resume()
-                wasPlayingBeforeSeek = false
-            }
         }
-        isLongPressing = false
-        gestureDirection = 0
-        seekBaseMs = 0L
-        seekTargetMs = 0L
-        currentVolumeFloat = -1f // 重置音量浮点数
+        resetGestureState()
         hideGestureTip()
     }
 
+    /** 重置手势状态（手势结束或异常中断时调用） */
+    private fun resetGestureState() {
+        isGesturing = false
+        gestureDirection = 0
+        seekBaseMs = 0L
+        seekTargetMs = 0L
+        lastGestureEndTimeMs = SystemClock.elapsedRealtime()
+    }
+
     /**
-     * deltaY：本次 MOVE 的像素增量（上滑为负，下滑为正）
-     * 亮度：上滑变暗，下滑变亮
-     * 阈值：每 300px 对应 1.0 的亮度变化（比之前 400px 更灵敏）
+     * totalDeltaY：手势起点到当前的像素总位移（上滑为负，下滑为正）
+     * 亮度：上滑变暗，下滑变亮；每 300px 对应满量程 1.0
      */
-    private fun adjustBrightness(deltaY: Float) {
+    private fun adjustBrightness(totalDeltaY: Float) {
+        val newBrightness = (gestureStartBrightness - totalDeltaY / 300f).coerceIn(0.05f, 1f)
         val layoutParams = window.attributes
-        if (currentBrightness < 0) {
-            currentBrightness = layoutParams.screenBrightness
-            if (currentBrightness < 0) currentBrightness = 0.5f
-        }
-        val change = -deltaY / 300f
-        currentBrightness = (currentBrightness + change).coerceIn(0.05f, 1f)
-        val newPct = (currentBrightness * 100).roundToInt()
+        val newPct = (newBrightness * 100).roundToInt()
         val oldPct = (layoutParams.screenBrightness * 100).roundToInt()
         if (newPct != oldPct) {
-            layoutParams.screenBrightness = currentBrightness
+            layoutParams.screenBrightness = newBrightness
             window.attributes = layoutParams
             showGestureTip("亮度 ${newPct}%")
         }
     }
 
     /**
-     * deltaY：本次 MOVE 的像素增量（上滑为负，下滑为正）
-     * 音量：上滑升高，下滑降低
-     * 连续调整：每 100px 对应 1 档音量变化（和亮度调节一样丝滑）
+     * totalDeltaY：手势起点到当前的像素总位移（上滑为负，下滑为正）
+     * 音量：上滑升高，下滑降低；每 100px 对应 1 档音量
      */
-    private fun adjustVolume(deltaY: Float) {
-        if (currentVolumeFloat < 0) {
-            currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            currentVolumeFloat = currentVolume.toFloat()
-        }
-        // deltaY 每 100px 对应 1 档音量变化
-        val change = -deltaY / 100f
-        currentVolumeFloat = (currentVolumeFloat + change).coerceIn(0f, maxVolume.toFloat())
-        val newVolume = currentVolumeFloat.roundToInt()
-        if (newVolume != currentVolume) {
-            currentVolume = newVolume
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
-            Log.d(TAG, "音量调节: currentVolume=$currentVolume, change=$change, float=$currentVolumeFloat")
-            showGestureTip("音量 ${if (maxVolume > 0) (currentVolume * 100 / maxVolume) else 0}%")
+    private fun adjustVolume(totalDeltaY: Float) {
+        val newVolumeFloat = (gestureStartVolumeFloat - totalDeltaY / 100f)
+            .coerceIn(0f, maxVolume.toFloat())
+        val newVolume = newVolumeFloat.roundToInt()
+        if (newVolume != gestureVolumeApplied) {
+            gestureVolumeApplied = newVolume
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+            showGestureTip("音量 ${if (maxVolume > 0) (newVolume * 100 / maxVolume) else 0}%")
         }
     }
 
