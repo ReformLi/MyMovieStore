@@ -1,167 +1,291 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  TV 搜索页布局 —— 左右分栏
-  左侧：搜索框 + QR 码 + 搜索历史
-  右侧：搜索结果列表 + 翻页 + 空状态
+  TV / 横屏 搜索页布局 —— 两态互斥
+  · 输入态 layoutSearchInputArea：左栏（可聚焦）= 标题 + 搜索框 + 搜索按钮 + 提示 + 搜索历史；
+    右栏 = 二维码伴侣（不可聚焦，手机扫码搜索）
+  · 结果态 layoutSearchResultPage：整页接管（与首页同款摆放）= 标题（搜索内容）+ 首页式网格结果 + 分页，
+    此时搜索框 / 搜索按钮 / 历史 / 二维码全部隐藏
+  两态 id 与 layout（竖屏）保持一致（ViewBinding 两个限定符都要有全部 id）
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:clipChildren="false"
     android:clipToPadding="false">
 
-    <!-- 左侧：搜索区 -->
+    <!-- ==================== 输入态 ==================== -->
     <LinearLayout
-        android:layout_width="360dp"
+        android:id="@+id/layoutSearchInputArea"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:paddingTop="24dp"
-        android:paddingBottom="16dp"
-        android:paddingStart="24dp"
-        android:paddingEnd="16dp">
+        android:orientation="horizontal"
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
-        <!-- 搜索框 + 按钮 -->
+        <!-- ============ 左侧：搜索控制区（可聚焦） ============ -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_width="360dp"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="top"
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="18dp">
 
-            <EditText
-                android:id="@+id/etSearch"
-                android:layout_width="0dp"
-                android:layout_height="42dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_episode_normal"
-                android:hint="输入影片名称..."
-                android:imeOptions="actionSearch"
-                android:inputType="text"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:singleLine="true"
+            <!-- 标题 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:text="影视搜索"
                 android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:focusable="false" />
 
-            <TextView
-                android:id="@+id/btnSearch"
-                android:layout_width="72dp"
-                android:layout_height="42dp"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_play_button"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:foreground="@drawable/bg_tv_focus_ring"
-                android:gravity="center"
-                android:text="搜索"
-                android:textColor="@color/white"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- QR 码区域 -->
-        <LinearLayout
-            android:id="@+id/layoutQrCode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginTop="20dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/ivQrCode"
-                android:layout_width="160dp"
-                android:layout_height="160dp"
-                android:scaleType="fitCenter" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="手机扫码搜索"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/tvQrUrl"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/colorPrimary"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- 搜索历史 -->
-        <LinearLayout
-            android:id="@+id/layoutSearchHistory"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="20dp"
-            android:visibility="gone">
-
+            <!-- 搜索框 + 搜索按钮（一体化搜索栏） -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:background="@drawable/bg_episode_normal"
+                android:padding="4dp">
 
-                <TextView
+                <EditText
+                    android:id="@+id/etSearch"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
-                    android:text="搜索历史"
+                    android:background="@android:color/transparent"
+                    android:hint="输入影片名称..."
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="10dp"
+                    android:singleLine="true"
                     android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:textColorHint="@color/text_secondary"
+                    android:textSize="15sp"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true" />
 
                 <TextView
-                    android:id="@+id/tvClearHistory"
-                    android:layout_width="wrap_content"
-                    android:layout_height="30dp"
-                    android:background="@drawable/bg_episode_normal"
+                    android:id="@+id/btnSearch"
+                    android:layout_width="84dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_play_button"
                     android:focusable="true"
                     android:focusableInTouchMode="true"
                     android:foreground="@drawable/bg_tv_focus_ring"
                     android:gravity="center"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:text="清空"
-                    android:textColor="@color/colorAccent"
-                    android:textSize="12sp" />
+                    android:text="搜索"
+                    android:textColor="@color/white"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/containerHistoryChips"
+            <!-- 提示 -->
+            <TextView
+                android:id="@+id/tvEmpty"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="vertical" />
+                android:layout_marginStart="2dp"
+                android:layout_marginTop="12dp"
+                android:text="输入关键词后点击搜索"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:focusable="false" />
+
+            <!-- 搜索历史（卡片）：卡片贴合内容；内容超出左栏剩余高度时卡内滚动 -->
+            <LinearLayout
+                android:id="@+id/layoutSearchHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_episode_normal"
+                android:padding="14dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="搜索历史"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:focusable="false" />
+
+                    <TextView
+                        android:id="@+id/tvClearHistory"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:background="@android:color/transparent"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:foreground="@drawable/bg_tv_focus_ring"
+                        android:gravity="center"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:text="清空"
+                        android:textColor="@color/colorAccent"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <ScrollView
+                    android:id="@+id/scrollHistoryChips"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:focusable="false"
+                    android:overScrollMode="never"
+                    android:scrollbarStyle="insideOverlay"
+                    android:scrollbars="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/containerHistoryChips"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </ScrollView>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ============ 右侧：二维码伴侣（整体不可聚焦） ============ -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp"
+            android:paddingStart="18dp"
+            android:paddingEnd="24dp">
+
+            <LinearLayout
+                android:id="@+id/layoutQrCode"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="@drawable/bg_episode_normal"
+                android:padding="24dp">
+
+                <ImageView
+                    android:id="@+id/ivQrCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginBottom="14dp"
+                    android:scaleType="fitCenter"
+                    android:adjustViewBounds="true"
+                    android:focusable="false" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:text="手机扫码搜索"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp"
+                    android:focusable="false" />
+
+                <TextView
+                    android:id="@+id/tvQrUrl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:textColor="@color/colorPrimary"
+                    android:textSize="12sp"
+                    android:focusable="false" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 右侧：搜索结果 -->
+    <!-- ==================== 结果态（整页接管，与首页同款摆放） ==================== -->
     <LinearLayout
-        android:layout_width="0dp"
+        android:id="@+id/layoutSearchResultPage"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="24dp"
+            android:paddingTop="20dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/tvResultTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnBackToSearch"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="14dp"
+                android:background="@drawable/bg_episode_normal"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:foreground="@drawable/bg_tv_focus_ring"
+                android:gravity="center"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="重新搜索"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvSearchSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="4dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="6dp"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvResultEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="没有搜索到相关影片"
+            android:textColor="@color/text_secondary"
+            android:textSize="16sp"
             android:visibility="gone" />
 
         <androidx.recyclerview.widget.RecyclerView
@@ -171,20 +295,7 @@
             android:layout_weight="1"
             android:clipChildren="false"
             android:clipToPadding="false"
-            android:paddingStart="4dp"
-            android:paddingTop="2dp"
-            android:paddingEnd="4dp"
-            android:paddingBottom="10dp" />
-
-        <TextView
-            android:id="@+id/tvEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="输入关键词后点击搜索"
-            android:textColor="@color/text_secondary"
-            android:textSize="16sp"
+            android:padding="6dp"
             android:visibility="gone" />
 
         <LinearLayout
@@ -202,7 +313,7 @@
 
             <TextView
                 android:id="@+id/btnPrevPage"
-                android:layout_width="96dp"
+                android:layout_width="88dp"
                 android:layout_height="38dp"
                 android:background="@drawable/bg_episode_normal"
                 android:focusable="true"
@@ -224,7 +335,7 @@
 
             <TextView
                 android:id="@+id/btnNextPage"
-                android:layout_width="96dp"
+                android:layout_width="88dp"
                 android:layout_height="38dp"
                 android:background="@drawable/bg_episode_normal"
                 android:focusable="true"

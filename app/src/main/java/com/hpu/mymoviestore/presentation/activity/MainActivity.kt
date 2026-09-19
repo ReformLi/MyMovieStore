@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
@@ -27,12 +28,15 @@ import com.hpu.mymoviestore.databinding.ActivityMainBinding
 import com.hpu.mymoviestore.presentation.fragment.HomeFragment
 import com.hpu.mymoviestore.presentation.fragment.ProfileFragment
 import com.hpu.mymoviestore.presentation.fragment.SearchFragment
+import com.hpu.mymoviestore.presentation.tv.TvContentKeyHandler
 import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.tv.TvInitialFocusProvider
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.update.UpdatePrefs
 import kotlinx.coroutines.launch
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Rect
 
 /**
  * 应用主页面 —— 顶部导航（首页 / 搜索 / 我的） + ViewPager2 承载
@@ -322,16 +326,195 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (navItemViews.isEmpty()) return super.dispatchKeyEvent(event)
         val code = event.keyCode
-        if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) {
+        // 导航栏焦点下的「下键」：把焦点移交给当前内容页首个可聚焦控件（如搜索框），避免焦点丢失
+        if (code == KeyEvent.KEYCODE_DPAD_DOWN && isFocusInNavBar()) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                val target = currentContentInitialFocus()
+                if (target != null) {
+                    target.requestFocus()
+                    return true
+                }
+            }
             return super.dispatchKeyEvent(event)
         }
-        // 焦点不在导航栏上时，左右键仍是内容区的（例如横向 chip 列表）
-        if (!isFocusInNavBar()) return super.dispatchKeyEvent(event)
+        val isHorizontal = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+        val isVertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+        if (!isHorizontal && !isVertical) {
+            return super.dispatchKeyEvent(event)
+        }
+        // 焦点不在导航栏上时，方向键都是内容区的（页内纵向列表、横向 chip 列表等）
+        if (!isFocusInNavBar()) {
+            // 边界保护：ViewPager2 预加载了所有页面（offscreenPageLimit = tabIds.size），
+            // 焦点查找会越过页面边界，把焦点交给相邻（不可见）页的控件，
+            // 表现为「按方向键焦点消失、反方向键也找不回」。此情形吃掉按键，让焦点原地不动。
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                val direction = when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+                    KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+                    else -> View.FOCUS_DOWN
+                }
+                // 先给当前内容页一次「兜底接管」机会（结果网格最后一行按下键 -> 掀起分页栏）。
+                // 原因：RecyclerView.focusSearch 只在自身子树内找候选，「翻出容器」的移动系统做不到。
+                if (currentContentKeyHandler()?.onContentDirectionKey(direction) == true) return true
+                when (classifyFocusMove(direction)) {
+                    FocusMove.ESCAPE_EAT -> return true
+                    FocusMove.UP_HANDLED -> {
+                        handleUpKey()
+                        return true
+                    }
+                    FocusMove.ALLOW -> Unit
+                }
+            }
+            return super.dispatchKeyEvent(event)
+        }
+        // 焦点在导航栏：只有左右键用于切换页签
+        if (!isHorizontal) {
+            return super.dispatchKeyEvent(event)
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             moveNavFocus(if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
         }
         // 导航栏同时只有一个页签可聚焦，左右键一律吃掉，不让焦点系统再去找邻居
         return true
+    }
+
+    /**
+     * 当前内容页向导航栏暴露的「下键」首焦点控件（电视端）。
+     * 实时向当前可见的 Fragment 查询，避免 ViewPager2 复用 Fragment 时缓存过期。
+     */
+    private fun currentContentInitialFocus(): View? {
+        val provider = supportFragmentManager.fragments.firstOrNull {
+            it is TvInitialFocusProvider && it.isResumed
+        } as? TvInitialFocusProvider ?: return null
+        return provider.tvInitialFocusView()
+    }
+
+    /**
+     * 当前内容页的方向键兜底接管者（电视端）。
+     * 同样实时向可见 Fragment 查询，避免 ViewPager2 复用 Fragment 时缓存过期。
+     */
+    private fun currentContentKeyHandler(): TvContentKeyHandler? {
+        return supportFragmentManager.fragments.firstOrNull {
+            it is TvContentKeyHandler && it.isResumed
+        } as? TvContentKeyHandler
+    }
+
+    /** 内容区方向键的处理结论（见 [classifyFocusMove]） */
+    private enum class FocusMove {
+        /** 正常放行，交给系统移动焦点 */
+        ALLOW,
+
+        /** 目标会逃出当前页 -> 吃掉按键，焦点原地不动（即「按了没反应」） */
+        ESCAPE_EAT,
+
+        /** 上键：交给 [handleUpKey] 显式处理（先页内上一层，页内确实没有才回导航栏） */
+        UP_HANDLED,
+    }
+
+    /**
+     * 内容区方向键的「边界保护」：判断按该方向键时焦点的去向。
+     *
+     * ViewPager2 预加载了所有页面（offscreenPageLimit = tabIds.size），焦点查找会越过页面
+     * 边界落到相邻（不可见）页的控件上，导致「焦点消失、反方向键也找不回」。因此：
+     * - 目标在**其他页**内、或页内已无候选 -> 吃掉按键（上键例外，见下）；
+     * - 目标在 ViewPager 之外（顶部导航栏）-> 左右下放行，上键改走 [handleUpKey]；
+     * - 目标在同一页内 -> 正常放行（保留列表滚动等系统行为）。
+     *
+     * 上键为什么要显式接管：系统焦点搜索会把「页内候选」和「页外导航项」放在一起做几何比较，
+     * 而顶部导航项横跨很宽、水平区间几乎覆盖任意页内控件，容易被判为更优 -> 上键一下跳到标签栏，
+     * 观感就是「跳过了一层」。所以上键一律先在本页内找「上一层」，页内确实没有才回导航栏。
+     */
+    private fun classifyFocusMove(direction: Int): FocusMove {
+        val focused = currentFocus ?: return FocusMove.ALLOW
+        val fromPage = pageRootOf(focused) ?: return FocusMove.ALLOW   // 焦点不在页内，不干预
+        val next = focused.focusSearch(direction)
+        if (next == null || next === focused) {
+            // 页内已无候选：上键走「页内上一层 / 导航栏」兜底，其余方向原地不动
+            return if (direction == View.FOCUS_UP) FocusMove.UP_HANDLED else FocusMove.ESCAPE_EAT
+        }
+        val toPage = pageRootOf(next)
+        if (toPage == null) {
+            // 目标在 ViewPager 之外（顶部导航栏）：上键不直接跳过去，先试页内上一层
+            return if (direction == View.FOCUS_UP) FocusMove.UP_HANDLED else FocusMove.ALLOW
+        }
+        if (fromPage === toPage) return FocusMove.ALLOW                // 同页内正常移动
+        // 跨页：会逃到不可见的相邻页
+        return if (direction == View.FOCUS_UP) FocusMove.UP_HANDLED else FocusMove.ESCAPE_EAT
+    }
+
+    /** 上键：先在当前页内找「上一层」的可聚焦控件（只跳一级），页内确实没有才回顶部导航栏 */
+    private fun handleUpKey(): Boolean {
+        val focused = currentFocus
+        val page = focused?.let { pageRootOf(it) }
+        if (focused != null && page != null) {
+            val target = nearestFocusableAbove(focused, page)
+            if (target != null) {
+                target.requestFocus()
+                return true
+            }
+        }
+        return moveFocusToNavBar()
+    }
+
+    /**
+     * 在当前页子树内找「位于 [focused] 上方、且实际可见」的可聚焦控件：
+     * 竖直距离最近者优先，距离相同时取水平最贴近的（同列优先）。
+     *
+     * 只认 [isOnScreen] 通过的候选：被祖先裁掉（溢出容器边界）的视图虽然可聚焦，
+     * 但用户看不见，把焦点交给它就会表现为「焦点消失且找不回」。
+     */
+    private fun nearestFocusableAbove(focused: View, page: View): View? {
+        val pageGroup = page as? ViewGroup ?: return null
+        val views = arrayListOf<View>()
+        pageGroup.addFocusables(views, View.FOCUS_UP)
+        val src = Rect()
+        focused.getDrawingRect(src)
+        pageGroup.offsetDescendantRectToMyCoords(focused, src)
+        var best: View? = null
+        var bestScore = Int.MAX_VALUE
+        for (v in views) {
+            if (v === focused || v === page || !isOnScreen(v)) continue
+            val r = Rect()
+            v.getDrawingRect(r)
+            pageGroup.offsetDescendantRectToMyCoords(v, r)
+            if (r.bottom > src.top) continue                       // 不在上方
+            val vertical = (src.top - r.bottom).coerceAtLeast(0)
+            val horizontal = when {
+                r.right < src.left -> src.left - r.right
+                r.left > src.right -> r.left - src.right
+                else -> 0                                          // 水平有重叠 -> 同列优先
+            }
+            val score = vertical * 1000 + horizontal
+            if (score < bestScore) {
+                bestScore = score
+                best = v
+            }
+        }
+        return best
+    }
+
+    /** 视图是否真的显示在屏幕上（被祖先裁掉的「溢出」子视图不算，避免把焦点交给看不见的控件） */
+    private fun isOnScreen(v: View): Boolean {
+        if (!v.isShown) return false
+        val r = Rect()
+        return v.getGlobalVisibleRect(r) && r.width() > 0 && r.height() > 0
+    }
+
+    /** 把焦点交回顶部导航栏的当前选中页签（上键的兜底路径） */
+    private fun moveFocusToNavBar(): Boolean {
+        return navItemViews.getOrNull(binding.viewPager.currentItem)?.requestFocus() ?: false
+    }
+
+    /** 向上找到 ViewPager2 内部 RecyclerView 的直接子（即某一页的根视图） */
+    private fun pageRootOf(view: View): View? {
+        val pagerRecycler = binding.viewPager.getChildAt(0) ?: return null
+        var cur: View? = view
+        while (cur != null) {
+            if (cur.parent === pagerRecycler) return cur
+            cur = cur.parent as? View
+        }
+        return null
     }
 
     /** 当前焦点是否落在顶部导航栏内（手机 = BottomNavigationView，电视 = tvNavBar） */

@@ -16,7 +16,9 @@ import com.hpu.mymoviestore.presentation.tv.TvFocus
  */
 class VideoAdapter(
     private val onItemClick: (VideoItem) -> Unit,
-    private val onLoadMoreClick: (() -> Unit)? = null
+    private val onLoadMoreClick: (() -> Unit)? = null,
+    /** 搜索结果页用：卡片底部一行显示「视频源」而不是「评分」 */
+    private val sourceMode: Boolean = false
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var items: List<VideoItem> = emptyList()
@@ -95,7 +97,10 @@ class VideoAdapter(
             TvFocus.resetAppearance(binding.root)
             binding.tvTitle.text = video.title
 
-            binding.tvRating.text = if (video.rating.isNotEmpty()) {
+            binding.tvRating.text = if (sourceMode) {
+                // 搜索结果页：同样位置显示来源视频源
+                video.sourceName.ifBlank { "未知来源" }
+            } else if (video.rating.isNotEmpty()) {
                 "评分 ${video.rating}"
             } else {
                 "暂无评分"
