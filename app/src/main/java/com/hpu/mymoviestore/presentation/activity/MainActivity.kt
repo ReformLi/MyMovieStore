@@ -31,6 +31,8 @@ import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.update.UpdatePrefs
 import kotlinx.coroutines.launch
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 
 /**
  * 应用主页面 —— 顶部导航（首页 / 搜索 / 我的） + ViewPager2 承载
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
 
 
     private lateinit var binding: ActivityMainBinding
+    private var isTv: Boolean = false
     private var lastBackPressedTime: Long = 0L
     private var pendingSearchKeyword: String? = null
     private var resetSearchOnNextShow: Boolean = false
@@ -71,14 +74,64 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isTv = TvUiSupport.isTelevision(this)
+        applyOrientation()
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         applySystemBarInsets()
 
         setupViewPager()
         setupBottomNavigation()
+        applyUiVisibility(isTv)
         setupBackPressed()
         checkUpdateOnLaunch()
+    }
+
+    /** 屏幕方向：TV 强制横屏；手机读取 SharedPreferences("app_settings") 的 user_landscape 决定横竖屏 */
+    private fun applyOrientation() {
+        requestedOrientation = if (isTv) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            val landscape = getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE)
+                .getBoolean(KEY_USER_LANDSCAPE, false)
+            if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
+    /**
+     * 双形态 UI 显隐：TV 端隐藏手机专属导航（底部 BottomNavigationView），显示电视页签簇；
+     * 手机端相反。
+     */
+    private fun applyUiVisibility(tv: Boolean) {
+        if (tv) {
+            binding.bottomNavigation.visibility = View.GONE
+            binding.tvNavBar?.visibility = View.VISIBLE
+        } else {
+            binding.bottomNavigation.visibility = View.VISIBLE
+            binding.tvNavBar?.visibility = View.GONE
+        }
+    }
+
+    /**
+     * 配置变化（横竖屏切换）不重建 Activity（清单已声明 configChanges），
+     * 因此需在此手动重新 inflate 布局、重建 binding、恢复 UI 状态与 TV 焦点。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyOrientation()
+        val currentItem = binding.viewPager.currentItem
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        applySystemBarInsets()
+        setupViewPager()
+        setupBottomNavigation()
+        applyUiVisibility(isTv)
+        binding.viewPager.currentItem = currentItem
+        if (isTv) {
+            navItemViews.getOrNull(currentItem)?.requestFocus()
+        }
     }
 
     /**
@@ -212,7 +265,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // TV 适配：电视端用紧凑的「药丸」页签簇替代铺满整行的 BottomNavigationView
-        if (TvUiSupport.isTelevision(this)) {
+        if (isTv) {
             setupTvNavBar()
         }
     }
@@ -226,8 +279,7 @@ class MainActivity : AppCompatActivity() {
      * 选中逻辑仍统一走 [binding.viewPager]，与手机端完全一致；焦点行为见 [syncNavFocusability]。
      */
     private fun setupTvNavBar() {
-        binding.bottomNavigation.visibility = View.GONE
-        binding.tvNavBar.visibility = View.VISIBLE
+        // 显隐由 applyUiVisibility(isTv) 统一处理（onCreate 与 onConfigurationChanged 中调用）
 
         val entries = listOf(
             Triple(R.id.nav_home, R.drawable.ic_home, R.string.home),
@@ -249,7 +301,7 @@ class MainActivity : AppCompatActivity() {
                     binding.viewPager.currentItem = idx
                 }
             }
-            binding.tvNavBar.addView(item)
+            binding.tvNavBar?.addView(item)
             item
         }
         navItemViews = items
@@ -444,6 +496,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val EXIT_INTERVAL_MS = 2_000L
+        private const val PREFS_SETTINGS = "app_settings"
+        private const val KEY_USER_LANDSCAPE = "user_landscape"
     }
 }
 

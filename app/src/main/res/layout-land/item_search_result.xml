@@ -8,6 +8,9 @@
     android:layout_marginTop="7dp"
     android:layout_marginEnd="12dp"
     android:layout_marginBottom="7dp"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:foreground="@drawable/bg_tv_focus_ring"
     app:cardBackgroundColor="@color/surface_background"
     app:cardCornerRadius="16dp"
     app:cardElevation="2dp">

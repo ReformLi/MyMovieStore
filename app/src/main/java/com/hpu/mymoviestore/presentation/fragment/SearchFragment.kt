@@ -100,7 +100,7 @@ class SearchFragment : Fragment() {
     }
 
     private fun createTvLayout(inflater: LayoutInflater, container: ViewGroup?): View {
-        val root = inflater.inflate(R.layout.fragment_search_tv, container, false)
+        val root = inflater.inflate(R.layout.fragment_search, container, false)
         tvRoot = root
         tvEtSearch = root.findViewById(R.id.etSearch)
         tvBtnSearch = root.findViewById(R.id.btnSearch)
