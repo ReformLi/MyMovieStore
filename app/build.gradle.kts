@@ -101,4 +101,7 @@ dependencies {
 
     // HTML 解析库
     implementation(libs.jsoup)
+
+    // QR 码生成（TV 扫码搜索）
+    implementation(libs.zxing.core)
 }
