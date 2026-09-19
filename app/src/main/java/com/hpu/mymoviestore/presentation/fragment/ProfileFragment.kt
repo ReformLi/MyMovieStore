@@ -2,7 +2,6 @@ package com.hpu.mymoviestore.presentation.fragment
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -58,7 +57,6 @@ class ProfileFragment : Fragment() {
         restoreSourceEnabledStates()
         setupThemeToggle()
         setupClickListeners()
-        setupLandscapeSwitch()
         setupTvFocus()
     }
 
@@ -73,7 +71,6 @@ class ProfileFragment : Fragment() {
             binding.cardDownload,
             binding.cardClearCache,
             binding.cardHelp,
-            binding.cardLandscape,
             binding.cardAbout
         ).forEach { TvFocus.applyTo(it, scale = 1.02f) }
         TvFocus.applyTo(binding.btnThemeToggle, scale = 1.1f)
@@ -143,29 +140,6 @@ class ProfileFragment : Fragment() {
         binding.cardAbout.setOnClickListener {
             AboutDialog.newInstance()
                 .show(parentFragmentManager, "AboutDialog")
-        }
-    }
-
-    /**
-     * 手机端横屏开关：持久化到 SharedPreferences("app_settings") 的 "user_landscape"，
-     * 立即生效（改变 MainActivity 方向，触发其 onConfigurationChanged 重新布局）。
-     * TV 端恒为横屏，由 MainActivity 强制，此开关对其无影响。
-     */
-    private fun setupLandscapeSwitch() {
-        val prefs = requireContext().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
-        binding.switchLandscape.isChecked = prefs.getBoolean("user_landscape", false)
-        binding.switchLandscape.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean("user_landscape", isChecked).apply()
-            activity?.requestedOrientation = if (isChecked) {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
-            Toast.makeText(
-                requireContext(),
-                "横屏模式已${if (isChecked) "开启" else "关闭"}",
-                Toast.LENGTH_SHORT
-            ).show()
         }
     }
 

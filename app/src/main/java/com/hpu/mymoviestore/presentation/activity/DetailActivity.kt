@@ -3,6 +3,7 @@ package com.hpu.mymoviestore.presentation.activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
@@ -65,6 +66,9 @@ class DetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDetailBinding
     private lateinit var downloadViewModel: DownloadViewModel
 
+    /** 是否运行在电视端（10-foot UI）：决定下载按钮显隐与初始焦点策略 */
+    private var isTv: Boolean = false
+
     // 当前视频的业务字段（仅用于日志与播放跳转，不持久化收藏）
     private var videoId: Long = 0
     private var videoTitle: String = ""
@@ -104,6 +108,8 @@ class DetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // TV 适配：先判定设备形态 —— 后面的下载按钮显隐、初始焦点都依赖它
+        isTv = com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
         applySystemBarInsets()
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -178,9 +184,22 @@ class DetailActivity : AppCompatActivity() {
         // 初始化 DownloadViewModel
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
 
-        // TV 适配：播放/下载按钮自绘焦点框 + 获焦放大
+        // TV 适配：播放按钮自绘焦点框 + 获焦放大
         TvFocus.applyTo(binding.btnPlay, scale = 1.04f)
-        TvFocus.applyTo(binding.btnDownload, scale = 1.04f)
+        if (isTv) {
+            // 电视端整体隐藏下载入口：文件落在电视本机没有意义，且遥控器操作成本高
+            binding.btnDownload.visibility = View.GONE
+        } else {
+            TvFocus.applyTo(binding.btnDownload, scale = 1.04f)
+        }
+
+        // TV 适配：四个「信息模块」（影片信息 / 导演 / 主演 / 简介）可聚焦但不可点击。
+        // 布局里已写 focusable="true" + foreground 焦点框，这里只补一件事：
+        // 关掉 API 26+ 系统的默认焦点高亮，避免自绘焦点框外面再套一层系统描边。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            listOf(binding.cardInfo, binding.cardDirector, binding.cardActors, binding.cardDescription)
+                .forEach { it.defaultFocusHighlightEnabled = false }
+        }
 
         // 下载按钮
         binding.btnDownload.setOnClickListener {
@@ -204,6 +223,9 @@ class DetailActivity : AppCompatActivity() {
 
         // 5. 读取并显示播放进度（从播放历史）
         loadProgressFromHistory()
+
+        // 6. TV 适配：保证进页面就有焦点落点
+        ensureTvFocus()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -340,6 +362,31 @@ class DetailActivity : AppCompatActivity() {
         binding.btnDownload.isEnabled = selectedEpisode != null || videoUrl.isNotBlank()
         updatePlayButtonText(false)
         loadProgressFromHistory()
+        // 数据就绪后按钮才可用，这里补一次焦点兜底（首次进入时按钮还是 disabled，取不到焦点）
+        ensureTvFocus()
+    }
+
+    /**
+     * TV 适配：确保页面上有焦点落点。
+     *
+     * 电视没有触摸输入，进入页面必须有默认焦点，否则用户要先按一次方向键才「唤醒」焦点。
+     * 详情页的数据是异步加载的（播放按钮初始 disabled，取不到焦点），
+     * 因此这里只做兜底：若此刻页面上没有任何焦点，才把焦点交给可用的主操作按钮；
+     * 数据就绪后会再调用一次（见 applyCrawlerDetail）。
+     */
+    private fun ensureTvFocus() {
+        if (!isTv) return
+        binding.root.post {
+            if (binding.root.findFocus() != null) return@post
+            val target = when {
+                binding.btnPlay.isEnabled -> binding.btnPlay as View
+                binding.layoutPlayLines.childCount > 0 -> binding.layoutPlayLines.getChildAt(0)
+                // 兜底：数据还没回来时按钮是 disabled（取不到焦点），
+                // 至少把焦点停到左上角的影片信息模块上，保证进页面就有落点
+                else -> binding.cardInfo as View
+            }
+            TvFocus.requestInitialFocus(target)
+        }
     }
 
     private fun renderPlayLines() {
@@ -352,6 +399,9 @@ class DetailActivity : AppCompatActivity() {
         }
 
         binding.layoutPlayLinesBlock.visibility = View.VISIBLE
+        // 线路 chip 的横向滚动容器：线路较多时把获焦项滚入可视区（否则焦点可能落在屏幕外的 chip 上）
+        val lineScrollContainer =
+            binding.layoutPlayLines.parent as? android.widget.HorizontalScrollView
         playLines.forEachIndexed { index, line ->
             val chip = TextView(this).apply {
                 text = line.name
@@ -370,8 +420,8 @@ class DetailActivity : AppCompatActivity() {
                     loadProgressFromHistory()
                 }
             }
-            // TV 适配：播放线路可遥控器聚焦
-            TvFocus.applyTo(chip, scale = 1.06f)
+            // TV 适配：播放线路可遥控器聚焦 + 获焦时横向滚入可视区
+            TvFocus.applyTo(chip, scale = 1.06f, scrollContainer = lineScrollContainer)
             val params = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
@@ -398,7 +448,7 @@ class DetailActivity : AppCompatActivity() {
                 textSize = 14f
                 gravity = Gravity.CENTER
                 maxLines = 1
-                setPadding(dp(6), dp(10), dp(6), dp(10))
+                setPadding(dp(6), dp(8), dp(6), dp(8))
                 setTextColor(if (isSelected) Color.WHITE else ContextCompat.getColor(this@DetailActivity, R.color.colorOnSurfaceSecondary))
                 setBackgroundResource(if (isSelected) R.drawable.bg_episode_selected else R.drawable.bg_episode_normal)
                 setOnClickListener {

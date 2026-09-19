@@ -36,10 +36,18 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MyMovieStore"
         tools:targetApi="31">
+        <!--
+          主页面：方向运行时按形态锁定（见 MainActivity.applyOrientation）
+          - 手机（非 TV）：恒竖屏
+          - 电视：恒横屏
+          此处刻意不写 android:screenOrientation：清单分不出形态，写死 portrait 会让电视先按
+          竖屏 inflate 一帧（闪出手机版导航栏）再被运行时改回来。
+          也刻意不写 configChanges：方向与 inflate 时的配置不一致时（如手机横握冷启动），
+          需要系统重建 Activity 才能重新匹配 layout / layout-land，声明了反而会停在错的布局上。
+        -->
         <activity
             android:name=".presentation.activity.MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -52,6 +60,7 @@
             android:exported="false"
             android:parentActivityName=".presentation.activity.MainActivity"
             android:screenOrientation="landscape" />
+        <!-- 播放器：手机与电视都保持横屏 -->
         <activity
             android:name=".presentation.activity.PlayerActivity"
             android:exported="false"

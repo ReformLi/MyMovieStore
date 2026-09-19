@@ -35,7 +35,6 @@ import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.update.UpdatePrefs
 import kotlinx.coroutines.launch
 import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import android.graphics.Rect
 
 /**
@@ -92,21 +91,25 @@ class MainActivity : AppCompatActivity() {
         checkUpdateOnLaunch()
     }
 
-    /** 屏幕方向：TV 强制横屏；手机读取 SharedPreferences("app_settings") 的 user_landscape 决定横竖屏 */
+    /**
+     * 屏幕方向：电视恒横屏（10-foot UI），手机恒竖屏。
+     *
+     * 不做动态切换、没有用户开关 —— 一套代码双形态，形态由 [TvUiSupport.isTelevision] 在启动时定死。
+     *
+     * 必须在 inflate 之前调用：方向决定 `layout/` 还是 `layout-land/` 被选中
+     * （电视要拿到含 tvNavBar 的横屏版导航栏，手机要拿到 BottomNavigationView）。
+     */
     private fun applyOrientation() {
         requestedOrientation = if (isTv) {
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
-            val landscape = getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE)
-                .getBoolean(KEY_USER_LANDSCAPE, false)
-            if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 
     /**
      * 双形态 UI 显隐：TV 端隐藏手机专属导航（底部 BottomNavigationView），显示电视页签簇；
-     * 手机端相反。
+     * 手机端相反。tvNavBar 用空安全调用 —— 竖屏布局里没有该控件（电视端恒走 layout-land）。
      */
     private fun applyUiVisibility(tv: Boolean) {
         if (tv) {
@@ -115,26 +118,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.bottomNavigation.visibility = View.VISIBLE
             binding.tvNavBar?.visibility = View.GONE
-        }
-    }
-
-    /**
-     * 配置变化（横竖屏切换）不重建 Activity（清单已声明 configChanges），
-     * 因此需在此手动重新 inflate 布局、重建 binding、恢复 UI 状态与 TV 焦点。
-     */
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        applyOrientation()
-        val currentItem = binding.viewPager.currentItem
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        applySystemBarInsets()
-        setupViewPager()
-        setupBottomNavigation()
-        applyUiVisibility(isTv)
-        binding.viewPager.currentItem = currentItem
-        if (isTv) {
-            navItemViews.getOrNull(currentItem)?.requestFocus()
         }
     }
 
@@ -283,7 +266,10 @@ class MainActivity : AppCompatActivity() {
      * 选中逻辑仍统一走 [binding.viewPager]，与手机端完全一致；焦点行为见 [syncNavFocusability]。
      */
     private fun setupTvNavBar() {
-        // 显隐由 applyUiVisibility(isTv) 统一处理（onCreate 与 onConfigurationChanged 中调用）
+        // 空安全：tvNavBar 只存在于 layout-land（横屏 / 电视版），竖屏布局没有该控件，
+        // 生成绑定字段为 Nullable。取不到就整个放弃 TV 页签簇，交给 BottomNavigationView。
+        // 显隐由 applyUiVisibility(isTv) 统一处理（onCreate 中调用）。
+        val navBar = binding.tvNavBar ?: return
 
         val entries = listOf(
             Triple(R.id.nav_home, R.drawable.ic_home, R.string.home),
@@ -291,7 +277,7 @@ class MainActivity : AppCompatActivity() {
             Triple(R.id.nav_profile, R.drawable.ic_profile, R.string.profile),
         )
         val items = entries.map { (id, icon, label) ->
-            val item = layoutInflater.inflate(R.layout.item_tv_nav, binding.tvNavBar, false) as android.widget.LinearLayout
+            val item = layoutInflater.inflate(R.layout.item_tv_nav, navBar, false) as android.widget.LinearLayout
             item.id = id
             item.findViewById<android.widget.ImageView>(R.id.ivNavIcon).setImageResource(icon)
             item.findViewById<android.widget.TextView>(R.id.tvNavLabel).setText(label)
@@ -305,7 +291,7 @@ class MainActivity : AppCompatActivity() {
                     binding.viewPager.currentItem = idx
                 }
             }
-            binding.tvNavBar?.addView(item)
+            navBar.addView(item)
             item
         }
         navItemViews = items
@@ -679,8 +665,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val EXIT_INTERVAL_MS = 2_000L
-        private const val PREFS_SETTINGS = "app_settings"
-        private const val KEY_USER_LANDSCAPE = "user_landscape"
     }
 }
 
