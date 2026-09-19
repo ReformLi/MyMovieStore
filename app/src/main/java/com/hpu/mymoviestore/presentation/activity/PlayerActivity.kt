@@ -22,6 +22,7 @@ import android.os.BatteryManager
 import android.util.Log
 import android.util.Rational
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.graphics.Rect
 import android.view.MotionEvent
 import android.view.View
@@ -177,6 +178,11 @@ class PlayerActivity : AppCompatActivity() {
     // 手势起点是否落在系统进度条区域（DOWN 时判定一次）
     private var onProgressBarAtDown = false
 
+    /** 电视形态（遥控器交互）。只用于 UI / 按键行为分支，不触碰播放业务逻辑。 */
+    private val isTv: Boolean by lazy {
+        com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
+    }
+
     // 播放器控制器当前是否显示（由 ControllerVisibilityListener 维护）
     private var isControllerVisible = false
 
@@ -206,6 +212,26 @@ class PlayerActivity : AppCompatActivity() {
         private const val PIP_REQUEST_CODE = 1001
         private const val GESTURE_DIR_HORIZONTAL = 1
         private const val GESTURE_DIR_VERTICAL = 2
+
+        /**
+         * 播放页在电视端接管的按键。
+         *
+         * 之所以要枚举：长按产生的重复事件（repeatCount > 0）必须吞掉而不是透传，
+         * 否则按住左右键会连续跳 10s、按住下键会让进度条反复显隐。
+         */
+        private val TV_KEY_CODES = setOf(
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_BACK
+        )
 
         const val EXTRA_VIDEO_ID = "extra_video_id"
         const val EXTRA_VIDEO_TITLE = "extra_video_title"
@@ -499,8 +525,8 @@ class PlayerActivity : AppCompatActivity() {
                                 }
                                 danmakuManager?.ensureStarted()
                                 danmakuManager?.setPaused(!exoPlayer.isPlaying)
-                                // 确保控制栏显示
-                                binding.playerView.showController()
+                                // 确保控制栏显示（电视端进度条只由遥控器下键唤出，不自动弹出）
+                                if (!isTv) binding.playerView.showController()
                             }
                             Player.STATE_BUFFERING -> Log.d(TAG, "离线播放状态: STATE_BUFFERING")
                             Player.STATE_ENDED -> {
@@ -803,28 +829,35 @@ class PlayerActivity : AppCompatActivity() {
             showCategoryPopup(view)
         }
 
-        // TV 适配：控制栏控件需可被遥控器聚焦（否则电视上无法操作播放控制）
-        listOf(R.id.btnRewind10, R.id.btnPlayPause, R.id.btnForward10,
-            R.id.btnPlayerSettings).forEach { id ->
-            binding.playerView.findViewById<android.view.View>(id)?.let {
+        if (isTv) {
+            // 电视端：播放页只保留「播放/暂停」与「±10s 快进退」两类遥控器操作，
+            // 控件一律不参与焦点导航，全部按键由 dispatchKeyEvent 统一接管
+            // （详见 applyTvPlaybackControls）。
+            applyTvPlaybackControls()
+        } else {
+            // 手机端（触屏）：控制栏控件保持可聚焦（外接遥控器 / 键盘时同样可用）
+            listOf(R.id.btnRewind10, R.id.btnPlayPause, R.id.btnForward10,
+                R.id.btnPlayerSettings).forEach { id ->
+                binding.playerView.findViewById<android.view.View>(id)?.let {
+                    com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.12f)
+                }
+            }
+            // exo_fullscreen 由 media3-ui 库定义（非传递 R 类），需用库的 R 访问
+            binding.playerView.findViewById<android.view.View>(
+                androidx.media3.ui.R.id.exo_fullscreen
+            )?.let {
                 com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.12f)
             }
-        }
-        // exo_fullscreen 由 media3-ui 库定义（非传递 R 类），需用库的 R 访问
-        binding.playerView.findViewById<android.view.View>(
-            androidx.media3.ui.R.id.exo_fullscreen
-        )?.let {
-            com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.12f)
-        }
-        binding.playerView.findViewById<android.view.View>(R.id.switchDanmaku)?.let {
-            com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
-        }
-        binding.playerView.findViewById<android.view.View>(R.id.spinnerDanmakuSource)?.let {
-            com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
-        }
-        // TV 适配：顶部/侧边按钮（返回 / 画中画 / 旋转 / 锁定）加焦点框 + 放大
-        listOf(binding.btnBack, binding.btnPiP, binding.btnRotate, binding.btnLock).forEach {
-            com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.15f)
+            binding.playerView.findViewById<android.view.View>(R.id.switchDanmaku)?.let {
+                com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
+            }
+            binding.playerView.findViewById<android.view.View>(R.id.spinnerDanmakuSource)?.let {
+                com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
+            }
+            // 顶部/侧边按钮（返回 / 画中画 / 旋转 / 锁定）加焦点框 + 放大
+            listOf(binding.btnBack, binding.btnPiP, binding.btnRotate, binding.btnLock).forEach {
+                com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.15f)
+            }
         }
 
         // 弹幕控制条跟随播放器控制栏显示/隐藏
@@ -842,6 +875,28 @@ class PlayerActivity : AppCompatActivity() {
 
         // 初始化状态信息显示（时间、电量、网络）
         initStatusInfo()
+    }
+
+    /**
+     * 电视端播放页的「最小操作面」。
+     *
+     * 除遥控器的 播放/暂停、±10s 快进退、进度条显隐 之外，播放页不提供第二套操作路径，
+     * 因此这里把控件“能拿到焦点”的能力整体关掉（而不是逐个改布局里的 focusable 属性）：
+     * - 控制栏由 media3 动态 inflate（还含库自带的 exo_fullscreen），逐个改容易漏；
+     *   给 PlayerView 设 [ViewGroup.FOCUS_BLOCK_DESCENDANTS] 可一次封死其内部全部后代。
+     * - 顶部 / 侧边按钮（返回、画中画、旋转、锁定）直接置为不可聚焦。
+     *
+     * 这样 `currentFocus` 恒为空，遥控器按键必定落到 [dispatchKeyEvent]，行为完全可预测。
+     */
+    @UnstableApi
+    private fun applyTvPlaybackControls() {
+        binding.playerView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        listOf(binding.btnBack, binding.btnPiP, binding.btnRotate, binding.btnLock).forEach {
+            it.isFocusable = false
+            it.isFocusableInTouchMode = false
+        }
+        // 进页面时进度条是收起的：显隐只由遥控器按键决定
+        binding.playerView.hideController()
     }
 
     private fun showCategoryPopup(anchor: View) {
@@ -1987,51 +2042,62 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * TV 适配：遥控器按键映射（仅电视端生效，手机端原样交给系统）。
      *
-     * - 控制栏隐藏时：左右 = ±10s 快进退，上下 = 唤出控制栏并获得焦点，OK = 播放/暂停
-     * - 焦点在控制栏控件上时：完全交给系统（否则会破坏控件间的方向键导航）
+     * 播放页只承担两类操作，其余按键一律不做适配（默认什么也不做）：
+     * - **确定键**（OK / 回车 / 遥控器播放暂停键）→ 播放 / 暂停
+     * - **左右键** → 后退 / 快进 10 秒
+     * - **下键** → 唤出进度条；进度条已在时，按 上 / 下 / 返回 收起它
+     *
+     * 两点实现约束：
+     * 1. 电视端所有控件都不可聚焦（见 [applyTvPlaybackControls]），`currentFocus` 恒为空，
+     *    按键必定落到这里，不会再出现「焦点停在控制栏按钮上、确定键变成按钮点击」的第二套行为。
+     * 2. 长按产生的重复事件（`repeatCount > 0`）要吞掉而不是透传，即「一次按键 = 一次操作」：
+     *    否则按住左右键会连续跳 10s、按住下键会让进度条反复显隐。
      */
-    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (!com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)) {
-            return super.dispatchKeyEvent(event)
-        }
-        if (event.action != android.view.KeyEvent.ACTION_DOWN) {
-            return super.dispatchKeyEvent(event)
-        }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!isTv) return super.dispatchKeyEvent(event)
+        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         if (isScreenLocked) return super.dispatchKeyEvent(event)
-
-        // 焦点已有可交互落点（控制栏按钮 / 返回 / 画中画等）：交给系统做控件导航与点击
-        if (hasInteractiveFocus()) return super.dispatchKeyEvent(event)
+        // 未接管的按键原样交给系统（不做任何适配）
+        if (event.keyCode !in TV_KEY_CODES) return super.dispatchKeyEvent(event)
+        // 长按重复事件：不做操作，但要吞掉
+        if (event.repeatCount > 0) return true
 
         return when (event.keyCode) {
-            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                // 没有进度条 → 唤出；已有进度条 → 收起
+                if (isControllerVisible) binding.playerView.hideController()
+                else binding.playerView.showController()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                // 上键只用于收起进度条；没有进度条时什么也不做（不会唤出）
+                if (isControllerVisible) binding.playerView.hideController()
+                true
+            }
+            KeyEvent.KEYCODE_BACK -> {
+                // 有进度条 → 先收起；没有进度条 → 交回系统（退出播放页）
+                if (isControllerVisible) {
+                    binding.playerView.hideController()
+                    true
+                } else {
+                    super.dispatchKeyEvent(event)
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                togglePlayPause()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_MEDIA_REWIND -> {
                 seekBy(-SEEK_STEP_MS)
                 true
             }
-            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                 seekBy(SEEK_STEP_MS)
-                true
-            }
-            android.view.KeyEvent.KEYCODE_DPAD_UP,
-            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                // 电视惯例：上下唤出控制栏，并把焦点交给播放/暂停按钮
-                binding.playerView.showController()
-                binding.playerView.findViewById<android.view.View>(R.id.btnPlayPause)?.let {
-                    it.post { it.requestFocus() }
-                }
-                true
-            }
-            android.view.KeyEvent.KEYCODE_DPAD_CENTER,
-            android.view.KeyEvent.KEYCODE_ENTER,
-            android.view.KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                if (!isControllerVisible) {
-                    binding.playerView.showController()
-                } else {
-                    togglePlayPause()
-                }
-                true
-            }
-            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                togglePlayPause()
                 true
             }
             else -> super.dispatchKeyEvent(event)
@@ -2046,23 +2112,6 @@ class PlayerActivity : AppCompatActivity() {
             p.seekTo(newPos)
             danmakuManager?.seekTo(newPos)
         }
-    }
-
-    /**
-     * 当前焦点是否落在可交互控件上（方向键/确定键应交给系统，而不是被播放器抢走）。
-     *
-     * 覆盖两类落点：
-     * - 播放器控制栏内部按钮（快退 / 播放暂停 / 快进 / 设置 / 全屏）
-     * - 播放器外部的可点击控件（顶部返回 / 画中画 / 旋转 / 锁定）
-     *
-     * 若只判断控制栏内部，焦点在「返回」按钮上按确定会被误判为「播放/暂停」而无法返回。
-     */
-    private fun hasInteractiveFocus(): Boolean {
-        val focused = currentFocus ?: return false
-        // 焦点在 PlayerView 内部（控制栏按钮）→ 交回系统
-        if (binding.playerView.findFocus() != null) return true
-        // 焦点在播放器外部的可点击控件（顶部/侧边按钮）→ 交回系统
-        return focused.isClickable
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
