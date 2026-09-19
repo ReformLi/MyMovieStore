@@ -9,6 +9,7 @@ import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.databinding.DialogConfirmBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 通用确认弹窗（居中卡片风格，见《UI 视觉统一规范文档》5.3.1）。
@@ -59,6 +60,8 @@ object ConfirmDialog {
         }
 
         dialog.show()
+        // TV 适配：确定 / 取消 按钮可遥控器聚焦
+        TvFocus.applyToDialogButtons(binding.root)
         // 卡片本身负责圆角与背景，窗口透明 + 屏宽 85%
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))

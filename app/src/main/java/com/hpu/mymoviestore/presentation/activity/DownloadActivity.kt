@@ -18,6 +18,8 @@ import com.hpu.mymoviestore.presentation.adapter.CompletedAdapter
 import com.hpu.mymoviestore.presentation.adapter.DownloadPagerAdapter
 import com.hpu.mymoviestore.presentation.adapter.DownloadingAdapter
 import com.hpu.mymoviestore.presentation.dialog.ConfirmDialog
+import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 
 /**
@@ -31,6 +33,12 @@ import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
  * - 使用 DownloadViewModel 观察数据变化
  */
 class DownloadActivity : AppCompatActivity() {
+
+    /** TV 适配：电视端放大 UI 密度（10-foot UI），手机端原样返回 */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.hpu.mymoviestore.presentation.tv.TvUiSupport.wrapContext(newBase))
+    }
+
 
     companion object {
         private const val TAG = "DownloadActivity"
@@ -63,6 +71,8 @@ class DownloadActivity : AppCompatActivity() {
     // 多选模式状态
     private var isInMultiSelectMode = false
     private var hasCheckedInitialTab = false
+    /** TV 适配：是否已完成首次焦点定位（避免从弹窗返回时打断用户当前位置） */
+    private var hasSetInitialFocus = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +87,15 @@ class DownloadActivity : AppCompatActivity() {
         refreshStorage()
         applySystemBarInsets()
 
+    }
+
+    /** TV 适配：首次进入页面时把焦点交给当前页列表首项（后续返回不打断用户当前位置） */
+    override fun onResume() {
+        super.onResume()
+        if (!hasSetInitialFocus) {
+            hasSetInitialFocus = true
+            focusCurrentPageList()
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -175,8 +194,31 @@ class DownloadActivity : AppCompatActivity() {
                 if (position == DownloadPagerAdapter.PAGE_COMPLETED && isInMultiSelectMode) {
                     invalidateOptionsMenu()
                 }
+                // TV 适配：切换标签后焦点落到该页列表首项
+                focusCurrentPageList()
             }
         })
+
+        // TV 适配：顶部「下载中 / 已完成」标签可遥控器聚焦
+        for (i in 0 until binding.tabLayout.tabCount) {
+            binding.tabLayout.getTabAt(i)?.view?.let { TvFocus.applyFocusableOnly(it) }
+        }
+    }
+
+    /**
+     * TV 适配：把焦点交给当前页列表的首项（电视进入页面/切换标签时的默认落点）。
+     */
+    private fun focusCurrentPageList() {
+        if (!TvUiSupport.isTelevision(this)) return
+        binding.viewPager.post {
+            val inner = (binding.viewPager.getChildAt(0)
+                as? androidx.recyclerview.widget.RecyclerView) ?: return@post
+            val holder = inner.findViewHolderForAdapterPosition(binding.viewPager.currentItem)
+                ?: return@post
+            (holder.itemView as? androidx.recyclerview.widget.RecyclerView)?.let {
+                TvFocus.focusFirstItem(it)
+            }
+        }
     }
 
     private fun setupObservers() {

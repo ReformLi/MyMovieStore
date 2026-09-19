@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  焦点描边选择器：仅「获得焦点」时显示焦点框，其余状态完全透明。
+  由 TvFocus.attachFocusRing() 挂到 View 的 foreground，状态切换由系统焦点机制驱动。
+
+  注意：**不要**给 state_selected 也挂焦点框。
+  导航栏页签、TabLayout 分类页签、首页子分类 chip 这些控件在「被选中」时会长期处于
+  state_selected=true，一旦把它也当作焦点态，焦点框就会永久停在那一个控件上
+  （表现为「焦点框一直卡在首页/全部上」，且真正的焦点移动反而看不出来）。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:drawable="@drawable/shape_tv_focus_ring" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

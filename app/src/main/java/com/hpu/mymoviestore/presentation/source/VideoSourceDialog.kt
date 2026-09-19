@@ -15,6 +15,7 @@ import com.google.android.material.button.MaterialButton
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.source.VideoSource
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 视频源管理（居中卡片 Dialog）。
@@ -71,6 +72,9 @@ class VideoSourceDialog : DialogFragment() {
         btnCancel.setOnClickListener { dismiss() }
 
         updateSelectAllText()
+
+        // TV 适配：全选 / 确定 / 取消 按钮可遥控器聚焦
+        TvFocus.applyToDialogButtons(view)
     }
 
     override fun onStart() {
@@ -156,10 +160,12 @@ class VideoSourceDialog : DialogFragment() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val view = LayoutInflater.from(parent.context)
                 .inflate(R.layout.item_video_source, parent, false)
+            TvFocus.applyTo(view, 1.02f)
             return ViewHolder(view)
         }
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            TvFocus.resetAppearance(holder.itemView)
             holder.tvName.text = sources[position].sourceName
             bindCheckState(holder.tvCheck, checked[position])
         }

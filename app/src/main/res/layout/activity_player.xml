@@ -61,6 +61,8 @@
             android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="返回"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:padding="8dp"
             android:src="@drawable/ic_player_back" />
 
@@ -137,6 +139,8 @@
             android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="画中画"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:padding="8dp"
             android:src="@drawable/ic_player_pip" />
 
@@ -146,6 +150,8 @@
             android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="切换屏幕方向"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:padding="8dp"
             android:src="@drawable/ic_player_rotate" />
     </LinearLayout>
@@ -158,6 +164,8 @@
         android:layout_marginStart="20dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="锁定屏幕"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
         android:padding="10dp"
         android:src="@drawable/ic_player_unlock"
         android:visibility="gone"

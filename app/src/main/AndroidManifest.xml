@@ -11,10 +11,23 @@
     <!-- 应用内更新：安装下载的 APK（Android 8.0+ 需用户授予「安装未知应用」权限） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      Android TV 适配（required=false：不排除手机/平板，同一 APK 双形态运行）
+      - leanback：声明支持电视形态
+      - touchscreen：声明不依赖触摸屏（电视无触摸输入）
+    -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:name=".MovieApplication"
         android:usesCleartextTraffic="true"
         android:allowBackup="true"
+        android:banner="@drawable/tv_banner"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -25,36 +38,43 @@
         tools:targetApi="31">
         <activity
             android:name=".presentation.activity.MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- 电视启动器入口 -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
         <activity
             android:name=".presentation.activity.DetailActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity" />
+            android:parentActivityName=".presentation.activity.MainActivity"
+            android:screenOrientation="landscape" />
         <activity
             android:name=".presentation.activity.PlayerActivity"
             android:exported="false"
             android:parentActivityName=".presentation.activity.DetailActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:screenOrientation="landscape"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
         <activity
             android:name=".presentation.activity.HistoryActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity" />
+            android:parentActivityName=".presentation.activity.MainActivity"
+            android:screenOrientation="landscape" />
         <activity
             android:name=".presentation.activity.DownloadActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity" />
+            android:parentActivityName=".presentation.activity.MainActivity"
+            android:screenOrientation="landscape" />
         <!-- Cloudflare 人工验证兜底窗口（自动过盾失败时弹出，透明浮层） -->
         <activity
             android:name=".presentation.challenge.CloudflareChallengeActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.MyMovieStore.Challenge" />
         <service
             android:name=".data.download.DownloadService"

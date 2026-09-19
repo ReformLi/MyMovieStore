@@ -8,6 +8,7 @@ import coil.load
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.ItemHomeLoadMoreBinding
 import com.hpu.mymoviestore.databinding.ItemVideoBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 视频列表适配器 —— 数据源来自 JSON 挡板
@@ -59,14 +60,20 @@ class VideoAdapter(
                 parent,
                 false
             )
-            LoadMoreViewHolder(binding)
+            LoadMoreViewHolder(binding).apply {
+                // TV 适配：「加载更多」也需可聚焦，否则遥控器无法触发翻页
+                TvFocus.applyTo(binding.root, scale = 1.02f)
+            }
         } else {
             val binding = ItemVideoBinding.inflate(
                 LayoutInflater.from(parent.context),
                 parent,
                 false
             )
-            VideoViewHolder(binding)
+            VideoViewHolder(binding).apply {
+                // TV 适配：卡片可被遥控器聚焦 + 获焦放大
+                TvFocus.applyTo(binding.root)
+            }
         }
     }
 
@@ -84,6 +91,8 @@ class VideoAdapter(
         RecyclerView.ViewHolder(binding.root) {
 
         fun bind(video: VideoItem) {
+            // TV 适配：复用项恢复原状，避免残留上一项的放大状态
+            TvFocus.resetAppearance(binding.root)
             binding.tvTitle.text = video.title
 
             binding.tvRating.text = if (video.rating.isNotEmpty()) {

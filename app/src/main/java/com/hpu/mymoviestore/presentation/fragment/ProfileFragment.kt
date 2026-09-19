@@ -28,6 +28,7 @@ import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.help.HelpDialog
 import com.hpu.mymoviestore.presentation.settings.ThemeManager
 import com.hpu.mymoviestore.presentation.source.VideoSourceDialog
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.update.AboutDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +57,23 @@ class ProfileFragment : Fragment() {
         restoreSourceEnabledStates()
         setupThemeToggle()
         setupClickListeners()
+        setupTvFocus()
+    }
+
+    /**
+     * TV 适配：功能卡片与主题切换按钮需可被遥控器聚焦，否则电视上无法操作。
+     * 弹幕开关（SwitchMaterial）本身可聚焦，不重复处理其父卡片。
+     */
+    private fun setupTvFocus() {
+        listOf(
+            binding.cardVideoSource,
+            binding.cardHistory,
+            binding.cardDownload,
+            binding.cardClearCache,
+            binding.cardHelp,
+            binding.cardAbout
+        ).forEach { TvFocus.applyTo(it, scale = 1.02f) }
+        TvFocus.applyTo(binding.btnThemeToggle, scale = 1.1f)
     }
 
     /** 主题切换：按当前模式渲染按钮图标与头部背景图；点击切换后 Activity 自动重建，本方法随之再次刷新 */

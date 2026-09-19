@@ -1,25 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  主页面容器：顶部导航（首页 / 搜索 / 我的） + ViewPager2 内容区。
+
+  说明：控件 id 仍沿用 bottomNavigation（历史命名），但布局位置已改为**顶部**，
+  受下方 1dp 分隔线 `navDivider` 与内容区分隔；如需彻底改名请同步 MainActivity 的引用。
+-->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.viewpager2.widget.ViewPager2
-        android:id="@+id/viewPager"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/bottomNavigation"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNavigation"
         android:layout_width="0dp"
         android:layout_height="55dp"
+        android:background="@color/colorSurface"
         android:paddingTop="2dp"
         android:paddingBottom="2dp"
+        app:elevation="0dp"
         app:itemIconSize="20dp"
         app:itemPaddingTop="0dp"
         app:itemPaddingBottom="2dp"
@@ -27,9 +26,28 @@
         app:itemTextColor="@color/bottom_nav_color"
         app:itemTextAppearanceActive="@style/BottomNavText"
         app:itemTextAppearanceInactive="@style/BottomNavText"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:menu="@menu/bottom_nav_menu" />
+
+    <!-- 导航栏与内容区之间的细分隔线（导航移到顶部后需要明确边界） -->
+    <View
+        android:id="@+id/navDivider"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:background="@color/divider"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/bottomNavigation" />
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPager"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:menu="@menu/bottom_nav_menu" />
+        app:layout_constraintTop_toBottomOf="@id/navDivider" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

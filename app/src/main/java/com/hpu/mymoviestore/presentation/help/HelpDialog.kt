@@ -9,6 +9,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.DialogFragment
 import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 帮助页（居中卡片 Dialog）。
@@ -32,6 +33,8 @@ class HelpDialog : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         view.findViewById<TextView>(R.id.tvClose).setOnClickListener { dismiss() }
+        // TV 适配：关闭按钮可遥控器聚焦（弹窗内无可聚焦控件时遥控器会"失去落点"）
+        TvFocus.applyToDialogButtons(view)
     }
 
     override fun onStart() {

@@ -1,0 +1,214 @@
+package com.hpu.mymoviestore.presentation.tv
+
+import android.os.Build
+import android.view.View
+import androidx.annotation.DrawableRes
+import androidx.core.content.ContextCompat
+import com.hpu.mymoviestore.R
+
+/**
+ * 遥控器（D-pad）焦点支持工具 —— 仅作用于 UI 层。
+ *
+ * 电视端没有触摸屏，所有交互依赖方向键 + 确定键，因此：
+ * 1. 可点击的视图必须 **可聚焦**（`focusable`），否则遥控器无法选中；
+ * 2. 获焦时必须有 **明显的视觉反馈**（描边焦点框 + 轻微放大），否则用户不知道当前在哪；
+ * 3. 失焦/复用时必须 **恢复原状**，避免 RecyclerView 复用导致「多个项同时放大」。
+ *
+ * 手机端影响：D-pad 焦点只有在外接键盘/遥控器时才可见，手机触屏使用无任何变化。
+ */
+object TvFocus {
+
+    /** 获焦放大倍数（1.0 表示不放大） */
+    const val FOCUS_SCALE = 1.08f
+
+    /** 焦点动画时长（毫秒） */
+    private const val ANIM_MS = 140L
+
+    /**
+     * 让视图支持遥控器聚焦，并在获焦时放大 + 抬升。
+     *
+     * @param scale 获焦放大倍数，传 1f 表示不放大（仅保留焦点框）
+     * @param scrollContainer 非空时，获焦后自动把该视图滚动到容器可视区域
+     *                        （横向列表用；与放大动画共用同一个焦点监听，避免互相覆盖）
+     * @param ringRes 焦点框 drawable；默认是贴边描边，占满整屏宽度的控件
+     *                （如顶部导航项）应改用带内缩的 [R.drawable.bg_tv_nav_focus]
+     */
+    fun applyTo(
+        view: View,
+        scale: Float = FOCUS_SCALE,
+        scrollContainer: View? = null,
+        @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring
+    ) {
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+        // API 26+ 系统默认焦点高亮关掉（自绘焦点框，避免双重描边）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            view.defaultFocusHighlightEnabled = false
+        }
+        attachFocusRing(view, ringRes)
+        view.setOnFocusChangeListener { v, hasFocus ->
+            animateFocus(v, hasFocus, scale)
+            if (hasFocus && scrollContainer != null) scrollIntoView(v, scrollContainer)
+        }
+        // 回收复用时可能残留放大状态，重置一次
+        resetAppearance(view)
+    }
+
+    /** 仅让视图可聚焦（不放大动画），适用于已自带焦点态背景的控件 */
+    fun applyFocusableOnly(view: View, @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring) {
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            view.defaultFocusHighlightEnabled = false
+        }
+        attachFocusRing(view, ringRes)
+    }
+
+    /**
+     * 挂载焦点描边（作为 foreground，不覆盖视图自身 background）。
+     * 描边由 StateListDrawable 按 state_focused 自动切换，无需手动控制。
+     *
+     * 若视图已有 foreground（如点击涟漪），则用 LayerDrawable 叠加：
+     * 原效果在下、焦点描边在上，两者都不丢失。
+     */
+    fun attachFocusRing(view: View, @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring) {
+        val ring = ContextCompat.getDrawable(view.context, ringRes) ?: return
+        val existing = view.foreground
+        when {
+            existing == null -> view.foreground = ring
+            existing.constantState == ring.constantState -> Unit // 布局 XML 已设置同款焦点框
+            existing is android.graphics.drawable.LayerDrawable -> Unit // 已叠加过，避免重复包裹
+            else -> view.foreground = android.graphics.drawable.LayerDrawable(arrayOf(existing, ring))
+        }
+    }
+
+    /** 恢复未聚焦外观（RecyclerView 复用项绑定时调用，防止残留放大）；正在聚焦的项不动 */
+    fun resetAppearance(view: View) {
+        if (view.isFocused) return
+        view.scaleX = 1f
+        view.scaleY = 1f
+        view.translationZ = 0f
+    }
+
+    private fun animateFocus(view: View, hasFocus: Boolean, scale: Float) {
+        view.animate()
+            .scaleX(if (hasFocus) scale else 1f)
+            .scaleY(if (hasFocus) scale else 1f)
+            .setDuration(ANIM_MS)
+            .start()
+        // 获焦项抬高，视觉上浮于相邻项之上（避免放大后被邻居遮挡）
+        view.translationZ = if (hasFocus) dp(view, 8f) else 0f
+    }
+
+    private fun dp(view: View, value: Float): Float =
+        value * view.resources.displayMetrics.density
+
+    /**
+     * 请求初始焦点：布局/数据就绪后调用，保证遥控器一进入页面就有落点
+     * （否则用户需先按方向键才能"唤醒"焦点）。
+     */
+    fun requestInitialFocus(view: View) {
+        view.post {
+            if (!view.isFocused && view.isShown) view.requestFocus()
+        }
+    }
+
+    /**
+     * 让 RecyclerView 的首个可见项获得焦点（电视进入列表页时的默认落点）。
+     * 列表尚未完成布局时先滚动到顶部再取焦点。
+     */
+    fun focusFirstItem(recyclerView: androidx.recyclerview.widget.RecyclerView) {
+        recyclerView.post {
+            val lm = recyclerView.layoutManager ?: return@post
+            val first = lm.findViewByPosition(0)
+            if (first != null) {
+                if (!first.isFocused) first.requestFocus()
+            } else {
+                recyclerView.scrollToPosition(0)
+                recyclerView.post {
+                    recyclerView.layoutManager?.findViewByPosition(0)?.requestFocus()
+                }
+            }
+        }
+    }
+
+    /**
+     * 列表项自动滚动到焦点位置：横向容器（如首页子分类）在获焦时滚动使该项可见。
+     *
+     * 注意：这会覆盖视图已有的 OnFocusChangeListener。若视图同时需要放大动画，
+     * 请改用 `applyTo(view, scale, scrollContainer)`，两个效果共用一个监听。
+     */
+    fun scrollIntoViewOnFocus(view: View, container: View) {
+        view.setOnFocusChangeListener { v, hasFocus ->
+            if (hasFocus) scrollIntoView(v, container)
+        }
+    }
+
+    /** 把视图滚动到容器可视区域（横向容器居中显示） */
+    private fun scrollIntoView(v: View, container: View) {
+        container.post {
+            val rect = android.graphics.Rect()
+            v.getDrawingRect(rect)
+            (container as? android.widget.HorizontalScrollView)?.let { hsv ->
+                hsv.offsetDescendantRectToMyCoords(v, rect)
+                val target = (rect.left - (hsv.width - rect.width()) / 2)
+                    .coerceAtLeast(0)
+                hsv.smoothScrollTo(target, 0)
+            }
+        }
+    }
+
+    /**
+     * 递归为 root 内所有「可点击」的控件挂上焦点支持。
+     *
+     * 通用场景：控件结构不确定、或列表/菜单项由框架动态创建（弹窗按钮、底部/顶部导航项等），
+     * 逐个布局文件手改容易遗漏。
+     *
+     * 已是可聚焦的控件不会被改动；ViewGroup 形式的点击目标只加焦点框、不做放大
+     * （避免整行容器放大后溢出边界）。
+     *
+     * @param root 容器根视图（弹窗根视图、导航栏等）
+     * @param scale 叶子控件的获焦放大倍数
+     */
+    fun applyToClickables(root: View, scale: Float = FOCUS_SCALE) {
+        root.post { walkClickable(root, scale) }
+    }
+
+    /** 语义化别名：[applyToClickables] 用于弹窗场景 */
+    fun applyToDialogButtons(root: View, scale: Float = FOCUS_SCALE) =
+        applyToClickables(root, scale)
+
+    /**
+     * 按（深度优先、同层从左到右）顺序收集 root 内所有「可点击」控件。
+     *
+     * 适用场景：控件由框架动态创建、拿不到稳定 id，且需要「按下标绑定行为」时
+     * （如顶部导航项 —— 第 N 个控件对应第 N 个页签），靠遍历顺序定位最省事。
+     */
+    fun collectClickableViews(root: View): List<View> {
+        val out = ArrayList<View>()
+        collect(view = root, out = out)
+        return out
+    }
+
+    private fun collect(view: View, out: MutableList<View>) {
+        if (view.visibility != View.VISIBLE) return
+        if (view.isClickable) out.add(view)
+        if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) collect(view.getChildAt(i), out)
+        }
+    }
+
+    private fun walkClickable(view: View, scale: Float) {
+        if (view is android.view.ViewGroup) {
+            // 容器本身也是点击目标（如「检查更新」整行）→ 只加焦点框，不放大（避免整行溢出）
+            if (view.isClickable && !view.isFocusable && view.visibility == View.VISIBLE) {
+                applyTo(view, 1f)
+            }
+            for (i in 0 until view.childCount) walkClickable(view.getChildAt(i), scale)
+            return
+        }
+        if (view.isClickable && view.visibility == View.VISIBLE && !view.isFocusable) {
+            applyTo(view, scale)
+        }
+    }
+}

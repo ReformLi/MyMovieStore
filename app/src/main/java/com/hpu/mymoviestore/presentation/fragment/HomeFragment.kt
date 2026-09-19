@@ -21,6 +21,8 @@ import com.hpu.mymoviestore.databinding.FragmentHomeBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.activity.MainActivity
 import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
+import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 
 /**
@@ -86,6 +88,19 @@ class HomeFragment : Fragment() {
 
     private var currentSpanCount = 3
 
+    /**
+     * TV 适配：电视端进入首页时给网格首项一个初始焦点落点，
+     * 用户一按方向键即可在卡片间移动（手机端不介入）。
+     * 仅当前可见页（ViewPager2 有预加载的离屏页）参与抢焦点。
+     */
+    override fun onResume() {
+        super.onResume()
+        if (!isVisible) return
+        if (!TvUiSupport.isTelevision(requireContext())) return
+        if (binding.recyclerView.findFocus() != null) return
+        TvFocus.focusFirstItem(binding.recyclerView)
+    }
+
     private fun setupViews() {
         currentSpanCount = calculateSpanCount()
         updateGridLayoutManager()
@@ -100,8 +115,9 @@ class HomeFragment : Fragment() {
      * 每个卡片最小宽度约 120dp（含 margin），保证在不同屏幕和横竖屏下都有合适的列数。
      */
     private fun calculateSpanCount(): Int {
-        val dm = DisplayMetrics()
-        requireActivity().windowManager.defaultDisplay.getMetrics(dm)
+        // 使用当前上下文的资源（电视端已被 TvUiSupport 放大密度）：
+        // 若改用 windowManager 的物理屏幕参数，电视上会按 960dp 算出 8 列，卡片过小
+        val dm = resources.displayMetrics
         val screenWidthPx = dm.widthPixels
         val density = dm.density
         // 每个卡片最小宽度 120dp，margin 10dp，padding 8dp
@@ -141,12 +157,14 @@ class HomeFragment : Fragment() {
                 textSize = 14f
                 gravity = android.view.Gravity.CENTER
                 setPadding(dp(16), dp(8), dp(16), dp(8))
-                setOnClickListener {
-                    currentSubType = type
-                    renderSubTabs()
-                    viewModel.loadHomeDoubanCategory(currentMainCategory, type)
-                    binding.recyclerView.scrollToPosition(0)
-                }
+            }
+            // TV 适配：子分类可遥控器聚焦 + 焦点框，获焦时自动横向滚动到可见
+            TvFocus.applyTo(chip, scale = 1.06f, scrollContainer = binding.layoutMovieSubTabs)
+            chip.setOnClickListener {
+                currentSubType = type
+                renderSubTabs()
+                viewModel.loadHomeDoubanCategory(currentMainCategory, type)
+                binding.recyclerView.scrollToPosition(0)
             }
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -188,6 +206,11 @@ class HomeFragment : Fragment() {
             )
         }
         Log.d(TAG, "TabLayout 已添加 ${categories.size} 个分类")
+
+        // TV 适配：顶部 Tab 可遥控器聚焦（否则遥控器无法在分类间移动）
+        for (i in 0 until tabLayout.tabCount) {
+            tabLayout.getTabAt(i)?.view?.let { TvFocus.applyFocusableOnly(it) }
+        }
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {

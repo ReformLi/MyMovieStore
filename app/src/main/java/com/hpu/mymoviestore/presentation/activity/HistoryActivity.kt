@@ -14,6 +14,12 @@ import com.hpu.mymoviestore.presentation.fragment.HistoryFragment
  */
 class HistoryActivity : AppCompatActivity() {
 
+    /** TV 适配：电视端放大 UI 密度（10-foot UI），手机端原样返回 */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.hpu.mymoviestore.presentation.tv.TvUiSupport.wrapContext(newBase))
+    }
+
+
     private lateinit var binding: ActivityHistoryBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {

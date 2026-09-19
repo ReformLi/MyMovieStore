@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.ItemSearchResultBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 网页搜索结果列表适配器。
@@ -28,7 +29,10 @@ class SearchResultAdapter(
             parent,
             false
         )
-        return SearchResultViewHolder(binding)
+        return SearchResultViewHolder(binding).apply {
+            // TV 适配：搜索结果可遥控器聚焦 + 获焦放大
+            TvFocus.applyTo(binding.root, scale = 1.02f)
+        }
     }
 
     override fun onBindViewHolder(holder: SearchResultViewHolder, position: Int) {
@@ -42,6 +46,8 @@ class SearchResultAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(video: VideoItem) {
+            // TV 适配：复用项恢复原状
+            TvFocus.resetAppearance(binding.root)
             binding.tvTitle.text = video.title
 
             if (video.sourceName.isNotBlank()) {

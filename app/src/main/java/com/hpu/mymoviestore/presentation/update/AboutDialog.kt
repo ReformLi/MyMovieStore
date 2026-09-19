@@ -18,6 +18,7 @@ import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.repository.UpdateInfo
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -113,6 +114,9 @@ class AboutDialog : DialogFragment() {
                 last = st
             }
         }
+
+        // TV 适配：「检查更新」整行 + 立即更新 / 关闭 按钮可遥控器聚焦
+        TvFocus.applyToDialogButtons(view)
     }
 
     override fun onStart() {

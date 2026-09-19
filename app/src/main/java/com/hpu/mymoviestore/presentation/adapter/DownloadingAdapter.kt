@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.databinding.ItemDownloadingBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 下载中列表适配器
@@ -34,7 +35,10 @@ class DownloadingAdapter(
             parent,
             false
         )
-        return DownloadingViewHolder(binding)
+        return DownloadingViewHolder(binding).apply {
+            // TV 适配：下载中条目可遥控器聚焦 + 获焦放大
+            TvFocus.applyTo(binding.root, scale = 1.02f)
+        }
     }
 
     override fun onBindViewHolder(holder: DownloadingViewHolder, position: Int) {
@@ -48,6 +52,8 @@ class DownloadingAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(task: DownloadTaskEntity) {
+            // TV 适配：复用项恢复原状
+            TvFocus.resetAppearance(binding.root)
             // 封面
             if (task.coverUrl.isNotEmpty()) {
                 binding.ivCover.load(task.coverUrl)
@@ -158,6 +164,22 @@ class DownloadingAdapter(
             binding.btnDanmakuRetry.setOnClickListener {
                 onDanmakuRetry(task)
             }
+
+            // TV 适配：行内操作按钮（暂停/继续、取消、重试、删除、弹幕重试）在电视上必须可聚焦
+            setupButtonFocus(binding.btnPauseResume)
+            setupButtonFocus(binding.btnCancel)
+            setupButtonFocus(binding.btnRetry)
+            setupButtonFocus(binding.btnDeleteFailed)
+            setupButtonFocus(binding.btnDanmakuRetry)
+        }
+
+        /** 可见且可用的按钮才可聚焦；隐藏按钮取消聚焦，避免遥控器焦点停在不可见项 */
+        private fun setupButtonFocus(btn: android.view.View) {
+            TvFocus.applyTo(btn, scale = 1.08f)
+            val shown = btn.visibility == android.view.View.VISIBLE && btn.isEnabled
+            btn.isFocusable = shown
+            btn.isFocusableInTouchMode = shown
+            if (!shown) TvFocus.resetAppearance(btn)
         }
     }
 }

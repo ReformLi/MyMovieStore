@@ -17,6 +17,7 @@ import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.databinding.DialogEpisodeSelectBinding
 import com.hpu.mymoviestore.databinding.ItemEpisodeSelectBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * 选择下载集数（居中卡片 Dialog，UI 规范 5.3.1）。
@@ -105,6 +106,9 @@ class EpisodeSelectDialog private constructor(
         }
 
         updateHeader()
+
+        // TV 适配：全选 / 确定 / 取消 按钮可遥控器聚焦
+        TvFocus.applyToDialogButtons(binding.root)
     }
 
     /** 点击单行切换勾选：锁定项直接忽略 */
@@ -157,16 +161,21 @@ class EpisodeSelectDialog private constructor(
             val itemBinding = ItemEpisodeSelectBinding.inflate(
                 LayoutInflater.from(parent.context), parent, false
             )
+            TvFocus.applyTo(itemBinding.root, 1.02f)
             return ViewHolder(itemBinding)
         }
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            TvFocus.resetAppearance(holder.itemView)
             val isLocked = locked[position]
             holder.itemBinding.tvEpisodeName.text =
                 if (isLocked) "${episodes[position].title}（已添加）" else episodes[position].title
             bindCheckState(holder.itemBinding.tvCheck, checked[position])
-            // 锁定项置灰且不可交互（对应原生 isEnabled = false + alpha 0.5f）
+            // 锁定项置灰且不可交互（对应原生 isEnabled = false + alpha 0.5f），
+            // 同时取消可聚焦，避免遥控器焦点停在不动项上
             holder.itemBinding.root.isEnabled = !isLocked
+            holder.itemBinding.root.isFocusable = !isLocked
+            holder.itemBinding.root.isFocusableInTouchMode = !isLocked
             holder.itemBinding.root.alpha = if (isLocked) 0.5f else 1.0f
         }
 

@@ -27,6 +27,7 @@ import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentSearchBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.adapter.SearchResultAdapter
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.viewmodel.SearchHistoryViewModel
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,12 @@ class SearchFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(context)
         binding.recyclerView.adapter = adapter
         Log.d(TAG, "RecyclerView + VideoAdapter 初始化完成")
+
+        // TV 适配：搜索按钮 / 翻页 / 清空历史需可遥控器聚焦（并统一自绘焦点框，关闭系统默认高亮）
+        TvFocus.applyTo(binding.btnSearch, scale = 1.05f)
+        TvFocus.applyTo(binding.tvClearHistory, scale = 1.05f)
+        TvFocus.applyTo(binding.btnPrevPage, scale = 1.05f)
+        TvFocus.applyTo(binding.btnNextPage, scale = 1.05f)
 
         // 文本变化：关键字为空时显示搜索历史；实际搜索由按钮、键盘搜索或历史词触发，避免频繁请求源站
         binding.etSearch.addTextChangedListener(object : TextWatcher {
@@ -354,6 +361,8 @@ class SearchFragment : Fragment() {
                     setMargins(chipMarginPx, chipMarginPx, 0, 0)
                 }
             }
+            // TV 适配：历史关键词 chip 需可遥控器聚焦，否则电视上无法点选历史
+            TvFocus.applyTo(chip, scale = 1.06f)
 
             // 粗略估算 chip 宽度：文本宽度 + padding
             chip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)

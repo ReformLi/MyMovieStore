@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
 import com.hpu.mymoviestore.databinding.ItemHistoryBinding
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import java.util.Calendar
 
 /**
@@ -35,7 +36,10 @@ class HistoryAdapter(
             parent,
             false
         )
-        return HistoryViewHolder(binding)
+        return HistoryViewHolder(binding).apply {
+            // TV 适配：历史条目可遥控器聚焦 + 获焦放大
+            TvFocus.applyTo(binding.root, scale = 1.02f)
+        }
     }
 
     override fun onBindViewHolder(holder: HistoryViewHolder, position: Int) {
@@ -48,6 +52,8 @@ class HistoryAdapter(
         RecyclerView.ViewHolder(binding.root) {
 
         fun bind(history: PlayHistoryEntity) {
+            // TV 适配：复用项恢复原状
+            TvFocus.resetAppearance(binding.root)
             binding.tvTitle.text = history.title
 
             // 标题右侧的源标签（保留但默认隐藏，用底部标签替代）

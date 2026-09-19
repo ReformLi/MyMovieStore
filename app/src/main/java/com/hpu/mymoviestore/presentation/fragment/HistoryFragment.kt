@@ -14,6 +14,8 @@ import com.hpu.mymoviestore.databinding.FragmentHistoryBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.adapter.HistoryAdapter
 import com.hpu.mymoviestore.presentation.dialog.ConfirmDialog
+import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.viewmodel.HistoryViewModel
 
 /**
@@ -75,6 +77,9 @@ class HistoryFragment : Fragment() {
                 viewModel.clearAllHistory()
             }
         }
+
+        // TV 适配：「清空历史」可遥控器聚焦（无触摸屏时否则无法触达）
+        TvFocus.applyTo(binding.tvClear, scale = 1.06f)
     }
 
     /** 观察 Room LiveData，自动刷新列表 */
@@ -89,6 +94,21 @@ class HistoryFragment : Fragment() {
                 binding.tvEmpty.visibility = View.GONE
                 adapter.submitList(history)
             }
+        }
+    }
+
+    /**
+     * TV 适配：进入页面时给遥控器一个焦点落点。
+     * 有历史 → 落在首条；无历史 → 落在「清空历史」按钮，避免按方向键没反应。
+     */
+    override fun onResume() {
+        super.onResume()
+        if (!TvUiSupport.isTelevision(requireContext())) return
+        if (view?.findFocus() != null) return
+        if (binding.recyclerView.visibility == View.VISIBLE) {
+            TvFocus.focusFirstItem(binding.recyclerView)
+        } else {
+            TvFocus.requestInitialFocus(binding.tvClear)
         }
     }
 

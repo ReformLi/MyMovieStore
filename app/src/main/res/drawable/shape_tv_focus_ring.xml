@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  电视端焦点描边（外层白圈 + 内层品牌橙圈）：
+  白色保证在深色卡片上也有轮廓，橙色强调当前焦点，双重描边在 3 米外依然醒目。
+  作为 View 的 foreground 使用，不覆盖视图自身 background。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 外层白圈（略粗，形成高光边缘） -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="18dp" />
+            <stroke
+                android:width="4dp"
+                android:color="#CCFFFFFF" />
+        </shape>
+    </item>
+    <!-- 内层品牌橙圈 -->
+    <item
+        android:bottom="2dp"
+        android:left="2dp"
+        android:right="2dp"
+        android:top="2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="16dp" />
+            <stroke
+                android:width="3dp"
+                android:color="@color/colorPrimary" />
+        </shape>
+    </item>
+</layer-list>

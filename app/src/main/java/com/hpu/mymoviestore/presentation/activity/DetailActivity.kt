@@ -31,6 +31,7 @@ import com.hpu.mymoviestore.data.model.PlayEpisode
 import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
 import com.hpu.mymoviestore.presentation.dialog.EpisodeSelectDialog
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -54,6 +55,12 @@ import kotlinx.coroutines.withContext
  * 去重 & 更新播放历史：在 PlayerActivity.setVideoInfo 中统一处理（调用 PlayHistoryRepository.addOrUpdateHistory）
  */
 class DetailActivity : AppCompatActivity() {
+
+    /** TV 适配：电视端放大 UI 密度（10-foot UI），手机端原样返回 */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.hpu.mymoviestore.presentation.tv.TvUiSupport.wrapContext(newBase))
+    }
+
 
     private lateinit var binding: ActivityDetailBinding
     private lateinit var downloadViewModel: DownloadViewModel
@@ -170,6 +177,10 @@ class DetailActivity : AppCompatActivity() {
 
         // 初始化 DownloadViewModel
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
+
+        // TV 适配：播放/下载按钮自绘焦点框 + 获焦放大
+        TvFocus.applyTo(binding.btnPlay, scale = 1.04f)
+        TvFocus.applyTo(binding.btnDownload, scale = 1.04f)
 
         // 下载按钮
         binding.btnDownload.setOnClickListener {
@@ -359,6 +370,8 @@ class DetailActivity : AppCompatActivity() {
                     loadProgressFromHistory()
                 }
             }
+            // TV 适配：播放线路可遥控器聚焦
+            TvFocus.applyTo(chip, scale = 1.06f)
             val params = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
@@ -372,8 +385,11 @@ class DetailActivity : AppCompatActivity() {
     }
 
     private fun renderEpisodes(line: PlayLine) {
+        // TV 适配：重渲染会销毁旧视图，先记录焦点是否在集数网格内，渲染后还给选中项
+        val gridHadFocus = binding.gridEpisodes.findFocus() != null
         binding.gridEpisodes.removeAllViews()
         binding.tvEpisodeTitle.text = if (line.episodes.size <= 1) "播放入口" else "选集 · 共 ${line.episodes.size} 集"
+        var selectedView: View? = null
 
         line.episodes.forEach { episode ->
             val isSelected = episode.playPageUrl == selectedEpisode?.playPageUrl
@@ -393,6 +409,9 @@ class DetailActivity : AppCompatActivity() {
                     playSelectedEpisodeOrVideo()
                 }
             }
+            // TV 适配：集数条目可遥控器聚焦
+            TvFocus.applyTo(item, scale = 1.06f)
+            if (isSelected) selectedView = item
             val params = GridLayout.LayoutParams().apply {
                 width = 0
                 height = GridLayout.LayoutParams.WRAP_CONTENT
@@ -401,6 +420,9 @@ class DetailActivity : AppCompatActivity() {
             }
             binding.gridEpisodes.addView(item, params)
         }
+
+        // 焦点重定位：仅当重渲染前焦点在网格内时才交还，避免初次进入抢走播放按钮焦点
+        if (gridHadFocus) selectedView?.let { TvFocus.requestInitialFocus(it) }
     }
 
     private fun updatePlayButtonText(hasProgress: Boolean = hasSelectedEpisodeHistory) {

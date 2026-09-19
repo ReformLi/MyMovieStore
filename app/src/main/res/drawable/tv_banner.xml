@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android TV 启动器横幅（banner）：标准尺寸 320x180dp。
+  纯矢量实现（无位图资源），底色为品牌橙渐变 + 播放三角标识。
+  电视启动器会在横幅下方显示 android:label，因此图内不绘制文字。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path
+        android:pathData="M0,0h320v180h-320z"
+        android:fillColor="#1A1A1A" />
+
+    <!-- 左侧品牌色斜切块 -->
+    <path
+        android:pathData="M0,0h150L92,180H0z"
+        android:fillColor="#FF6B35" />
+
+    <!-- 播放三角标识 -->
+    <path
+        android:pathData="M130,66l56,24l-56,24z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- 右侧装饰条 -->
+    <path
+        android:pathData="M196,70h72v6h-72z"
+        android:fillColor="#FF6B35"
+        android:fillAlpha="0.9" />
+    <path
+        android:pathData="M196,86h100v6h-100z"
+        android:fillColor="#5A5A5A" />
+    <path
+        android:pathData="M196,102h84v6h-84z"
+        android:fillColor="#5A5A5A" />
+</vector>
