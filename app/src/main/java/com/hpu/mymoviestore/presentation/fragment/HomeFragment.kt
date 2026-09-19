@@ -1,9 +1,7 @@
 package com.hpu.mymoviestore.presentation.fragment
 
-import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -16,9 +14,9 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.tabs.TabLayout
+import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentHomeBinding
-import com.hpu.mymoviestore.presentation.activity.DetailActivity
 import com.hpu.mymoviestore.presentation.activity.MainActivity
 import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
 import com.hpu.mymoviestore.presentation.tv.TvFocus
@@ -32,6 +30,9 @@ import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
  * - Tab 0 = 全部视频
  * - Tab 1~5 = 电影 / 电视剧 / 综艺 / 动漫 / 纪录片
  * - 点击列表项 → DetailActivity
+ *
+ * TV 端：复用手机布局，通过 TvFocus 为 TabLayout、子分类 chip、网格卡片提供
+ * D-pad 焦点支持和视觉反馈。
  */
 class HomeFragment : Fragment() {
 
@@ -183,17 +184,13 @@ class HomeFragment : Fragment() {
             val selected = chip.text.toString() == currentSubType
             chip.setTextColor(
                 if (selected) {
-                    ContextCompat.getColor(requireContext(), com.hpu.mymoviestore.R.color.colorPrimary)
+                    ContextCompat.getColor(requireContext(), R.color.colorPrimary)
                 } else {
-                    ContextCompat.getColor(requireContext(), com.hpu.mymoviestore.R.color.colorOnSurfaceSecondary)
+                    ContextCompat.getColor(requireContext(), R.color.colorOnSurfaceSecondary)
                 }
             )
             chip.setBackgroundResource(
-                if (selected) {
-                    com.hpu.mymoviestore.R.drawable.bg_chip_selected
-                } else {
-                    com.hpu.mymoviestore.R.drawable.bg_episode_normal
-                }
+                if (selected) R.drawable.bg_chip_selected else R.drawable.bg_episode_normal
             )
         }
     }

@@ -211,40 +211,52 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // TV 适配：电视端导航栏「焦点即选中」，见 setupTvNavFocus
-        setupTvNavFocus()
+        // TV 适配：电视端用紧凑的「药丸」页签簇替代铺满整行的 BottomNavigationView
+        if (TvUiSupport.isTelevision(this)) {
+            setupTvNavBar()
+        }
     }
 
     /**
-     * TV 适配：导航栏「焦点即选中」—— 焦点停到哪个页签就立刻切到对应子页面，无需再按确定键。
+     * TV 适配：用紧凑的页签簇替代铺满整行的 BottomNavigationView。
      *
-     * 这里刻意只让 **当前选中页签** 可聚焦：
-     * 内容区宽度铺满整屏，若三个页签都能聚焦，从内容区按「上」时焦点会按几何就近原则
-     * 落在中间那个页签（多半是「搜索」）上，页面会莫名其妙乱跳。
-     * 只留当前页签可聚焦后，按「上」必定回到当前页；左右切换由 [dispatchKeyEvent] 接管，
-     * 焦点与选中项始终一一对应。
+     * 每个页签：图标 + 文字水平居中，底部有品牌橙指示条（选中时显示）。
+     * 焦点态用柔和的白色半透明底色（bg_tv_nav_focus），整体更贴合 10-foot UI。
+     *
+     * 选中逻辑仍统一走 [binding.viewPager]，与手机端完全一致；焦点行为见 [syncNavFocusability]。
      */
-    private fun setupTvNavFocus() {
-        if (!TvUiSupport.isTelevision(this)) return
-        binding.bottomNavigation.post {
-            val items = TvFocus.collectClickableViews(binding.bottomNavigation)
-            // 优先按控件 id（= menu item id）精确对应页签；取不到时退回遍历顺序
-            val byId = tabIds.mapNotNull { id -> items.firstOrNull { it.id == id } }
-            navItemViews = if (byId.size == tabIds.size) byId else items.take(tabIds.size)
-            if (navItemViews.size != tabIds.size) {
-                // 兜底：页签视图没按预期取到（Material 内部结构差异）→ 退回「全部可聚焦」。
-                // 宁可牺牲焦点落点的确定性，也不能让导航栏彻底动不了。
-                Log.w(TAG, "TV 导航项数量异常：期望 ${tabIds.size}，实际 ${navItemViews.size}，回退为全部可聚焦")
-                navItemViews = emptyList()
-                TvFocus.applyToClickables(binding.bottomNavigation)
-                return@post
+    private fun setupTvNavBar() {
+        binding.bottomNavigation.visibility = View.GONE
+        binding.tvNavBar.visibility = View.VISIBLE
+
+        val entries = listOf(
+            Triple(R.id.nav_home, R.drawable.ic_home, R.string.home),
+            Triple(R.id.nav_search, R.drawable.ic_search, R.string.search),
+            Triple(R.id.nav_profile, R.drawable.ic_profile, R.string.profile),
+        )
+        val items = entries.map { (id, icon, label) ->
+            val item = layoutInflater.inflate(R.layout.item_tv_nav, binding.tvNavBar, false) as android.widget.LinearLayout
+            item.id = id
+            item.findViewById<android.widget.ImageView>(R.id.ivNavIcon).setImageResource(icon)
+            item.findViewById<android.widget.TextView>(R.id.tvNavLabel).setText(label)
+            item.setOnClickListener {
+                val idx = tabIds.indexOf(id)
+                if (idx >= 0 && binding.viewPager.currentItem != idx) {
+                    if (id == R.id.nav_search && pendingSearchKeyword == null) {
+                        searchEntryMode = SearchEntryMode.MANUAL
+                        resetSearchOnNextShow = true
+                    }
+                    binding.viewPager.currentItem = idx
+                }
             }
-            // 挂焦点框：导航项占满 1/3 屏宽，用带内缩的「药丸」焦点态，贴边描边会变成大方框
-            navItemViews.forEach {
-                TvFocus.applyTo(it, scale = 1f, ringRes = R.drawable.bg_tv_nav_focus)
-            }
-            syncNavFocusability()
+            binding.tvNavBar.addView(item)
+            item
         }
+        navItemViews = items
+        navItemViews.forEach {
+            TvFocus.applyTo(it, scale = 1f, ringRes = R.drawable.bg_tv_nav_focus)
+        }
+        syncNavFocusability()
     }
 
     /**
@@ -270,22 +282,25 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    /** 当前焦点是否落在顶部导航栏内 */
+    /** 当前焦点是否落在顶部导航栏内（手机 = BottomNavigationView，电视 = tvNavBar） */
     private fun isFocusInNavBar(): Boolean {
         var v: View? = currentFocus
         while (v != null) {
-            if (v === binding.bottomNavigation) return true
+            if (v === binding.bottomNavigation || v === binding.tvNavBar) return true
             v = v.parent as? View
         }
         return false
     }
 
-    /** 只让当前选中页签可聚焦（原因见 [setupTvNavFocus]） */
+    /**
+     * 只让当前选中页签可聚焦（原因见 [setupTvNavBar]），并同步选中态视觉。
+     * 电视端选中项即 [binding.viewPager] 当前页，比 BottomNavigationView 的 selectedItemId 更可靠。
+     */
     private fun syncNavFocusability() {
         if (navItemViews.isEmpty()) return
-        // 选中项理论上必是三个页签之一；真取不到就退回第一个，避免全部不可聚焦把导航栏锁死
-        val selectedIndex = tabIds.indexOf(binding.bottomNavigation.selectedItemId)
-            .takeIf { it >= 0 } ?: 0
+        val selectedIndex = binding.viewPager.currentItem
+            .takeIf { it in tabIds.indices } ?: 0
+        applyNavSelectedVisual(selectedIndex)
         navItemViews.forEachIndexed { index, item ->
             val focusable = index == selectedIndex
             item.isFocusable = focusable
@@ -298,6 +313,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 选中态视觉：选中项用品牌橙图标 + 文字 + 底部指示条，未选中用次级灰 */
+    private fun applyNavSelectedVisual(selectedIndex: Int) {
+        if (navItemViews.isEmpty()) return
+        val primary = androidx.core.content.ContextCompat.getColor(this, R.color.colorPrimary)
+        val secondary = androidx.core.content.ContextCompat.getColor(this, R.color.colorOnSurfaceSecondary)
+        navItemViews.forEachIndexed { index, view ->
+            val selected = index == selectedIndex
+            view.isSelected = selected
+            val color = if (selected) primary else secondary
+            view.findViewById<android.widget.ImageView>(R.id.ivNavIcon)
+                ?.setColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN)
+            view.findViewById<android.widget.TextView>(R.id.tvNavLabel)?.setTextColor(color)
+            // 底部指示条：选中时可见
+            view.findViewById<View>(R.id.navIndicator)?.visibility =
+                if (selected) View.VISIBLE else View.INVISIBLE
+        }
+    }
+
     /**
      * 遥控器左右键：选中页签移动一格（焦点跟手切页）。
      *
@@ -306,14 +339,17 @@ class MainActivity : AppCompatActivity() {
      */
     private fun moveNavFocus(delta: Int): Boolean {
         if (navItemViews.isEmpty()) return false
-        val current = tabIds.indexOf(binding.bottomNavigation.selectedItemId)
-        if (current < 0) return false
+        val current = binding.viewPager.currentItem
         val target = current + delta
         if (target !in tabIds.indices) return false
         val tabId = tabIds[target]
-        if (binding.bottomNavigation.selectedItemId != tabId) {
-            // 复用既有选中链路：自动带上「进入搜索页需重置」等逻辑
-            binding.bottomNavigation.selectedItemId = tabId
+        if (binding.viewPager.currentItem != target) {
+            // 复用现有切页链路：自动带上「进入搜索页需重置」等逻辑
+            if (tabId == R.id.nav_search && pendingSearchKeyword == null) {
+                searchEntryMode = SearchEntryMode.MANUAL
+                resetSearchOnNextShow = true
+            }
+            binding.viewPager.currentItem = target
         }
         syncNavFocusability()
         navItemViews.getOrNull(target)?.requestFocus()
