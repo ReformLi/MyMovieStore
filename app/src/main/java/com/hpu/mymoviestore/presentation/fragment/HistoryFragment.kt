@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
 import com.hpu.mymoviestore.databinding.FragmentHistoryBinding
@@ -38,6 +39,10 @@ class HistoryFragment : Fragment() {
     private lateinit var viewModel: HistoryViewModel
     private lateinit var adapter: HistoryAdapter
 
+    /** 电视/横屏网格形态（与首页一致：网格卡片）；手机竖屏仍是横向行卡片 */
+    private var isTv = false
+    private var currentSpanCount = 3
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -52,16 +57,24 @@ class HistoryFragment : Fragment() {
         Log.d(TAG, "HistoryFragment onViewCreated")
 
         viewModel = ViewModelProvider(this)[HistoryViewModel::class.java]
-        adapter = HistoryAdapter { history -> openDetail(history) }
+        isTv = TvUiSupport.isTelevision(requireContext())
+        adapter = HistoryAdapter(gridMode = isTv) { history -> openDetail(history) }
 
         setupViews()
         observeData()
     }
 
     private fun setupViews() {
-        binding.recyclerView.layoutManager = LinearLayoutManager(context)
+        if (isTv) {
+            // 网格形态：列数算法与首页完全一致，视觉上「和首页一样」
+            currentSpanCount = calculateSpanCount()
+            binding.recyclerView.layoutManager = GridLayoutManager(context, currentSpanCount)
+            adapter.setSpanCount(currentSpanCount)
+        } else {
+            binding.recyclerView.layoutManager = LinearLayoutManager(context)
+        }
         binding.recyclerView.adapter = adapter
-        Log.d(TAG, "RecyclerView + HistoryAdapter 初始化完成")
+        Log.d(TAG, "RecyclerView + HistoryAdapter 初始化完成: isTv=$isTv, span=$currentSpanCount")
 
         // 点击「清空历史」弹出确认对话框，确认后通过 ViewModel 调用 Room 删除
         binding.tvClear.setOnClickListener {
@@ -110,6 +123,20 @@ class HistoryFragment : Fragment() {
         } else {
             TvFocus.requestInitialFocus(binding.tvClear)
         }
+    }
+
+    /**
+     * 网格列数：每张卡片最小 120dp（含 margin），与首页 [HomeFragment.calculateSpanCount] 同一算法。
+     *
+     * 必须读「当前上下文」的 resources —— 电视端已被 TvUiSupport 放大密度，
+     * 若改用 windowManager 的物理屏幕参数，电视上会按 960dp 算出 8 列、卡片过小。
+     */
+    private fun calculateSpanCount(): Int {
+        val dm = resources.displayMetrics
+        val screenWidthDp = dm.widthPixels / dm.density
+        val span = (screenWidthDp / 120f).toInt().coerceIn(2, 8)
+        Log.d(TAG, "calculateSpanCount: screenWidthDp=$screenWidthDp, span=$span")
+        return span
     }
 
     /**

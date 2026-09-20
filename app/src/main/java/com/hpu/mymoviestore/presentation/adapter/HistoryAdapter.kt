@@ -17,12 +17,29 @@ import java.util.Calendar
  *
  * - 展示：封面、标题、分类、最后播放时间、播放源（右下角）
  * - 点击：跳转到详情页（携带 videoId/title/coverUrl/category/playUrl）
+ *
+ * 两种形态共用同一个 Adapter 与同一套 id：
+ * - 竖屏（gridMode=false）：横向行卡片，展示标题 / 分类 / 播放时间 / 播放至第N集 / 播放源
+ * - 横屏/TV（gridMode=true）：网格卡片，展示封面 / 标题 / 播放历史（第N集）/ 播放源，与首页一致
  */
 class HistoryAdapter(
+    /** 网格形态（横屏/TV）：封面占满卡宽、内容精简为四要素，与首页卡片同一套视觉 */
+    private val gridMode: Boolean = false,
     private val onItemClick: (PlayHistoryEntity) -> Unit
 ) : RecyclerView.Adapter<HistoryAdapter.HistoryViewHolder>() {
 
     private var items: List<PlayHistoryEntity> = emptyList()
+    private var spanCount: Int = 3
+
+    /**
+     * 网格形态下按列数重算封面高度（基准：3 列 150dp，按列数反比缩放）。
+     * 与 [VideoAdapter.setSpanCount] 同算法，保证历史页与首页卡片大小一致。
+     */
+    fun setSpanCount(span: Int) {
+        if (spanCount == span) return
+        spanCount = span
+        notifyDataSetChanged()
+    }
 
     fun submitList(list: List<PlayHistoryEntity>) {
         items = list
@@ -59,21 +76,37 @@ class HistoryAdapter(
             // 标题右侧的源标签（保留但默认隐藏，用底部标签替代）
             binding.tvSource.visibility = View.GONE
 
-            binding.tvCategory.text = history.category
-
-            val calendar = Calendar.getInstance()
-            calendar.timeInMillis = history.lastPlayTime
-            val timeStr = DateFormat.format("yyyy-MM-dd HH:mm", calendar).toString()
-            binding.tvPlayTime.text = "播放时间：$timeStr"
-
-            if (history.episodeTitle.isNotBlank()) {
-                binding.tvEpisode.text = "播放至 ${normalizeEpisodeTitle(history.episodeTitle)}"
-                binding.tvEpisode.visibility = View.VISIBLE
+            val episodeText = if (history.episodeTitle.isNotBlank()) {
+                normalizeEpisodeTitle(history.episodeTitle)
             } else {
-                binding.tvEpisode.visibility = View.GONE
+                ""
             }
 
-            // 右下角显示播放源，与播放记录同一行
+            if (gridMode) {
+                // 网格形态：封面 + 标题 + 播放历史（第N集）+ 播放源，与首页卡片一致
+                binding.ivCover.layoutParams = binding.ivCover.layoutParams.apply {
+                    height = coverHeightPx()
+                }
+                binding.tvCategory.visibility = View.GONE
+                binding.tvPlayTime.visibility = View.GONE
+                binding.tvEpisode.text = episodeText
+                binding.tvEpisode.visibility =
+                    if (episodeText.isEmpty()) View.GONE else View.VISIBLE
+            } else {
+                // 行卡片形态：分类 + 播放时间 + 播放至第N集（高度由文字行数决定）
+                binding.tvCategory.text = history.category
+
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = history.lastPlayTime
+                val timeStr = DateFormat.format("yyyy-MM-dd HH:mm", calendar).toString()
+                binding.tvPlayTime.text = "播放时间：$timeStr"
+
+                binding.tvEpisode.text = "播放至 $episodeText"
+                binding.tvEpisode.visibility =
+                    if (episodeText.isEmpty()) View.GONE else View.VISIBLE
+            }
+
+            // 播放源：两种形态都在同一行右侧
             if (history.sourceName.isNotBlank()) {
                 binding.tvSourceBottom.text = history.sourceName
                 binding.tvSourceBottom.visibility = View.VISIBLE
@@ -83,11 +116,21 @@ class HistoryAdapter(
 
             if (history.coverUrl.isNotEmpty()) {
                 binding.ivCover.load(history.coverUrl)
+            } else {
+                // 复用项必须清空，否则会残留上一部影片的封面
+                binding.ivCover.setImageDrawable(null)
             }
 
             binding.root.setOnClickListener {
                 onItemClick(history)
             }
+        }
+
+        /** 网格形态封面高度：基准 3 列 150dp，按列数反比缩放（80~200dp），与首页一致 */
+        private fun coverHeightPx(): Int {
+            val density = binding.root.resources.displayMetrics.density
+            val heightDp = (150f * 3f / spanCount).coerceIn(80f, 200f)
+            return (heightDp * density + 0.5f).toInt()
         }
     }
 
