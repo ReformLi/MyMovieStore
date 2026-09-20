@@ -54,8 +54,8 @@ class HistoryAdapter(
             false
         )
         return HistoryViewHolder(binding).apply {
-            // TV 适配：历史条目可遥控器聚焦 + 获焦放大
-            TvFocus.applyTo(binding.root, scale = 1.02f)
+            // TV 适配：历史条目可遥控器聚焦 + 获焦放大（列表卡片绕开贴边误判，见 TvFocus.alwaysScale）
+            TvFocus.applyTo(binding.root, scale = 1.05f, alwaysScale = true)
         }
     }
 

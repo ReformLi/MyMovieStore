@@ -30,8 +30,8 @@ class SearchResultAdapter(
             false
         )
         return SearchResultViewHolder(binding).apply {
-            // TV 适配：搜索结果可遥控器聚焦 + 获焦放大
-            TvFocus.applyTo(binding.root, scale = 1.02f)
+            // TV 适配：搜索结果可遥控器聚焦 + 获焦放大（列表容器已 clipChildren=false，绕开贴边误判）
+            TvFocus.applyTo(binding.root, scale = 1.05f, alwaysScale = true)
         }
     }
 

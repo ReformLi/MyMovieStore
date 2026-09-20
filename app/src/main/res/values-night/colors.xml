@@ -24,6 +24,8 @@
     <!-- 兼容旧引用 -->
     <color name="background">#0D0D0D</color>
     <color name="surface_background">#1A1A1A</color>
+    <!-- 电视端可聚焦卡片获焦底色（深色）：明显提亮的暖棕，配合 3dp 焦点环加强高亮 -->
+    <color name="surface_background_focused">#453123</color>
     <!-- 弹框主背景（深色模式：暖棕，与纯灰面板区分） -->
     <color name="dialog_background">#332C29</color>
 

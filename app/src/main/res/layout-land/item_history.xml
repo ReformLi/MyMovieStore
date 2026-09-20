@@ -7,7 +7,7 @@
     android:focusable="true"
     android:focusableInTouchMode="true"
     android:foreground="@drawable/bg_tv_focus_ring"
-    app:cardBackgroundColor="@color/surface_background"
+    app:cardBackgroundColor="@color/card_background_tv_focusable"
     app:cardCornerRadius="14dp"
     app:cardElevation="2dp">
 

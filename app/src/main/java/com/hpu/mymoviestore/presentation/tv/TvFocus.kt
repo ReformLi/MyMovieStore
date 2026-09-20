@@ -55,12 +55,19 @@ object TvFocus {
      *                        （横向列表用；与放大动画共用同一个焦点监听，避免互相覆盖）
      * @param ringRes 焦点框 drawable；默认是贴边描边，占满整屏宽度的控件
      *                （如顶部导航项）应改用带内缩的 [R.drawable.bg_tv_nav_focus]
+     * @param alwaysScale 跳过 [canScaleUp] 贴边检查，获焦一律放大。
+     *                专治列表卡片的「下滑动后放大消失」：焦点监听在 requestFocus 当下同步触发，
+     *                而容器把部分可见项滚入可视区发生在**之后** —— 此刻贴边项的 gap 必为负，
+     *                被 canScaleUp 误判成「放大就会被裁」而跳过，滚动完成后无人重新评估。
+     *                网格/行卡片四周 margin 充足、列表容器也已 clipChildren=false，
+     *                该检查对它们是误伤（详情页 chip、弹窗按钮等静态场景保留原检查）。
      */
     fun applyTo(
         view: View,
         scale: Float = FOCUS_SCALE,
         scrollContainer: View? = null,
-        @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring
+        @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring,
+        alwaysScale: Boolean = false
     ) {
         if (!isActive(view)) return
         view.isFocusable = true
@@ -73,7 +80,7 @@ object TvFocus {
         markHandled(view)
         attachFocusRing(view, ringFor(view, ringRes))
         view.setOnFocusChangeListener { v, hasFocus ->
-            animateFocus(v, hasFocus, scale)
+            animateFocus(v, hasFocus, scale, alwaysScale)
             if (hasFocus && scrollContainer != null) scrollIntoView(v, scrollContainer)
         }
         // 回收复用时可能残留放大状态，重置一次
@@ -199,8 +206,8 @@ object TvFocus {
         view.translationZ = 0f
     }
 
-    private fun animateFocus(view: View, hasFocus: Boolean, scale: Float) {
-        val target = if (hasFocus && canScaleUp(view, scale)) scale else 1f
+    private fun animateFocus(view: View, hasFocus: Boolean, scale: Float, alwaysScale: Boolean = false) {
+        val target = if (hasFocus && (alwaysScale || canScaleUp(view, scale))) scale else 1f
         view.animate()
             .scaleX(target)
             .scaleY(target)

@@ -37,6 +37,8 @@
        文字变长或「继续观看」提示出现时海报自动收窄，**永远不溢出卡片**。
 
     4. 选集网格外面套一层 ScrollView（height=0dp + weight=1）：集数多时只滚动选集区。
+       ScrollView 外再包一层**默认裁剪**的 FrameLayout —— 祖先全是 clipChildren=false，
+       少了它，滚出顶部的集数会画到视口之外盖住上方标题（详见选集区注释）。
 
     5. 下方三个信息模块（导演 / 主演 / 简介）**可聚焦但不可点击**：
        给遥控器多几个稳定的停靠点，同时不绑定任何点击行为。
@@ -274,29 +276,39 @@
 
                         <!-- 选集滚动区：集数多时只滚这里（height=0dp + weight=1 吃掉剩余高度）。
 
-                             clipChildren 必须是 true（也就是默认值）：ScrollView 一旦被置为
-                             clipChildren=false，滚动内容就会画到自身边界之外，向上滚出的集数
-                             会盖住上面的「选集 · 共 N 集」标题。同理 clipToPadding 保持 true。
+                             为什么外面还要再包一层默认裁剪的 FrameLayout：
+                             本卡片所有祖先为了焦点放大/焦点环不被裁，都写了 clipChildren=false，
+                             而 ScrollView 自身的 clipChildren 裁的是「内容子 View 按自身 bounds」，
+                             且裁剪矩形会随 scrollY 一起平移 —— 已滚出顶部的内容恰好落在裁剪区内，
+                             会画到滚动区上边界之外，盖住「选集 / 播放线路」标题。
+                             能把内容裁到视口的只有「ScrollView 的父容器裁剪 ScrollView 自身 bounds」
+                             这一步，故用不带 clipChildren=false 的包装层承接；
+                             包装层无滚动平移，裁剪范围正好等于视口。
                              条目左右各有 4dp margin，获焦放大 1.06 倍时不会被裁到边缘。 -->
-                        <ScrollView
+                        <FrameLayout
                             android:layout_width="match_parent"
                             android:layout_height="0dp"
                             android:layout_marginTop="8dp"
-                            android:layout_weight="1"
-                            android:clipChildren="true"
-                            android:clipToPadding="true"
-                            android:focusable="false"
-                            android:overScrollMode="never"
-                            android:scrollbars="none">
+                            android:layout_weight="1">
 
-                            <GridLayout
-                                android:id="@+id/gridEpisodes"
+                            <ScrollView
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:clipChildren="false"
-                                android:columnCount="4"
-                                android:orientation="horizontal" />
-                        </ScrollView>
+                                android:layout_height="match_parent"
+                                android:clipChildren="true"
+                                android:clipToPadding="true"
+                                android:focusable="false"
+                                android:overScrollMode="never"
+                                android:scrollbars="none">
+
+                                <GridLayout
+                                    android:id="@+id/gridEpisodes"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:clipChildren="false"
+                                    android:columnCount="4"
+                                    android:orientation="horizontal" />
+                            </ScrollView>
+                        </FrameLayout>
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>

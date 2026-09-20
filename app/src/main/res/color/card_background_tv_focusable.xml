@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  电视端可聚焦结果卡片（搜索结果 / 首页影片 / 播放历史）的底色状态列表：
+  获焦时整体提亮成暖色，失焦回到常规 surface_background。
+
+  只给横屏（TV）条目布局使用，手机端竖屏布局维持纯色不动。
+  MaterialCardView 的 cardBackgroundColor 接受 ColorStateList，
+  状态切换由系统焦点机制驱动（条目根卡片自身 focusable=true）。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/surface_background_focused" />
+    <item android:color="@color/surface_background" />
+</selector>
