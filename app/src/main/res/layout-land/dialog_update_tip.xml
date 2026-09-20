@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 更新提示弹窗（**横屏 TV · 仪表盘风**）
+
+     头部 = ic_download 图标徽章 + 左对齐「发现新版本」，版本徽章移到头部右侧成橙底胶囊；
+     更新内容卡行卡化；底部改「知道了（橙填充）/ 今天不再提醒（描边）」并排，省竖向空间。
+
+     ⚠️ 本弹窗由 MainActivity.showUpdateTipDialog 用 findViewById 创建（非 ViewBinding），
+        **缺 id 是运行时 NPE**：tvBadgeVersion / scrollUpdateContent / cardUpdateContent /
+        tvUpdateContent / btnGotIt / tvSkipToday —— 且类型匹配：
+        btnGotIt 必须 MaterialButton（代码按 MaterialButton 接收），
+        tvSkipToday 代码按 TextView 接收（MaterialButton 兼容）。
+
+     TV 可用性修正：更新文案来自远程配置、长度不可控，竖屏版 scrollUpdateContent 显式
+     focusable="false" 在电视上等于「超长内容无法滚动看到底部」；横屏版让滚动区自身
+     可聚焦（自绘焦点环 + 关系统默认高亮），方向键即可翻阅，「知道了/不再提醒」照常可达。 -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardBackgroundColor="@color/dialog_background"
+    app:cardCornerRadius="24dp"
+    app:cardElevation="0dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="26dp"
+        android:paddingEnd="26dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp">
+
+        <!-- ============ 头部：图标徽章 + 标题 + 版本胶囊 ============ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_icon_chip"
+                android:padding="9dp"
+                android:src="@drawable/ic_download"
+                app:tint="@color/colorPrimary" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/update_found_title"
+                android:textColor="@color/colorOnSurface"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvBadgeVersion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_icon_chip"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:textColor="@color/colorPrimary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/divider" />
+
+        <!-- ============ 更新内容（远程配置、长度不可控 → 限高可滚动） ============ -->
+        <ScrollView
+            android:id="@+id/scrollUpdateContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:defaultFocusHighlightEnabled="false"
+            android:focusable="true"
+            android:foreground="@drawable/bg_tv_focus_ring"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/cardUpdateContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_row_card"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/update_section_title"
+                    android:textColor="@color/colorPrimary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvUpdateContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="4dp"
+                    android:textColor="@color/colorOnSurfaceSoft"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+        </ScrollView>
+
+        <!-- 路径引导 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/update_tip_path"
+            android:textColor="@color/colorOnSurfaceSecondary"
+            android:textSize="12sp" />
+
+        <!-- 按钮行：主操作橙填充 + 次操作描边，等分并排 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tvSkipToday"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="@string/update_not_today"
+                android:textColor="@color/colorOnSurface"
+                app:backgroundTint="@android:color/transparent"
+                app:cornerRadius="12dp"
+                app:strokeColor="@color/colorOnSurfaceSecondary"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGotIt"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/colorPrimary"
+                android:text="@string/got_it"
+                android:textColor="@color/colorOnPrimary"
+                android:textStyle="bold"
+                app:cornerRadius="12dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

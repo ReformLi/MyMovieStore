@@ -86,4 +86,62 @@
     <style name="BottomNavText" parent="TextAppearance.Material3.LabelSmall">
         <item name="android:textSize">10sp</item>
     </style>
+
+    <!-- ======================== TV 弹框条目样式（仪表盘风） ======================== -->
+
+    <!-- 帮助功能条目：整行圆角卡（图标徽章 + 标题/描述），独立抬起一层。
+         **只读停靠点**：focusable + 焦点环让遥控器能逐行停靠（获焦自动滚入可视区），
+         但不设 clickable、代码不绑任何点击行为 —— 按确定键无动作。
+         defaultFocusHighlightEnabled=false（API26+）：关掉系统默认高亮，只用自绘环；
+         低版本设备忽略该属性，安全。 -->
+    <style name="HelpFeatureRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:background">@drawable/bg_row_card</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:focusable">true</item>
+        <item name="android:foreground">@drawable/bg_tv_focus_ring</item>
+        <item name="android:defaultFocusHighlightEnabled">false</item>
+    </style>
+
+    <!-- 条目左侧功能图标：圆角橙底徽章 + 主色 tint -->
+    <style name="HelpFeatureIcon">
+        <item name="android:layout_width">36dp</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:background">@drawable/bg_icon_chip</item>
+        <item name="android:padding">9dp</item>
+        <item name="android:tint">@color/colorPrimary</item>
+        <item name="android:scaleType">fitCenter</item>
+    </style>
+
+    <!-- 条目文字块：标题 + 描述纵向排布 -->
+    <style name="HelpFeatureText">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">12dp</item>
+        <item name="android:orientation">vertical</item>
+    </style>
+
+    <style name="HelpFeatureTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="HelpFeatureDesc">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textColor">@color/colorOnSurfaceSecondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
 </resources>

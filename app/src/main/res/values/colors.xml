@@ -28,6 +28,8 @@
     <color name="surface_background_focused">#FFE7D1</color>
     <!-- 弹框主背景（浅色模式与面板背景一致） -->
     <color name="dialog_background">#FFF4F3</color>
+    <!-- 弹框内独立行卡底（浅色）：白色卡片压在米色弹框底上抬起一层 -->
+    <color name="row_card_background">#FFFFFF</color>
 
     <!-- ======================== 文字颜色（浅色模式） ======================== -->
     <color name="colorOnSurface">#1A1A1A</color>

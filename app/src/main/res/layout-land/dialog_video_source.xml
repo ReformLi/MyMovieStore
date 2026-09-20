@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 视频源管理（**横屏分栏版**）
-     = 竖屏版 layout/dialog_video_source.xml 的横屏布局：
-       左侧「全选/全不选 + 已选计数 + 源列表 + 提示」，右侧一列竖排按钮（取消 / 确定）。
+<!-- 视频源管理（**横屏 TV · 仪表盘风**）
 
-     ⚠️ 两份布局的 id 必须**完全一致**：ViewBinding 取各限定符 id 的并集，
-        少一个就会把对应字段退化成可空类型，Kotlin 侧全部要改 ?. 才能编译。
+     与帮助 / 清理缓存同一套视觉语言：
+       · 头部 = 图标徽章（ic_source）+ 左对齐标题/副标题；
+       · 分隔线；
+       · 主体左右分栏：左「全选工具行 + 源列表（独立行卡）+ 提示」，右「取消（描边）/ 确定（橙填充）」；
+       · 「全选/全不选」从裸文字升级为橙色浅底胶囊，点击目标更明确。
 
-     ⚠️ 焦点左右导航：右侧按钮栏与左列同处一条水平带，靠 android:nextFocus* 显式声明
-        「列表行 →（右键）→ 取消」；反方向（按钮 →左键→ 列表）交给系统的几何搜索，
-        落点会自然停在 y 最接近的那一行，比写死 id 更符合直觉。 -->
+     ⚠️ 两份布局的 id 必须**完全一致**（tvSelectAll / tvSelectedCount / rvSources / btnCancel / btnConfirm）：
+        ViewBinding 取各限定符 id 的并集，少一个就会把对应字段退化成可空类型；
+        DialogSizing.limitContentHeight 也按 id 定位 rvSources 限高。
+
+     ⚠️ 焦点左右导航：源行与「全选」胶囊声明 nextFocusRight → 取消；
+        反方向（按钮 →左键→ 列表）交给系统的几何搜索，落点自然停在 y 最接近的行。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -21,32 +25,58 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
-        android:paddingTop="22dp"
-        android:paddingBottom="22dp">
+        android:paddingStart="26dp"
+        android:paddingEnd="26dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp">
 
-        <!-- 标题 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:text="@string/video_source"
-            android:textColor="@color/colorOnSurface"
-            android:textSize="19sp"
-            android:textStyle="bold" />
-
-        <!-- 副标题 -->
-        <TextView
+        <!-- ============ 头部：图标徽章 + 左对齐标题/副标题 ============ -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center"
-            android:text="@string/video_source_subtitle"
-            android:textColor="@color/colorOnSurfaceSecondary"
-            android:textSize="13sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <!-- 主体：左选择区 + 右按钮栏 -->
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_icon_chip"
+                android:padding="9dp"
+                android:src="@drawable/ic_source"
+                app:tint="@color/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/video_source"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/video_source_subtitle"
+                    android:textColor="@color/colorOnSurfaceSecondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/divider" />
+
+        <!-- ============ 主体：左选择区 + 右按钮栏 ============ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -60,7 +90,7 @@
                 android:layout_weight="1"
                 android:orientation="vertical">
 
-                <!-- 操作行：全选/全不选 + 已选计数 -->
+                <!-- 工具行：全选/全不选（橙底胶囊） + 已选计数 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -71,15 +101,16 @@
                         android:id="@+id/tvSelectAll"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/ripple_clickable"
+                        android:background="@drawable/bg_icon_chip_ripple"
                         android:nextFocusRight="@id/btnCancel"
-                        android:paddingStart="4dp"
-                        android:paddingTop="4dp"
-                        android:paddingEnd="4dp"
-                        android:paddingBottom="4dp"
+                        android:paddingStart="14dp"
+                        android:paddingTop="6dp"
+                        android:paddingEnd="14dp"
+                        android:paddingBottom="6dp"
                         android:text="@string/select_all"
                         android:textColor="@color/colorPrimary"
-                        android:textSize="14sp" />
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
 
                     <View
                         android:layout_width="0dp"
@@ -95,12 +126,13 @@
 
                 </LinearLayout>
 
-                <!-- 视频源列表 -->
+                <!-- 视频源列表（行卡见 layout-land/item_video_source.xml） -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvSources"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
+                    android:clipToPadding="false"
                     android:nextFocusRight="@id/btnCancel"
                     android:overScrollMode="never" />
 
@@ -109,7 +141,6 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:gravity="center"
                     android:text="@string/video_source_hint"
                     android:textColor="@color/colorOnSurfaceDisabled"
                     android:textSize="11sp" />
@@ -118,28 +149,31 @@
 
             <!-- ============ 右：按钮栏 ============ -->
             <LinearLayout
-                android:layout_width="132dp"
+                android:layout_width="140dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="18dp"
+                android:layout_marginStart="20dp"
                 android:orientation="vertical">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnCancel"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
+                    android:layout_height="46dp"
                     android:text="@string/cancel"
-                    android:backgroundTint="@color/chip_background"
                     android:textColor="@color/colorOnSurface"
-                    app:cornerRadius="12dp" />
+                    app:backgroundTint="@android:color/transparent"
+                    app:cornerRadius="12dp"
+                    app:strokeColor="@color/colorOnSurfaceSecondary"
+                    app:strokeWidth="1dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnConfirm"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginTop="10dp"
-                    android:text="@string/confirm_ok"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="12dp"
                     android:backgroundTint="@color/colorPrimary"
+                    android:text="@string/confirm_ok"
                     android:textColor="@color/colorOnPrimary"
+                    android:textStyle="bold"
                     app:cornerRadius="12dp" />
 
             </LinearLayout>

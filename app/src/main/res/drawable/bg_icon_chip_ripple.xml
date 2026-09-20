@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 橙色浅底胶囊 + 按压涟漪（可点击版，如视频源「全选/全不选」）。
+     下层 15% 品牌橙圆角底，上层涟漪平时透明、按压时显形。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#26FF6B35" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ripple_clickable" />
+</layer-list>

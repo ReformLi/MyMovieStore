@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV 弹框仪表盘风：可点击行卡背景 = 抬起一层圆角底 + 上叠按压涟漪（涟漪平时透明）。
+     与 bg_tv_focus_ring 前景搭配：底=卡、按压=涟漪、获焦=橙环，三者互不干扰。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/row_card_background" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ripple_clickable" />
+</layer-list>

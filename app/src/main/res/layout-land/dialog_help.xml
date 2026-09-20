@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 帮助（**横屏分栏版**）
-     = 竖屏版 layout/dialog_help.xml 的横屏布局：
-       左侧「功能指引列表（可滚动）+ 底部提示」，右侧一列竖排按钮（知道了）。
+<!-- 帮助页（**横屏 TV · 仪表盘风**）
+
+     与旧版「居中标题 + 大灰块套编号列表」的差别：
+       · 左对齐图标徽章标题区 + 分隔线，替代居中两行文字；
+       · 7 个功能条目各是一张独立圆角行卡（bg_row_card）：
+         功能图标徽章（复用导航图标，主色 tint）+ 标题/描述 + 右侧箭头；
+       · 分组头 = 主色小竖条 + 组名，替代孤零零的灰字；
+       · 右侧按钮栏：「知道了」升级为主操作橙填充（白环由 TvFocus 自动切换）。
 
      ⚠️ id 必须与竖屏版完全一致（scrollContent / tvClose）。
 
-     焦点：左列只有纯展示文字，没有任何可聚焦控件 —— 若不给滚动区焦点能力，
-     焦点被困在右侧的「知道了」上，内容超出可视区域时**根本没法滚动**。
-     因此这里显式 `android:focusable="true"`：上下键滚动内容、右键到按钮
-     （左右键切换的另一半由 nextFocusRight 显式声明）。 -->
+     焦点模型：**每一行功能卡都是只读停靠点**（HelpFeatureRow 样式里 focusable +
+     自绘焦点环，无点击行为）——方向键逐行移动、获焦行自动滚入可视区，
+     方便遥控器上下浏览全部内容。ScrollView 自身刻意 focusable=false：
+     逐行焦点已接管滚动，容器再可聚焦只会多出一个「没有可见高亮」的怪停靠点
+     （ScrollView 构造时默认 setFocusable(true)，必须显式关掉）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -21,36 +27,62 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
-        android:paddingTop="22dp"
-        android:paddingBottom="22dp">
+        android:paddingStart="26dp"
+        android:paddingEnd="26dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp">
 
-        <!-- 标题 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:text="@string/help"
-            android:textColor="@color/colorOnSurface"
-            android:textSize="19sp"
-            android:textStyle="bold" />
-
-        <!-- 副标题 -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center"
-            android:text="@string/help_welcome"
-            android:textColor="@color/colorOnSurfaceSecondary"
-            android:textSize="13sp" />
-
-        <!-- 主体：左内容区 + 右按钮栏 -->
+        <!-- ============ 头部：图标徽章 + 左对齐标题/副标题 ============ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_icon_chip"
+                android:padding="9dp"
+                android:src="@drawable/ic_help"
+                app:tint="@color/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/help"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/help_welcome"
+                    android:textColor="@color/colorOnSurfaceSecondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/divider" />
+
+        <!-- ============ 主体：左内容区 + 右按钮栏 ============ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:orientation="horizontal">
 
             <!-- ============ 左：功能指引（可滚动） ============ -->
@@ -64,360 +96,194 @@
                     android:id="@+id/scrollContent"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:focusable="true"
-                    android:nextFocusRight="@id/tvClose"
-                    android:overScrollMode="never">
+                    android:clipToPadding="false"
+                    android:paddingBottom="4dp"
+                    android:focusable="false"
+                    android:overScrollMode="never"
+                    android:scrollbars="none">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
-                <!-- ===== help_group_core ===== -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginBottom="6dp"
-                    android:text="@string/help_group_core"
-                    android:textColor="@color/colorOnSurfaceSecondary"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="6dp">
-
-                    <!-- 1 help_home_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
-
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="1"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- ===== 分组：核心功能 ===== -->
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:layout_width="3dp"
+                                android:layout_height="12dp"
+                                android:background="@color/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="@string/help_home_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_home_desc"
+                                android:layout_marginStart="8dp"
+                                android:text="@string/help_group_core"
                                 android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
-
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
-                    </LinearLayout>
-                    <!-- 2 help_search_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
 
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="2"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- 1 首页发现 -->
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            style="@style/HelpFeatureRow">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/help_search_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_home" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_search_desc"
-                                android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
+                            <LinearLayout style="@style/HelpFeatureText">
 
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_home_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_home_desc" />
+                            </LinearLayout>
                         </LinearLayout>
-                    </LinearLayout>
-                    <!-- 3 help_player_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
 
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="3"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- 2 搜索播放 -->
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            style="@style/HelpFeatureRow">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/help_player_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_search" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_player_desc"
-                                android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
+                            <LinearLayout style="@style/HelpFeatureText">
 
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_search_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_search_desc" />
+                            </LinearLayout>
                         </LinearLayout>
-                    </LinearLayout>
-                </LinearLayout>
 
-                <!-- ===== 更多功能 ===== -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="14dp"
-                    android:layout_marginBottom="6dp"
-                    android:text="@string/help_group_more"
-                    android:textColor="@color/colorOnSurfaceSecondary"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="6dp">
-
-                    <!-- 4 help_download_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
-
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="4"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- 3 播放体验 -->
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            style="@style/HelpFeatureRow">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/help_download_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_player_play" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_download_desc"
-                                android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
+                            <LinearLayout style="@style/HelpFeatureText">
 
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_player_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_player_desc" />
+                            </LinearLayout>
                         </LinearLayout>
-                    </LinearLayout>
-                    <!-- 5 help_danmaku_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
 
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="5"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- ===== 分组：更多功能 ===== -->
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_marginTop="18dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <View
+                                android:layout_width="3dp"
+                                android:layout_height="12dp"
+                                android:background="@color/colorPrimary" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="@string/help_danmaku_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_danmaku_desc"
+                                android:layout_marginStart="8dp"
+                                android:text="@string/help_group_more"
                                 android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
-
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
-                    </LinearLayout>
-                    <!-- 6 help_history_title -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
 
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="6"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- 4 离线下载 -->
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            style="@style/HelpFeatureRow">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/help_history_title"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_download" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_history_desc"
-                                android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
+                            <LinearLayout style="@style/HelpFeatureText">
 
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_download_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_download_desc" />
+                            </LinearLayout>
                         </LinearLayout>
-                    </LinearLayout>
-                    <!-- 7 video_source -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingTop="9dp"
-                        android:paddingBottom="9dp">
 
-                        <TextView
-                            android:layout_width="26dp"
-                            android:layout_height="26dp"
-                            android:background="@drawable/bg_circle_primary"
-                            android:gravity="center"
-                            android:text="7"
-                            android:textColor="@color/colorOnPrimary"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
-
+                        <!-- 5 弹幕观看 -->
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            style="@style/HelpFeatureRow">
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/video_source"
-                                android:textColor="@color/colorOnSurface"
-                                android:textSize="15sp" />
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_danmu" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="@string/help_source_desc"
-                                android:textColor="@color/colorOnSurfaceSecondary"
-                                android:textSize="12sp" />
+                            <LinearLayout style="@style/HelpFeatureText">
 
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_danmaku_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_danmaku_desc" />
+                            </LinearLayout>
                         </LinearLayout>
-                    </LinearLayout>
-                </LinearLayout>
+
+                        <!-- 6 播放历史 -->
+                        <LinearLayout
+                            style="@style/HelpFeatureRow">
+
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_history" />
+
+                            <LinearLayout style="@style/HelpFeatureText">
+
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/help_history_title" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_history_desc" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <!-- 7 视频源管理 -->
+                        <LinearLayout
+                            style="@style/HelpFeatureRow">
+
+                            <ImageView style="@style/HelpFeatureIcon"
+                                android:src="@drawable/ic_source" />
+
+                            <LinearLayout style="@style/HelpFeatureText">
+
+                                <TextView
+                                    style="@style/HelpFeatureTitle"
+                                    android:text="@string/video_source" />
+
+                                <TextView
+                                    style="@style/HelpFeatureDesc"
+                                    android:text="@string/help_source_desc" />
+                            </LinearLayout>
+                        </LinearLayout>
 
                     </LinearLayout>
                 </ScrollView>
@@ -426,28 +292,28 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:gravity="center"
+                    android:layout_marginTop="14dp"
                     android:text="@string/help_footer"
-                    android:textColor="@color/colorOnSurfaceSecondary"
+                    android:textColor="@color/colorOnSurfaceDisabled"
                     android:textSize="12sp" />
 
             </LinearLayout>
 
             <!-- ============ 右：按钮栏 ============ -->
             <LinearLayout
-                android:layout_width="132dp"
+                android:layout_width="140dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="18dp"
+                android:layout_marginStart="20dp"
                 android:orientation="vertical">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/tvClose"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
+                    android:layout_height="46dp"
+                    android:backgroundTint="@color/colorPrimary"
                     android:text="@string/got_it"
-                    android:backgroundTint="@color/colorSurfaceHighlight"
-                    android:textColor="@color/colorOnSurface"
+                    android:textColor="@color/colorOnPrimary"
+                    android:textStyle="bold"
                     app:cornerRadius="12dp" />
 
             </LinearLayout>

@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 清理缓存（**横屏 TV · 仪表盘风**）
+<!-- 选择下载集数（**横屏 TV · 仪表盘风 · 分栏**）
+     与视频源管理同构：左「全选胶囊 + 集数列表（独立行卡）+ 提示」，右「取消 / 确定」竖排按钮栏。
 
-     与帮助弹框同一套视觉语言：
-       · 头部 = 图标徽章（ic_clear_cache）+ 左对齐标题/副标题，右侧缓存大小胶囊；
-       · 分隔线；
-       · 主体左右分栏：左「缓存项独立行卡列表（可滚动）」，右「取消（描边）/ 清理（橙填充）」竖排按钮栏。
+     ⚠️ 本弹框走 **ViewBinding**（DialogEpisodeSelectBinding）：竖屏 layout/dialog_episode_select.xml
+        暴露的非空字段 tvSelectAll / tvSelectedCount / rvEpisodes / btnCancel / btnConfirm，
+        **横屏版必须全部包含同名 id**，否则字段退化为可空、EpisodeSelectDialog.kt 里
+        binding.rvEpisodes 等直接编译不过。装饰性视图不加 id。
 
-     ⚠️ id 必须与竖屏版完全一致（tvCacheSize / scrollContent / container / btnCancel / btnConfirm），
-        否则 ViewBinding 字段会退化成可空类型，且 DialogSizing.limitContentHeight 定位不到滚动区。
-
-     焦点：缓存项行在 layout-land/item_clear_cache.xml 里 focusable + 自绘环 + 可点击勾选
-     （与帮助的只读行不同，这里确定键 = 切换勾选），行 nextFocusRight → 取消；
-     按钮按左键由几何搜索回落到列表行。scrollContent 自身不再抢焦点。 -->
+     ⚠️ 焦点：行卡 focusable + nextFocusRight → 取消；已添加锁定项由代码置 isFocusable=false，
+        焦点自动跳过。DialogSizing 以 split=true 放宽宽度（仅横屏生效，竖屏零回归）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -29,7 +26,7 @@
         android:paddingTop="24dp"
         android:paddingBottom="24dp">
 
-        <!-- ============ 头部：图标徽章 + 标题/副标题 + 缓存大小胶囊 ============ -->
+        <!-- ============ 头部：图标徽章 + 左对齐标题/副标题 ============ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -41,7 +38,7 @@
                 android:layout_height="40dp"
                 android:background="@drawable/bg_icon_chip"
                 android:padding="9dp"
-                android:src="@drawable/ic_clear_cache"
+                android:src="@drawable/ic_download"
                 app:tint="@color/colorPrimary" />
 
             <LinearLayout
@@ -54,7 +51,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/clear_cache"
+                    android:text="@string/episode_select_title"
                     android:textColor="@color/colorOnSurface"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -63,25 +60,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:text="@string/clear_cache_subtitle"
+                    android:text="@string/episode_select_subtitle"
                     android:textColor="@color/colorOnSurfaceSecondary"
                     android:textSize="12sp" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvCacheSize"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:background="@drawable/bg_icon_chip"
-                android:paddingStart="12dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="6dp"
-                android:text="@string/cache_size_calculating"
-                android:textColor="@color/colorPrimary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
         </LinearLayout>
 
         <View
@@ -90,32 +72,76 @@
             android:layout_marginTop="16dp"
             android:background="@color/divider" />
 
-        <!-- ============ 主体：左缓存项列表 + 右按钮栏 ============ -->
+        <!-- ============ 主体：左选择区 + 右按钮栏 ============ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:orientation="horizontal">
 
-            <!-- ============ 左：缓存项列表 ============ -->
-            <ScrollView
-                android:id="@+id/scrollContent"
+            <!-- ============ 左：选择区 ============ -->
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:clipToPadding="false"
-                android:focusable="false"
-                android:overScrollMode="never"
-                android:scrollbars="none">
+                android:orientation="vertical">
 
+                <!-- 工具行：全选/全不选（橙底胶囊） + 已选计数 -->
                 <LinearLayout
-                    android:id="@+id/container"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="2dp" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-            </ScrollView>
+                    <TextView
+                        android:id="@+id/tvSelectAll"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_icon_chip_ripple"
+                        android:nextFocusRight="@id/btnCancel"
+                        android:paddingStart="14dp"
+                        android:paddingTop="6dp"
+                        android:paddingEnd="14dp"
+                        android:paddingBottom="6dp"
+                        android:text="@string/select_all"
+                        android:textColor="@color/colorPrimary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/tvSelectedCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/colorOnSurfaceSecondary"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+
+                <!-- 集数列表（行卡见 layout-land/item_episode_select.xml） -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvEpisodes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:clipToPadding="false"
+                    android:nextFocusRight="@id/btnCancel"
+                    android:overScrollMode="never" />
+
+                <!-- 提示 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/episode_select_hint"
+                    android:textColor="@color/colorOnSurfaceDisabled"
+                    android:textSize="11sp" />
+
+            </LinearLayout>
 
             <!-- ============ 右：按钮栏 ============ -->
             <LinearLayout
@@ -141,7 +167,7 @@
                     android:layout_height="46dp"
                     android:layout_marginTop="12dp"
                     android:backgroundTint="@color/colorPrimary"
-                    android:text="@string/clear_action"
+                    android:text="@string/confirm_ok"
                     android:textColor="@color/colorOnPrimary"
                     android:textStyle="bold"
                     app:cornerRadius="12dp" />

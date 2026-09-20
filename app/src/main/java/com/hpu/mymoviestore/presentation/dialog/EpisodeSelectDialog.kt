@@ -84,12 +84,14 @@ class EpisodeSelectDialog private constructor(
             .create()
         dialog.show()
 
-        // 卡片自身负责圆角与背景：窗口透明 + 以屏宽短边为准的宽度
-        DialogSizing.applyCenteredCard(dialog, context)
-        // 集数很多时列表限高并可滚动
+        // 卡片自身负责圆角与背景：窗口透明 + 以屏宽短边为准的宽度。
+        // split = true：横屏下是 layout-land 的「左列表 + 右按钮栏」分栏布局，需要更宽的卡片；
+        // 竖屏（layout/ 竖排版）自动忽略该参数，宽度与改动前完全一致。
+        DialogSizing.applyCenteredCard(dialog, context, split = true)
+        // 集数很多时列表限高并可滚动（分栏后按钮移到右栏，横屏可给列表多留一截高度）
         DialogSizing.limitContentHeight(
             binding.rvEpisodes,
-            DialogSizing.contentMaxHeightPx(context, DialogSizing.LIST_HEIGHT_RATIO)
+            DialogSizing.splitContentMaxHeightPx(context, DialogSizing.LIST_HEIGHT_RATIO)
         )
 
         updateHeader()

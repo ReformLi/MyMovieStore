@@ -28,6 +28,8 @@
     <color name="surface_background_focused">#453123</color>
     <!-- 弹框主背景（深色模式：暖棕，与纯灰面板区分） -->
     <color name="dialog_background">#332C29</color>
+    <!-- 弹框内独立行卡底（深色）：比暖棕弹框底再亮一档，形成卡片层次 -->
+    <color name="row_card_background">#3F3730</color>
 
     <!-- ======================== 文字颜色（深色模式） ======================== -->
     <color name="colorOnSurface">#FFFFFF</color>

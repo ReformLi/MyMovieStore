@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 弹框仪表盘风：独立行卡片底（比弹框底色再抬起一层的圆角卡） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/row_card_background" />
+    <corners android:radius="12dp" />
+</shape>
