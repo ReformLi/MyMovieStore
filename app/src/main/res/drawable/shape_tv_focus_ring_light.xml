@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  电视端焦点环的**浅色变体** —— 结构与 shape_tv_focus_ring 完全一致，
+  只把描边色从品牌橙换成纯白，专供「自身就是品牌橙底」的控件：
+  详情页立即播放/下载、搜索页搜索按钮（bg_play_button 橙渐变）、
+  弹窗主按钮（backgroundTint=colorPrimary）。
+
+  为什么必须分开：橙环压在橙底上对比度约 1.1:1，等于没有焦点框。
+  换成白环后与普通控件的橙环粗细/圆角完全一致，视觉语言仍然统一，
+  只是颜色按底色反转 —— 不要为了「统一颜色」把这两种场景合并。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <stroke
+        android:width="3dp"
+        android:color="@color/tv_focus_ring_light" />
+    <corners android:radius="14dp" />
+</shape>

@@ -72,6 +72,13 @@
          不能复用 colorBorder（#CCCCCC，与填充几乎同色） -->
     <color name="chip_history_stroke">#AEAEAE</color>
 
+    <!-- ============ 电视端焦点环（全 App 唯一一套视觉规范）============
+         普通控件 = 一圈 3dp 品牌橙描边；品牌橙底控件 = 一圈 3dp 纯白描边。
+         只画一条线，不叠第二层（多圈描边会呈现「框里套框」）。
+         深浅模式通用，不要往 values-night 重复定义。 -->
+    <color name="tv_focus_ring_light">#FFFFFF</color>
+    <color name="tv_focus_pill_fill">#26FF6B35</color>
+
     <!-- ======================== 播放器专用（恒定深色，不随主题切换） ======================== -->
     <color name="player_background">#000000</color>
     <color name="player_overlay">#CC000000</color>

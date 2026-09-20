@@ -185,7 +185,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         tvEmpty?.visibility = View.VISIBLE
 
         // 搜索按钮
-        tvBtnSearch?.let { TvFocus.applyTo(it, scale = 1.05f) }
+        // 搜索按钮是品牌橙底，焦点环用白色变体
+        tvBtnSearch?.let {
+            TvFocus.applyTo(it, scale = 1.05f, ringRes = R.drawable.bg_tv_focus_ring_light)
+        }
         tvClearHistory?.let { TvFocus.applyTo(it, scale = 1.05f) }
         tvEtSearch?.let { TvFocus.applyFocusableOnly(it) }
 

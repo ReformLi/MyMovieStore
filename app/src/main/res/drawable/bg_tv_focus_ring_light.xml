@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 焦点描边选择器（浅色变体）：仅获焦时显示白环，其余状态透明。
+     用法与 bg_tv_focus_ring 相同，走 TvFocus 的 ringRes 参数。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:drawable="@drawable/shape_tv_focus_ring_light" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

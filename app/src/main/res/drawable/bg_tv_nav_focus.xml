@@ -1,13 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  电视端导航项焦点态：极轻微的白色底色，几乎不可见，仅靠放大动画提供焦点反馈。
+  电视端顶部导航项焦点态。
+
+  与全局焦点环（shape_tv_focus_ring）同一视觉语言：品牌橙描边 + 低透明度橙底。
+  但顶部导航项是**满整屏宽度**的控件，贴边描边会变成占满一整行的大方框，所以整体
+  内缩 8dp/6dp 收成「药丸」，只包住文字本身。
+
+  旧版是 5% 白底（#0DFFFFFF），实际几乎不可见，焦点只能靠放大动画去猜 —— 已废弃。
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape android:shape="rectangle">
-            <solid android:color="#0DFFFFFF" />
-            <corners android:radius="8dp" />
-        </shape>
+        <inset
+            android:insetBottom="6dp"
+            android:insetLeft="8dp"
+            android:insetRight="8dp"
+            android:insetTop="6dp">
+            <shape android:shape="rectangle">
+                <solid android:color="@color/tv_focus_pill_fill" />
+                <stroke
+                    android:width="2dp"
+                    android:color="@color/colorPrimary" />
+                <corners android:radius="10dp" />
+            </shape>
+        </inset>
     </item>
     <item android:drawable="@android:color/transparent" />
 </selector>

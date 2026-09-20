@@ -1,30 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  电视端焦点描边（外层白圈 + 内层品牌橙圈）：
-  白色保证在深色卡片上也有轮廓，橙色强调当前焦点，双重描边在 3 米外依然醒目。
-  作为 View 的 foreground 使用，不覆盖视图自身 background。
+  电视端焦点环（深色 / 普通底色）—— 全 App 唯一一套焦点视觉。
+
+  ⚠️ 这里**只画一条 3dp 品牌橙描边**，刻意不叠第二层。
+  上一版做成「橙色光晕(外扩2dp) + 白色高光(1.5dp) + 品牌橙主环(2dp)」三层，
+  三层各自是一整圈完整矩形，渲染出来从外到内是
+      淡橙 2dp -> 白 1.5dp -> 淡橙 0.5dp -> 实橙 2dp
+  等于「框里套框」，实测用户直接反馈「红框里有个白框」。
+  layer-list 的 stroke 是硬边、没有渐变，多层描边只会叠出多条可见线，不要再用。
+
+  焦点反馈由两部分构成：
+    1. 本 drawable：一圈清晰的品牌橙描边（主观感）；
+    2. TvFocus 的放大动画 + translationZ 抬升（浮起感）。
+  橙色底上的控件（立即播放/下载、搜索、弹窗主按钮）改用同结构的
+  [shape_tv_focus_ring_light]（白环），否则橙压橙会糊成一片。
+
+  作为 View 的 foreground 使用（TvFocus.attachFocusRing），不覆盖视图自身 background。
+  圆角 14dp 取全 App 控件圆角（卡片 14 / 按钮 12 / 药丸 10 / chip 8）的中间值，
+  描边落在控件内侧，轻微不贴合肉眼不可辨。
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 外层白圈（略粗，形成高光边缘） -->
-    <item>
-        <shape android:shape="rectangle">
-            <corners android:radius="18dp" />
-            <stroke
-                android:width="4dp"
-                android:color="#CCFFFFFF" />
-        </shape>
-    </item>
-    <!-- 内层品牌橙圈 -->
-    <item
-        android:bottom="2dp"
-        android:left="2dp"
-        android:right="2dp"
-        android:top="2dp">
-        <shape android:shape="rectangle">
-            <corners android:radius="16dp" />
-            <stroke
-                android:width="3dp"
-                android:color="@color/colorPrimary" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <stroke
+        android:width="3dp"
+        android:color="@color/colorPrimary" />
+    <corners android:radius="14dp" />
+</shape>

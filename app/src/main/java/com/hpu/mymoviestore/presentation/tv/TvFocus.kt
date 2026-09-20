@@ -1,9 +1,11 @@
 package com.hpu.mymoviestore.presentation.tv
 
+import android.content.res.ColorStateList
 import android.os.Build
 import android.view.View
 import androidx.annotation.DrawableRes
 import androidx.core.content.ContextCompat
+import com.google.android.material.card.MaterialCardView
 import com.hpu.mymoviestore.R
 
 /**
@@ -63,11 +65,12 @@ object TvFocus {
         if (!isActive(view)) return
         view.isFocusable = true
         view.isFocusableInTouchMode = true
+        neutralizeCardFocusStroke(view)
         // API 26+ 系统默认焦点高亮关掉（自绘焦点框，避免双重描边）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             view.defaultFocusHighlightEnabled = false
         }
-        attachFocusRing(view, ringRes)
+        attachFocusRing(view, ringFor(view, ringRes))
         view.setOnFocusChangeListener { v, hasFocus ->
             animateFocus(v, hasFocus, scale)
             if (hasFocus && scrollContainer != null) scrollIntoView(v, scrollContainer)
@@ -81,10 +84,65 @@ object TvFocus {
         if (!isActive(view)) return
         view.isFocusable = true
         view.isFocusableInTouchMode = true
+        neutralizeCardFocusStroke(view)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             view.defaultFocusHighlightEnabled = false
         }
-        attachFocusRing(view, ringRes)
+        attachFocusRing(view, ringFor(view, ringRes))
+    }
+
+    /**
+     * 焦点环按「控件自身底色」自动挑选，避免同一圈颜色在同类底色上看不见。
+     *
+     * 目前只有一种反转：**品牌橙底 -> 白环**。橙环压在橙底上对比度约 1.1:1 等于没有，
+     * 典型场景是弹窗主按钮（`backgroundTint=colorPrimary`）。
+     * 仅在调用方**没有显式指定** ringRes（仍为默认值）时才自动改，不覆盖刻意选择。
+     */
+    private fun ringFor(view: View, fallback: Int): Int =
+        if (fallback == R.drawable.bg_tv_focus_ring && isBrandFilled(view)) {
+            R.drawable.bg_tv_focus_ring_light
+        } else {
+            fallback
+        }
+
+    /** 控件是否为品牌橙填充（按钮 backgroundTint 等于品牌主色） */
+    private fun isBrandFilled(view: View): Boolean {
+        val tint = (view as? android.widget.Button)?.backgroundTintList ?: return false
+        return tint.defaultColor == ContextCompat.getColor(view.context, R.color.colorPrimary)
+    }
+
+    /**
+     * 中和 MaterialCardView **自带的获焦描边**（TV 端最隐蔽的一处「白边」来源）。
+     *
+     * Material3 主题把 `materialCardViewStyle` 默认指向 **Outlined 卡片**
+     * （`Theme.Material3.*` 里 `materialCardViewStyle = ?attr/materialCardViewOutlinedStyle`），
+     * 该样式 `strokeWidth = 1dp`、`strokeColor = @color/m3_card_stroke_color`，
+     * 而这个颜色状态列表里有一条：
+     *       <item android:state_focused="true" android:color="?attr/colorOnSurface"/>
+     * 深色模式下 `colorOnSurface` 就是 **纯白 #FFFFFF** ——
+     * 于是卡片一获焦，组件自己会沿边缘描一条 1dp 白线，与本类的橙色焦点环叠在一起。
+     * 用户看到的正是「聚焦的高亮框里有白边 / 红框里有个白框」，且只在卡片类控件上出现
+     * （按钮没有状态描边，所以「标签栏」「按钮」看着正常）。
+     *
+     * 处理：把描边色**钉死成它自己的默认色**（非获焦态 = `colorOutlineVariant` 的浅灰）。
+     * 单色 [ColorStateList] 不随状态变化 → **常态外观一字不变**，只是获焦时不再变白。
+     * 刻意不把 `strokeWidth` 置 0：那会连卡片常态的那道细描边一起抹掉，属于越界改动。
+     *
+     * 顺带置空 `stateListAnimator`：M3 卡片自带 `m3_card_state_list_anim`，
+     * 会在任意状态变化时把 `translationZ` 动画回 0dp，与本类的「获焦抬升 8dp」互相打架
+     * （表现为卡片抬起来又被拽回去）。焦点动效统一由本类负责。
+     */
+    private fun neutralizeCardFocusStroke(view: View) {
+        if (view !is MaterialCardView) return
+        // 注意：`MaterialCardView` 同时有 getStrokeColor():Int 与 getStrokeColorStateList():ColorStateList，
+        // setStrokeColor 也有 int / ColorStateList 两个重载 —— 用 Kotlin 合成属性 `strokeColor`
+        // 会撞歧义（编译报 "actual type is ColorStateList, but Int was expected"）。
+        // 读状态列表必须走 getStrokeColorStateList()，写则显式传 ColorStateList 定住重载。
+        val stroke = view.strokeColorStateList
+        if (stroke != null && view.strokeWidth > 0) {
+            view.setStrokeColor(ColorStateList.valueOf(stroke.defaultColor))
+        }
+        view.stateListAnimator = null
     }
 
     /**
@@ -116,13 +174,59 @@ object TvFocus {
     }
 
     private fun animateFocus(view: View, hasFocus: Boolean, scale: Float) {
+        val target = if (hasFocus && canScaleUp(view, scale)) scale else 1f
         view.animate()
-            .scaleX(if (hasFocus) scale else 1f)
-            .scaleY(if (hasFocus) scale else 1f)
+            .scaleX(target)
+            .scaleY(target)
             .setDuration(ANIM_MS)
             .start()
         // 获焦项抬高，视觉上浮于相邻项之上（避免放大后被邻居遮挡）
         view.translationZ = if (hasFocus) dp(view, 8f) else 0f
+    }
+
+    /**
+     * 判断该控件获焦时**能否安全放大**。
+     *
+     * 放大会以中心为基准向四周外扩 `尺寸 × (scale-1) / 2`。父容器的 `clipChildren` 默认是 true，
+     * 所以只要外扩量超过它与父容器可绘制边界的间隙，超出部分就会被裁掉 ——
+     * 表现为「聚焦时该条左右鼓出来／边缘被切平」，比不放大更难看。
+     *
+     * 两类控件一定命中，直接退化为「只显示焦点环，不放大」：
+     * 1. **满宽项**（宽度 ≥ 父容器可用宽度的 90%）：列表行、「我的」页设置菜单卡片。
+     *    它们左右几乎没有余量，放大 2% 就会比邻居宽出一圈。
+     * 2. **贴边项**：放大后外扩量大于四周间隙的控件，典型是弹窗里并排的
+     *    「取消 / 确定」按钮（`weight=1`，两端紧贴父容器）。
+     *
+     * 反例（应当保留放大）：首页/历史页的网格卡片、详情页的线路与选集 chip ——
+     * 它们本身尺寸小、四周有余量，放大才是应有的焦点反馈。
+     *
+     * 在焦点变化时求值（此时布局已完成，宽高与坐标可用）；否则返回 false（宁可不放大）。
+     */
+    private fun canScaleUp(view: View, scale: Float): Boolean {
+        if (scale <= 1f) return false
+        val parent = view.parent as? android.view.ViewGroup ?: return false
+        val w = view.width
+        val h = view.height
+        if (w <= 0 || h <= 0 || parent.width <= 0 || parent.height <= 0) return false
+
+        // 1. 满宽项：左右无余量
+        val availW = parent.width - parent.paddingLeft - parent.paddingRight
+        if (availW > 0 && w >= availW * 0.9f) return false
+
+        // 2. 贴边项：外扩量放不下
+        val dx = w * (scale - 1f) / 2f
+        val dy = h * (scale - 1f) / 2f
+        val leftGap = (view.left - parent.paddingLeft).toFloat()
+        val rightGap = (parent.width - parent.paddingRight - view.right).toFloat()
+        val topGap = (view.top - parent.paddingTop).toFloat()
+        val bottomGap = (parent.height - parent.paddingBottom - view.bottom).toFloat()
+
+        // 容忍 2dp：详情页的线路/选集 chip 本身就贴着滚动容器左边界，但体积小、外扩量只有 1~2dp，
+        // 被裁掉一两像素看不出来；若做成 0 容忍，这些 chip 会集体失去放大反馈。
+        // 弹窗按钮那种 8dp 级别的外扩量远超容忍值，仍然会被拦下。
+        val tol = dp(view, 2f)
+        return dx <= leftGap + tol && dx <= rightGap + tol &&
+            dy <= topGap + tol && dy <= bottomGap + tol
     }
 
     private fun dp(view: View, value: Float): Float =
@@ -238,8 +342,15 @@ object TvFocus {
             for (i in 0 until view.childCount) walkClickable(view.getChildAt(i), scale)
             return
         }
-        if (view.isClickable && view.visibility == View.VISIBLE && !view.isFocusable) {
-            applyTo(view, scale)
-        }
+        if (view.visibility != View.VISIBLE || !view.isClickable) return
+
+        // ⚠️ 框架自带的 Button（含 MaterialButton）**默认就是 focusable=true**，
+        // 若沿用「只处理不可聚焦控件」的老判据，弹窗里的「确定 / 取消 / 全选」会被整批跳过 ——
+        // 结果是焦点能落上去（系统默认高亮），却没有任何自绘焦点环，用户看到的就是"按钮没高亮"。
+        // 所以按钮类无视 isFocusable，一律补环（重复调用由 attachFocusRing 内部去重）。
+        val alreadyFocusable = view.isFocusable
+        if (alreadyFocusable && view !is android.widget.Button) return
+
+        applyTo(view, scale)
     }
 }

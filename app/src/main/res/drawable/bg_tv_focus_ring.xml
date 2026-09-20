@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  焦点描边选择器：仅「获得焦点」时显示焦点框，其余状态完全透明。
+  焦点描边选择器（默认/深色底）：仅「获得焦点」时显示焦点框，其余状态完全透明。
+  描边本体 shape_tv_focus_ring 只画「一条」品牌橙线；品牌橙底控件请改用
+  bg_tv_focus_ring_light（白环），TvFocus 也会对 backgroundTint=colorPrimary 的按钮自动切换。
   由 TvFocus.attachFocusRing() 挂到 View 的 foreground，状态切换由系统焦点机制驱动。
 
   注意：**不要**给 state_selected 也挂焦点框。

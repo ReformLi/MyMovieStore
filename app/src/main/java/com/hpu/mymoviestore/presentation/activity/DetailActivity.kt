@@ -188,13 +188,22 @@ class DetailActivity : AppCompatActivity() {
         // 初始化 DownloadViewModel
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
 
-        // TV 适配：播放按钮自绘焦点框 + 获焦放大
-        TvFocus.applyTo(binding.btnPlay, scale = 1.04f)
+        // TV 适配：播放按钮自绘焦点框 + 获焦放大。
+        // 播放/下载按钮是品牌橙底，焦点环须用白色变体 —— 橙环压在橙底上等于没有焦点框。
+        TvFocus.applyTo(
+            binding.btnPlay,
+            scale = 1.04f,
+            ringRes = R.drawable.bg_tv_focus_ring_light
+        )
         if (isTv) {
             // 电视端整体隐藏下载入口：文件落在电视本机没有意义，且遥控器操作成本高
             binding.btnDownload.visibility = View.GONE
         } else {
-            TvFocus.applyTo(binding.btnDownload, scale = 1.04f)
+            TvFocus.applyTo(
+                binding.btnDownload,
+                scale = 1.04f,
+                ringRes = R.drawable.bg_tv_focus_ring_light
+            )
         }
 
         // TV 适配：四个「信息模块」（影片信息 / 导演 / 主演 / 简介）在**横屏布局**里可聚焦但不可点击。
