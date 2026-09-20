@@ -9,6 +9,7 @@
         android:paddingEnd="6dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"
+        android:nextFocusRight="@id/btnCancel"
         android:background="?attr/selectableItemBackground">
 
     <ImageView

@@ -80,12 +80,14 @@ class VideoSourceDialog : DialogFragment() {
     override fun onStart() {
         super.onStart()
         val ctx = context ?: return
-        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
-        DialogSizing.applyCenteredCard(dialog, ctx)
-        // 源较多时列表限高并可滚动
+        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）。
+        // split = true：横屏下布局是 layout-land 的「左列表 + 右按钮栏」，需要更宽的卡片；
+        // 竖屏（layout/ 竖排版）自动忽略该参数，宽度与改动前完全一致。
+        DialogSizing.applyCenteredCard(dialog, ctx, split = true)
+        // 源较多时列表限高并可滚动（分栏后按钮不占底部，横屏可给列表多留一截高度）
         DialogSizing.limitContentHeight(
             rvSources,
-            DialogSizing.contentMaxHeightPx(ctx, DialogSizing.LIST_HEIGHT_RATIO)
+            DialogSizing.splitContentMaxHeightPx(ctx, DialogSizing.LIST_HEIGHT_RATIO)
         )
     }
 

@@ -34,17 +34,23 @@ class HelpDialog : DialogFragment() {
         view.findViewById<TextView>(R.id.tvClose).setOnClickListener { dismiss() }
         // TV 适配：关闭按钮可遥控器聚焦（弹窗内无可聚焦控件时遥控器会"失去落点"）
         TvFocus.applyToDialogButtons(view)
+        // TV 适配：横屏分栏版（layout-land）里内容区改成了左侧一列，左列全是纯展示文字，
+        // 必须给滚动区焦点能力，否则上下键无法滚动、看不到下方条目。
+        // 滚动区是**不可点击的 ViewGroup**，通用遍历只处理「可点击的容器」，覆盖不到它
+        // （那会导致焦点能停上去却只有系统默认高亮，与本 App 自绘环不统一），所以这里显式补环。
+        TvFocus.applyFocusableOnly(view.findViewById(R.id.scrollContent))
     }
 
     override fun onStart() {
         super.onStart()
         val ctx = context ?: return
-        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
-        DialogSizing.applyCenteredCard(dialog, ctx)
-        // 条目较多：内容区限高并可滚动（窄卡片下内容更高，必须留兜底）
+        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）。
+        // split = true：横屏下是 layout-land 的「左指引 + 右按钮栏」分栏布局，需要更宽的卡片。
+        DialogSizing.applyCenteredCard(dialog, ctx, split = true)
+        // 条目较多：内容区限高并可滚动（分栏后按钮移到右栏，横屏可给内容多留一截高度）
         DialogSizing.limitContentHeight(
             view?.findViewById(R.id.scrollContent),
-            DialogSizing.contentMaxHeightPx(ctx)
+            DialogSizing.splitContentMaxHeightPx(ctx)
         )
     }
 }

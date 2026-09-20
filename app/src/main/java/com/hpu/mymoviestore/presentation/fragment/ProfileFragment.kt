@@ -296,11 +296,12 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
         }
 
         dialog.show()
-        // 与其他弹窗统一：以屏宽短边为准的居中卡片宽度
-        DialogSizing.applyCenteredCard(dialog, requireContext())
+        // 与其他弹窗统一：以屏宽短边为准的居中卡片宽度。
+        // split = true：横屏下是 layout-land 的「左缓存项 + 右按钮栏」分栏布局，需要更宽的卡片。
+        DialogSizing.applyCenteredCard(dialog, requireContext(), split = true)
         DialogSizing.limitContentHeight(
             dialogBinding.scrollContent,
-            DialogSizing.contentMaxHeightPx(requireContext())
+            DialogSizing.splitContentMaxHeightPx(requireContext())
         )
         // TV 适配：缓存条目行 / 取消 / 清理 按钮可遥控器聚焦。
         // 本弹窗此前**完全没有任何 TvFocus 调用** —— 条目行靠 layout-land/item_clear_cache.xml 里的
