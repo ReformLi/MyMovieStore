@@ -49,7 +49,10 @@ import kotlinx.coroutines.launch
  * 搜索页 Fragment
  *
  * TV 模式：左右分栏布局，左侧搜索框 + QR 码（手机扫码搜索）+ 搜索历史，右侧结果列表。
- * TV 端启动内置 HTTP 服务器，手机扫码后在网页输入搜索内容，POST 回 TV。
+ * TV 端内置 HTTP 服务器：手机扫码后在网页输入搜索内容，POST 回 TV。
+ * **服务器与二维码展示严格绑定**：仅当本 Tab 为当前可见页且处于「输入态（二维码可见）」
+ * 时才监听 8234 端口；切页 / 进入结果页 / 退后台即关闭端口，其余场景网页链接无法打开
+ * （见 updateSearchServerState / setTvQrVisible / onResume / onPause）。
  *
  * 手机端：保持原有布局不变。
  */
@@ -84,6 +87,15 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     private var tvSearchServer: TvSearchServer? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastServerQueryTime: Long = 0L
+    /**
+     * 搜索页是否为「当前可见页」：ViewPager2(FragmentStateAdapter) 只把当前页提到 RESUMED，
+     * 离屏预加载页最高 STARTED —— 用它区分「视图存在」与「用户真的停留在搜索页」。
+     */
+    private var pageResumed: Boolean = false
+    /** 二维码是否处于展示态（输入态可见、结果页/输入了关键词后隐藏），同时是服务器的开关信号 */
+    private var qrVisible: Boolean = false
+    /** 局域网 IP 是否可用（prepareQrCode 判定）；不可用时二维码隐藏、服务器永不启动 */
+    private var tvQrAvailable: Boolean = false
 
     // TV 模式下的 View 引用（不用 ViewBinding，因为 TV 布局不同）
     private var tvEtSearch: EditText? = null
@@ -176,6 +188,23 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         }
     }
 
+    /**
+     * ViewPager2 + FragmentStateAdapter 只把「当前页」提到 RESUMED，离屏预加载页最高 STARTED。
+     * 因此 onResume/onPause 精确等价于「用户进入/离开搜索页」，作为扫码服务器的第二道门控。
+     */
+    override fun onResume() {
+        super.onResume()
+        pageResumed = true
+        updateSearchServerState()
+    }
+
+    override fun onPause() {
+        pageResumed = false
+        // 先落门控再走 super：离开搜索页（切 Tab / 进详情/播放器 / 应用退后台）立即关服务器
+        updateSearchServerState()
+        super.onPause()
+    }
+
     // ======================== TV 搜索功能 ========================
 
     /** 电视端：导航栏按「下键」时的内容区首焦点控件（搜索框） */
@@ -232,48 +261,77 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // 启动 HTTP 服务器 + 显示 QR 码
-        startTvSearchServer()
+        // 准备二维码（一次性生成 URL + 位图）；服务器不再常驻，改由二维码可见性驱动
+        prepareQrCode()
     }
 
-    private fun startTvSearchServer() {
+    /**
+     * 一次性准备二维码：取局域网 IP、写 URL 文案、后台生成位图。
+     * **不启动服务器** —— 服务器的启停完全交给 [updateSearchServerState]（二维码可见 + 当前页 resumed）。
+     * IP 取不到时标记 [tvQrAvailable]=false 并隐藏二维码，服务器在本次会话内也不会再启动。
+     */
+    private fun prepareQrCode() {
         val ip = TvSearchServer.getLocalIpAddress()
         if (ip == null) {
-            Log.w(TAG, "无法获取局域网 IP，跳过搜索服务器")
+            Log.w(TAG, "无法获取局域网 IP，二维码/扫码搜索不可用")
+            tvQrAvailable = false
+            tvLayoutQrCode?.visibility = View.GONE
             return
         }
-
-        tvSearchServer = TvSearchServer(requireContext()) { query ->
-            // 收到手机端搜索请求，切到主线程执行搜索
-            handler.post {
-                tvEtSearch?.setText(query)
-                tvEtSearch?.setSelection(query.length)
-                performSearch(query, 1)
-            }
-        }.also { it.start() }
-
-        // 显示 QR 码
-        val url = "http://$ip:${tvSearchServer!!.port}/search.html"
+        tvQrAvailable = true
+        val url = "http://$ip:${TvSearchServer.PORT}/search.html"
         tvQrUrl?.text = url
-        tvLayoutQrCode?.visibility = View.VISIBLE
-
         lifecycleScope.launch(Dispatchers.IO) {
             val bitmap = QrCodeGenerator.generate(url, 512)
             if (bitmap != null && isAdded) {
                 handler.post { tvQrCode?.setImageBitmap(bitmap) }
             }
         }
+        // 初始为输入态：显示二维码（若此刻已是当前可见页，顺带启动服务器）
+        setTvQrVisible(true)
+        Log.d(TAG, "TV 二维码就绪: $url")
+    }
 
-        Log.d(TAG, "TV 搜索服务器启动: $url")
+    /**
+     * 服务器启停的唯一入口 —— 只有「用户正停留在搜索页」且「二维码正在展示」两者同时成立才运行。
+     *
+     * 任一条件失效就 stop()：端口随之关闭，此时手机扫码或打开旧链接都会被连接拒绝，
+     * 完全满足「只有二维码出现时才能扫码/链接搜索，别的情况网页打不开」。
+     * 放在离屏预加载场景下也成立：ViewPager2 会预加载搜索页视图，但非当前页不 RESUMED，
+     * pageResumed=false → 服务器不启动，避免后台常驻。
+     */
+    private fun updateSearchServerState() {
+        if (!isTvMode) return
+        val shouldRun = pageResumed && qrVisible
+        if (shouldRun && tvSearchServer == null) {
+            tvSearchServer = TvSearchServer(requireContext()) { query ->
+                // 收到手机端搜索请求，切到主线程执行搜索
+                handler.post {
+                    tvEtSearch?.setText(query)
+                    tvEtSearch?.setSelection(query.length)
+                    performSearch(query, 1)
+                }
+            }.also { it.start() }
+            Log.d(TAG, "搜索服务器启动（二维码可见 + 当前页）")
+        } else if (!shouldRun && tvSearchServer != null) {
+            tvSearchServer?.stop()
+            tvSearchServer = null
+            Log.d(TAG, "搜索服务器停止（离开搜索页或二维码隐藏），端口 ${TvSearchServer.PORT} 已释放")
+        }
     }
 
     /**
      * TV 横屏：右侧面板在「二维码伴侣」与「结果列表」之间切换。
      * 空闲（输入框为空 / 已重置）时显示二维码；一旦开始搜索则隐藏二维码，让出右侧给结果列表。
      * 二维码视图本身不可聚焦，结果列表项与翻页按钮可聚焦，互不冲突。
+     *
+     * 本方法是「二维码可见性」的唯一改动点：置位 [qrVisible] 并驱动 [updateSearchServerState]，
+     * 从而把扫码/链接搜索严格绑定到二维码展示期间。
      */
     private fun setTvQrVisible(show: Boolean) {
         tvLayoutQrCode?.visibility = if (show) View.VISIBLE else View.GONE
+        qrVisible = show && tvQrAvailable
+        updateSearchServerState()
     }
 
     // ======================== 手机端 + 通用逻辑 ========================
@@ -764,7 +822,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         // 每个 chip 用 newDrawable().mutate() 拿一份独立副本。
         val chipBgProto = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, null)
         val textColor = resources.getColor(R.color.text_primary, null)
-        // 换行预算必须用「容器真实宽度」，不能用整屏宽度：横屏（TV）左栏只有 360dp，
+        // 换行预算必须用「容器真实宽度」，不能用整屏宽度：横屏（TV）左栏只占 3:2 分栏的 3/5，
         // 按整屏宽换行会让一行 chip 溢出卡片、被祖先裁掉 —— 看不见却仍然可聚焦，
         // 按方向键时焦点会落到这些看不见的 chip 上（表现为「焦点消失且找不回」）。
         var rowWidthPx = container.width - container.paddingStart - container.paddingEnd

@@ -25,10 +25,11 @@
         android:clipChildren="false"
         android:clipToPadding="false">
 
-        <!-- ============ 左侧：搜索控制区（可聚焦） ============ -->
+        <!-- ============ 左侧：搜索控制区（可聚焦），左右 3:2 分栏 ============ -->
         <LinearLayout
-            android:layout_width="360dp"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_weight="3"
             android:orientation="vertical"
             android:gravity="top"
             android:paddingTop="24dp"
@@ -164,11 +165,11 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- ============ 右侧：二维码伴侣（整体不可聚焦） ============ -->
+        <!-- ============ 右侧：二维码伴侣（整体不可聚焦），与左栏 3:2 ============ -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
+            android:layout_weight="2"
             android:orientation="vertical"
             android:paddingTop="24dp"
             android:paddingBottom="24dp"
