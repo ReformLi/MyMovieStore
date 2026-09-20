@@ -1,12 +1,9 @@
 package com.hpu.mymoviestore.presentation.dialog
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -87,23 +84,13 @@ class EpisodeSelectDialog private constructor(
             .create()
         dialog.show()
 
-        // 卡片自身负责圆角与背景，窗口透明 + 屏宽 85%
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(0.6f)
-            setLayout(
-                (context.resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
-        // 集数很多时列表最大高度限制为屏高 45%，超出滚动
-        binding.rvEpisodes.post {
-            val maxHeight = (context.resources.displayMetrics.heightPixels * 0.45).toInt()
-            if (binding.rvEpisodes.height > maxHeight) {
-                binding.rvEpisodes.layoutParams = binding.rvEpisodes.layoutParams.apply { height = maxHeight }
-                binding.rvEpisodes.requestLayout()
-            }
-        }
+        // 卡片自身负责圆角与背景：窗口透明 + 以屏宽短边为准的宽度
+        DialogSizing.applyCenteredCard(dialog, context)
+        // 集数很多时列表限高并可滚动
+        DialogSizing.limitContentHeight(
+            binding.rvEpisodes,
+            DialogSizing.contentMaxHeightPx(context, DialogSizing.LIST_HEIGHT_RATIO)
+        )
 
         updateHeader()
 

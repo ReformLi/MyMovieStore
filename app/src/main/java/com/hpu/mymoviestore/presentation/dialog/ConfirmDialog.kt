@@ -1,11 +1,8 @@
 package com.hpu.mymoviestore.presentation.dialog
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.view.LayoutInflater
 import android.view.View
-import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.databinding.DialogConfirmBinding
@@ -62,15 +59,8 @@ object ConfirmDialog {
         dialog.show()
         // TV 适配：确定 / 取消 按钮可遥控器聚焦
         TvFocus.applyToDialogButtons(binding.root)
-        // 卡片本身负责圆角与背景，窗口透明 + 屏宽 85%
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(0.6f)
-            setLayout(
-                (context.resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
+        // 卡片本身负责圆角与背景：窗口透明 + 以屏宽短边为准的宽度
+        DialogSizing.applyCenteredCard(dialog, context)
 
         return dialog
     }

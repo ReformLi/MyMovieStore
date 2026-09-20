@@ -4,11 +4,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.DialogFragment
 import com.hpu.mymoviestore.R
+import com.hpu.mymoviestore.presentation.dialog.DialogSizing
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
@@ -39,24 +38,13 @@ class HelpDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        // 居中卡片：透明背景 + 屏宽 85%
-        dialog?.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(
-                (resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
-        // 条目较多，限制内容区最大高度为屏高 60%（超出可滚动，避免撑满屏幕）
-        view?.findViewById<ScrollView>(R.id.scrollContent)?.post {
-            if (!isAdded) return@post
-            val maxHeight = (resources.displayMetrics.heightPixels * 0.6).toInt()
-            val scrollView = view?.findViewById<ScrollView>(R.id.scrollContent) ?: return@post
-            if (scrollView.height > maxHeight) {
-                scrollView.layoutParams = scrollView.layoutParams.apply {
-                    height = maxHeight
-                }
-            }
-        }
+        val ctx = context ?: return
+        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
+        DialogSizing.applyCenteredCard(dialog, ctx)
+        // 条目较多：内容区限高并可滚动（窄卡片下内容更高，必须留兜底）
+        DialogSizing.limitContentHeight(
+            view?.findViewById(R.id.scrollContent),
+            DialogSizing.contentMaxHeightPx(ctx)
+        )
     }
 }

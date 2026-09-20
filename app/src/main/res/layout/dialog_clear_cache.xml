@@ -49,16 +49,26 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
-        <!-- 缓存项容器 -->
-        <LinearLayout
-            android:id="@+id/container"
+        <!-- 缓存项容器：窄卡片 + 电视矮屏下 6 项会超过可用高度，故套一层滚动 -->
+        <ScrollView
+            android:id="@+id/scrollContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:background="@drawable/bg_card_rounded"
-            android:orientation="vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp" />
+            android:focusable="false"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card_rounded"
+                android:orientation="vertical"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+        </ScrollView>
 
         <!-- 按钮行 -->
         <LinearLayout
@@ -85,7 +95,7 @@
                 android:layout_weight="1"
                 android:layout_marginStart="6dp"
                 android:text="@string/clear_action"
-                android:textColor="@color/colorOnSurface"
+                android:textColor="@color/colorOnPrimary"
                 android:backgroundTint="@color/colorPrimary"
                 app:cornerRadius="12dp" />
 

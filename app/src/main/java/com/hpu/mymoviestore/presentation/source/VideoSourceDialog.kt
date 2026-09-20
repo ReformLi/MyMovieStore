@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
@@ -15,6 +14,7 @@ import com.google.android.material.button.MaterialButton
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.source.VideoSource
+import com.hpu.mymoviestore.presentation.dialog.DialogSizing
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
@@ -79,24 +79,14 @@ class VideoSourceDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        // 居中卡片：透明背景 + 屏宽 85%
-        dialog?.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(
-                (resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
-        // 限制列表最大高度为屏高 45%（源多时可滚动）
-        rvSources.post {
-            if (!isAdded) return@post
-            val maxHeight = (resources.displayMetrics.heightPixels * 0.45).toInt()
-            if (rvSources.height > maxHeight) {
-                rvSources.layoutParams = rvSources.layoutParams.apply {
-                    height = maxHeight
-                }
-            }
-        }
+        val ctx = context ?: return
+        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
+        DialogSizing.applyCenteredCard(dialog, ctx)
+        // 源较多时列表限高并可滚动
+        DialogSizing.limitContentHeight(
+            rvSources,
+            DialogSizing.contentMaxHeightPx(ctx, DialogSizing.LIST_HEIGHT_RATIO)
+        )
     }
 
     /** 切换单个源：勾选 → 更新全选按钮与计数 */

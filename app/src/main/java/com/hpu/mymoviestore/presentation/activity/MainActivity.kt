@@ -25,6 +25,7 @@ import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.repository.PermissionConfigRepository
 import com.hpu.mymoviestore.databinding.ActivityMainBinding
+import com.hpu.mymoviestore.presentation.dialog.DialogSizing
 import com.hpu.mymoviestore.presentation.fragment.HomeFragment
 import com.hpu.mymoviestore.presentation.fragment.ProfileFragment
 import com.hpu.mymoviestore.presentation.fragment.SearchFragment
@@ -173,15 +174,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.setContentView(view)
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(
-                (resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
         dialog.setCancelable(true)
         dialog.show()
+        // 与其他弹框统一：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
+        DialogSizing.applyCenteredCard(dialog, this)
+        // 更新说明来自远程配置、长度不可控：限高可滚动，避免在电视矮屏上顶出屏幕
+        DialogSizing.limitContentHeight(
+            view.findViewById(R.id.scrollUpdateContent),
+            DialogSizing.contentMaxHeightPx(this, 0.35f)
+        )
         // TV 适配：「知道了 / 今天不再提醒」可遥控器聚焦
         com.hpu.mymoviestore.presentation.tv.TvFocus.applyToDialogButtons(view)
     }
@@ -440,7 +441,7 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         }
-        return moveFocusToNavBar()
+        return focusCurrentNavItem()
     }
 
     /**
@@ -487,8 +488,13 @@ class MainActivity : AppCompatActivity() {
         return v.getGlobalVisibleRect(r) && r.width() > 0 && r.height() > 0
     }
 
-    /** 把焦点交回顶部导航栏的当前选中页签（上键的兜底路径） */
-    private fun moveFocusToNavBar(): Boolean {
+    /**
+     * 把焦点交回顶部导航栏的当前选中页签。
+     *
+     * 既是本类上键的兜底路径，也开放给内容页调用 —— 左右分栏的页面（如「我的」）
+     * 中，焦点从右侧菜单按上键时，系统的几何搜索会在页内兜圈而落不到导航栏。
+     */
+    internal fun focusCurrentNavItem(): Boolean {
         return navItemViews.getOrNull(binding.viewPager.currentItem)?.requestFocus() ?: false
     }
 

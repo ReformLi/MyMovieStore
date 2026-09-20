@@ -24,11 +24,16 @@ import com.hpu.mymoviestore.databinding.DialogClearCacheBinding
 import com.hpu.mymoviestore.databinding.FragmentProfileBinding
 import com.hpu.mymoviestore.presentation.activity.DownloadActivity
 import com.hpu.mymoviestore.presentation.activity.HistoryActivity
+import com.hpu.mymoviestore.presentation.activity.MainActivity
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
+import com.hpu.mymoviestore.presentation.dialog.DialogSizing
 import com.hpu.mymoviestore.presentation.help.HelpDialog
 import com.hpu.mymoviestore.presentation.settings.ThemeManager
 import com.hpu.mymoviestore.presentation.source.VideoSourceDialog
+import com.hpu.mymoviestore.presentation.tv.TvContentKeyHandler
 import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.tv.TvInitialFocusProvider
+import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import com.hpu.mymoviestore.presentation.update.AboutDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,7 +43,10 @@ import kotlinx.coroutines.withContext
  * "我的" 页面 —— 个人中心，包含视频源管理、弹幕开关、历史记录、下载管理、
  * 清理缓存、帮助和关于等入口。
  */
-class ProfileFragment : Fragment() {
+class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
+
+    /** 电视端判定：启动时定死，形态不做动态切换（与 MainActivity 一致） */
+    private var isTv: Boolean = false
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -54,6 +62,7 @@ class ProfileFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        isTv = TvUiSupport.isTelevision(requireContext())
         restoreSourceEnabledStates()
         setupThemeToggle()
         setupClickListeners()
@@ -61,20 +70,87 @@ class ProfileFragment : Fragment() {
     }
 
     /**
-     * TV 适配：功能卡片与主题切换按钮需可被遥控器聚焦，否则电视上无法操作。
-     * 弹幕开关（SwitchMaterial）本身可聚焦，不重复处理其父卡片。
+     * TV 适配（横屏两栏）：右栏设置菜单每张卡片 + 左栏主题切换按钮需可被遥控器聚焦。
+     *
+     * 两处电视端专属处理：
+     *  - 隐藏「下载管理」：文件落在电视本机没有意义（与详情页隐藏下载入口一致）。
+     *    只置 GONE 不改布局 —— 两份布局的 id 必须一致，否则 ViewBinding 生成字段会变成可空。
+     *  - 弹幕行做成「整行一个焦点」：`SwitchMaterial` 自身可聚焦，会让同一行出现两个焦点停靠点，
+     *    上下键会在「卡片 <-> 开关」之间乱跳。改为开关不可聚焦，焦点停在卡片上，
+     *    按确定键（DPAD_CENTER -> performClick）切换开关。
      */
     private fun setupTvFocus() {
-        listOf(
-            binding.cardVideoSource,
-            binding.cardHistory,
-            binding.cardDownload,
-            binding.cardClearCache,
-            binding.cardHelp,
-            binding.cardAbout
-        ).forEach { TvFocus.applyTo(it, scale = 1.02f) }
+        if (isTv) {
+            binding.cardDownload.visibility = View.GONE
+            binding.switchDanmu.isFocusable = false
+            binding.cardDanmu.setOnClickListener { binding.switchDanmu.toggle() }
+        }
+        tvMenuCards().forEach { TvFocus.applyTo(it, scale = 1.02f) }
         TvFocus.applyTo(binding.btnThemeToggle, scale = 1.1f)
     }
+
+    /**
+     * 右栏设置菜单的功能卡片（顺序 = 视觉顺序）。
+     * 电视端「下载管理」被隐藏，不计入 —— 焦点不会落到看不见的控件上。
+     */
+    private fun tvMenuCards(): List<View> = listOfNotNull(
+        binding.cardVideoSource,
+        binding.cardDanmu,
+        binding.cardHistory,
+        if (isTv) null else binding.cardDownload,
+        binding.cardClearCache,
+        binding.cardHelp,
+        binding.cardAbout
+    )
+
+    /**
+     * 电视端：顶部标签栏按「下键」进入本页时的落点 —— 设置菜单第一项。
+     * 必须实时返回（ViewPager2 会复用 Fragment，onViewCreated 只跑一次，缓存会过期）。
+     */
+    override fun tvInitialFocusView(): View? {
+        if (!isTv) return null
+        return tvMenuCards().firstOrNull()
+    }
+
+    /**
+     * 电视端方向键兜底接管。
+     *
+     * 为什么必须接管：左右分栏下左栏只有「主题切换按钮」一个可聚焦控件（在图片右上角），
+     * 它与右栏菜单之间**没有稳定的几何上下关系** ——
+     *  · 焦点在按钮上按「下键」：系统在按钮正下方找不到候选（菜单在右侧），要么不动、要么乱跳；
+     *  · 焦点在按钮上按「上键」：左栏已无更高候选，系统的几何搜索会兜到右栏菜单，
+     *    表现为「按钮 <-> 菜单」来回跳、永远回不到标签栏。
+     * 所以两栏之间的移动在这里显式规定：**上键（按钮处、或菜单已到第一项）一律交回
+     * 顶部标签栏的当前页签**；菜单内部的上键逐项上移。其余方向交回系统（返回 false）。
+     */
+    override fun onContentDirectionKey(direction: Int): Boolean {
+        if (!isTv) return false
+        val focused = activity?.currentFocus ?: binding.root.findFocus() ?: return false
+        val cards = tvMenuCards()
+        val firstCard = cards.firstOrNull() ?: return false
+
+        // 主题切换按钮：上键 -> 回顶部标签栏；右键 / 下键 -> 进入设置菜单第一项
+        if (focused === binding.btnThemeToggle) {
+            if (direction == View.FOCUS_UP) return focusTopNavBar()
+            return (direction == View.FOCUS_RIGHT || direction == View.FOCUS_DOWN) &&
+                firstCard.requestFocus()
+        }
+
+        if (cards.none { it === focused }) return false   // 焦点不在菜单里，不干预
+        // 左键 -> 回主题切换按钮
+        if (direction == View.FOCUS_LEFT) return binding.btnThemeToggle.requestFocus()
+        // 上键：菜单内部逐项上移；第一项已到顶 -> 回顶部标签栏
+        if (direction == View.FOCUS_UP) {
+            val index = cards.indexOfFirst { it === focused }
+            if (index <= 0) return focusTopNavBar()
+            return cards[index - 1].requestFocus()
+        }
+        return false
+    }
+
+    /** 把焦点交回顶部标签栏的当前页签（本页即「我的」） */
+    private fun focusTopNavBar(): Boolean =
+        (activity as? MainActivity)?.focusCurrentNavItem() == true
 
     /** 主题切换：按当前模式渲染按钮图标与头部背景图；点击切换后 Activity 自动重建，本方法随之再次刷新 */
     private fun setupThemeToggle() {
@@ -220,10 +296,11 @@ class ProfileFragment : Fragment() {
         }
 
         dialog.show()
-        // 与其他弹窗统一：屏宽 85%
-        dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.90).toInt(),
-            android.view.WindowManager.LayoutParams.WRAP_CONTENT
+        // 与其他弹窗统一：以屏宽短边为准的居中卡片宽度
+        DialogSizing.applyCenteredCard(dialog, requireContext())
+        DialogSizing.limitContentHeight(
+            dialogBinding.scrollContent,
+            DialogSizing.contentMaxHeightPx(requireContext())
         )
     }
 

@@ -115,7 +115,7 @@
                 android:layout_weight="1"
                 android:layout_marginStart="6dp"
                 android:text="@string/confirm_ok"
-                android:textColor="@color/colorOnSurface"
+                android:textColor="@color/colorOnPrimary"
                 android:backgroundTint="@color/colorPrimary"
                 app:cornerRadius="12dp" />
 

@@ -43,15 +43,23 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
-        <!-- 更新内容卡片 -->
-        <LinearLayout
-            android:id="@+id/cardUpdateContent"
+        <!-- 更新内容卡片：文案长度来自远程配置、不可控，套一层滚动避免矮屏顶出屏幕 -->
+        <ScrollView
+            android:id="@+id/scrollUpdateContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:background="@drawable/bg_card_rounded"
-            android:orientation="vertical"
-            android:padding="14dp">
+            android:focusable="false"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/cardUpdateContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card_rounded"
+                android:orientation="vertical"
+                android:padding="14dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -70,7 +78,9 @@
                 android:textSize="14sp"
                 android:lineSpacingExtra="4dp" />
 
-        </LinearLayout>
+            </LinearLayout>
+
+        </ScrollView>
 
         <!-- 路径引导 -->
         <TextView
@@ -90,7 +100,7 @@
             android:layout_marginTop="18dp"
             android:backgroundTint="@color/colorPrimary"
             android:text="@string/got_it"
-            android:textColor="@color/colorOnSurface"
+            android:textColor="@color/colorOnPrimary"
             android:textSize="15sp"
             app:cornerRadius="14dp" />
 

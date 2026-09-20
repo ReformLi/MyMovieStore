@@ -5,7 +5,6 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -18,6 +17,7 @@ import com.hpu.mymoviestore.BuildConfig
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.repository.UpdateInfo
+import com.hpu.mymoviestore.presentation.dialog.DialogSizing
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 import kotlinx.coroutines.launch
 import java.io.File
@@ -121,31 +121,16 @@ class AboutDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        // 居中卡片：透明背景 + 屏宽 85%，内容超长时限制内容区高度可滚动
-        dialog?.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(
-                (resources.displayMetrics.widthPixels * 0.90).toInt(),
-                WindowManager.LayoutParams.WRAP_CONTENT
-            )
-        }
+        val ctx = context ?: return
+        // 居中卡片：透明背景 + 以屏宽短边为准的宽度（横屏不再被拉成超宽扁条）
+        DialogSizing.applyCenteredCard(dialog, ctx)
         limitContentHeight()
     }
 
-    /**
-     * 限制内容区最大高度为屏高 65%（更新说明文案较长时可滚动，
-     * 避免 Dialog 撑满屏幕）。
-     */
+    /** 内容区限高（更新说明文案较长时可滚动，避免 Dialog 撑出屏幕） */
     private fun limitContentHeight() {
-        scrollContent.post {
-            if (!isAdded) return@post
-            val maxHeight = (resources.displayMetrics.heightPixels * 0.65).toInt()
-            if (scrollContent.height > maxHeight) {
-                scrollContent.layoutParams = scrollContent.layoutParams.apply {
-                    height = maxHeight
-                }
-            }
-        }
+        val ctx = context ?: return
+        DialogSizing.limitContentHeight(scrollContent, DialogSizing.contentMaxHeightPx(ctx))
     }
 
     /** 检查更新（复用远程配置仓库的 checkUpdate，缓存命中时不联网） */
