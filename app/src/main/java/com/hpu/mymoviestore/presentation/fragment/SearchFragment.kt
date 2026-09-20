@@ -25,12 +25,14 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.entity.SearchHistoryEntity
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentSearchBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
+import com.hpu.mymoviestore.presentation.adapter.SearchResultAdapter
 import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
 import com.hpu.mymoviestore.presentation.tv.QrCodeGenerator
 import com.hpu.mymoviestore.presentation.tv.TvContentKeyHandler
@@ -58,7 +60,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
 
     private lateinit var viewModel: VideoViewModel
     private lateinit var historyViewModel: SearchHistoryViewModel
-    private lateinit var adapter: VideoAdapter
+    /** 电视端（横屏）结果适配器：首页式网格卡片 */
+    private lateinit var tvAdapter: VideoAdapter
+    /** 手机端（竖屏）结果适配器：与 9/11 基线一致的「海报 + 主演 + 简介」大卡片列表 */
+    private lateinit var phoneAdapter: SearchResultAdapter
     private var currentSpanCount: Int = 3
     /** 结果页接管标记：true = 显示「搜索结果页」，false = 显示搜索输入区 */
     private var resultPageShown: Boolean = false
@@ -150,15 +155,19 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
 
         viewModel = ViewModelProvider(this)[VideoViewModel::class.java]
         historyViewModel = ViewModelProvider(this)[SearchHistoryViewModel::class.java]
-        // 结果页与首页同款卡片：图片 + 标题 + 视频源（评分位置换成来源）
-        adapter = VideoAdapter(
+        // 结果样式按形态分流，横屏那套网格不外溢到竖屏：
+        // - 电视端：首页同款卡片（图片 + 标题 + 视频源，评分位置换成来源）+ 网格
+        // - 手机端：9/11 基线的大卡片列表（海报 + 标题 + 类型/年份 + 主演 + 简介）
+        tvAdapter = VideoAdapter(
             onItemClick = { video -> openDetail(video) },
             sourceMode = true
         )
+        phoneAdapter = SearchResultAdapter(onItemClick = { video -> openDetail(video) })
 
         setupViews()
         observeData()
-        setupBackToInput()
+        // 结果页返回键接管只对电视端有意义：手机端结果就列在搜索框下方，不存在「整页结果态」
+        if (isTvMode) setupBackToInput()
 
         if (isTvMode) {
             setupTvSearch()
@@ -267,21 +276,19 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     // ======================== 手机端 + 通用逻辑 ========================
 
     private fun setupViews() {
-        currentSpanCount = calculateSpanCount()
-        val recyclerView = if (isTvMode) tvRecyclerView else binding.recyclerView
-        recyclerView?.layoutManager = GridLayoutManager(context, currentSpanCount)
-        recyclerView?.adapter = adapter
-        adapter.setSpanCount(currentSpanCount)
+        if (isTvMode) {
+            currentSpanCount = calculateSpanCount()
+            tvRecyclerView?.layoutManager = GridLayoutManager(context, currentSpanCount)
+            tvRecyclerView?.adapter = tvAdapter
+            tvAdapter.setSpanCount(currentSpanCount)
+        } else {
+            // 手机端：竖向大卡片列表（9/11 基线的搜索结果形态）
+            binding.recyclerView.layoutManager = LinearLayoutManager(context)
+            binding.recyclerView.adapter = phoneAdapter
+        }
 
         if (!isTvMode) {
-            // 手机端 TV 适配
-            TvFocus.applyTo(binding.btnSearch, scale = 1.05f)
-            TvFocus.applyTo(binding.tvClearHistory, scale = 1.05f)
-            TvFocus.applyTo(binding.btnPrevPage, scale = 1.05f)
-            TvFocus.applyTo(binding.btnNextPage, scale = 1.05f)
-            TvFocus.applyTo(binding.btnBackToSearch, scale = 1.05f)
-        TvFocus.applyFocusableOnly(binding.etSearch)
-
+            // 手机端不做任何焦点改造（TvFocus 内部也已按形态门控，这里干脆不挂）
             binding.etSearch.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -391,8 +398,18 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         }
     }
 
+    /** 结果提交：按形态写入对应适配器（横屏网格 / 竖屏列表） */
+    private fun submitResults(list: List<VideoItem>) {
+        if (isTvMode) tvAdapter.submitList(list) else phoneAdapter.submitList(list)
+    }
+
+    /** 当前形态下的结果条目数 */
+    private fun resultItemCount(): Int =
+        if (isTvMode) tvAdapter.itemCount else phoneAdapter.itemCount
+
     private fun renderList(list: List<VideoItem>) {
-        // 结果一律渲染在「结果页」上（整页接管：标题 = 搜索内容，首页式网格）
+        // 结果渲染在「结果页」容器上：电视端整页接管（标题 = 搜索内容，首页式网格），
+        // 手机端只是把提示语换成结果列表，搜索框与历史仍留在上方（同 9/11 基线）
         showResultPage(true)
         if (list.isEmpty()) {
             val rv = if (isTvMode) tvRecyclerView else binding.recyclerView
@@ -405,7 +422,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             rv?.visibility = View.VISIBLE
             val empty = if (isTvMode) tvResultEmpty else binding.tvResultEmpty
             empty?.visibility = View.GONE
-            adapter.submitList(list)
+            submitResults(list)
             rv?.scrollToPosition(0)
             if (isTvMode && pendingResultFocus) {
                 pendingResultFocus = false
@@ -522,7 +539,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     /** 分页栏收起/失效时把焦点交回结果网格，避免焦点凭空中断 */
     private fun handOffFocusToResult() {
         val rv = tvRecyclerView
-        if (rv == null || adapter.itemCount <= 0) {
+        if (rv == null || resultItemCount() <= 0) {
             tvBtnBackToSearch?.requestFocus()
             return
         }
@@ -553,9 +570,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         val rv = tvRecyclerView ?: return false
         val focused = activity?.currentFocus ?: return false
         val position = adapterPositionOf(rv, focused)
-        if (position < 0 || adapter.itemCount <= 0) return false
+        val itemCount = resultItemCount()
+        if (position < 0 || itemCount <= 0) return false
         val span = currentSpanCount.coerceAtLeast(1)
-        val lastRowStart = adapter.itemCount - 1 - ((adapter.itemCount - 1) % span)
+        val lastRowStart = itemCount - 1 - ((itemCount - 1) % span)
         if (position < lastRowStart) return false     // 还没到最后一行 -> 交回系统正常移动
         return revealPagination()
     }
@@ -635,7 +653,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             paginationAvailable = false
             collapsePagination()
             tvEtSearch?.setText("")
-            adapter.submitList(emptyList())
+            submitResults(emptyList())
             tvRecyclerView?.visibility = View.GONE
             tvSearchSummary?.visibility = View.GONE
             tvResultEmpty?.visibility = View.GONE
@@ -644,7 +662,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             setTvQrVisible(true)
         } else if (_binding != null) {
             binding.etSearch.setText("")
-            adapter.submitList(emptyList())
+            submitResults(emptyList())
             binding.recyclerView.visibility = View.GONE
             binding.tvSearchSummary.visibility = View.GONE
             binding.layoutPagination.visibility = View.GONE
@@ -668,16 +686,21 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     }
 
     /**
-     * 搜索页两态切换（竖屏 / 横屏共用同一套逻辑）：
-     * - true  结果页：整页「标题 + 首页式网格 + 分页」，搜索框/按钮/历史/二维码全部隐藏
-     * - false 输入态：搜索框 + 按钮 + 历史（横屏另有二维码伴侣）
+     * 结果页显隐 —— 只有电视端是「整页切换」：
+     * - 电视（横屏）：true = 整页结果页（标题 + 首页式网格 + 分页），搜索框 / 历史 / 二维码全隐
+     * - 手机（竖屏）：布局本身就是「搜索区 + 结果区」上下常驻（与 9/11 基线一致），
+     *   这里只收起「输入关键词后点击搜索」这个提示，不隐藏搜索框。
+     *   结果页头部（关键词标题 + 重新搜索）是电视端整页形态的产物，竖屏布局里已静态隐藏。
      */
     private fun showResultPage(show: Boolean) {
+        if (!isTvMode) {
+            binding.tvEmpty.visibility = if (show) View.GONE else View.VISIBLE
+            resultPageShown = false      // 不接管返回键，保持基线：退出交给 MainActivity
+            return
+        }
         resultPageShown = show
-        val inputArea = if (isTvMode) tvInputArea else binding.layoutSearchInputArea
-        val resultPage = if (isTvMode) tvResultPage else binding.layoutSearchResultPage
-        inputArea?.visibility = if (show) View.GONE else View.VISIBLE
-        resultPage?.visibility = if (show) View.VISIBLE else View.GONE
+        tvInputArea?.visibility = if (show) View.GONE else View.VISIBLE
+        tvResultPage?.visibility = if (show) View.VISIBLE else View.GONE
         if (!show) collapsePagination()          // 结果页不在了，分页栏状态一并清掉
         // 二维码伴侣只在输入态出现，结果页要让位给网格
         setTvQrVisible(!show)
@@ -733,7 +756,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         val density = resources.displayMetrics.density
         val chipPaddingPx = (8 * density).toInt()
         val chipMarginPx = (6 * density).toInt()
-        val chipBg = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, null)
+        // 注意：ResourcesCompat 返回的是「共享 ConstantState」的 Drawable，同一个实例设给 12 个
+        // TextView 会共用 bounds/state（只有最后一个 View 持有 callback），背景表现不可预期。
+        // 每个 chip 用 newDrawable().mutate() 拿一份独立副本。
+        val chipBgProto = ResourcesCompat.getDrawable(resources, R.drawable.bg_chip, null)
         val textColor = resources.getColor(R.color.text_primary, null)
         // 换行预算必须用「容器真实宽度」，不能用整屏宽度：横屏（TV）左栏只有 360dp，
         // 按整屏宽换行会让一行 chip 溢出卡片、被祖先裁掉 —— 看不见却仍然可聚焦，
@@ -755,7 +781,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
                 setPadding(chipPaddingPx, chipPaddingPx / 2, chipPaddingPx, chipPaddingPx / 2)
                 setTextColor(textColor)
                 textSize = 13f
-                background = chipBg
+                background = chipBgProto?.constantState?.newDrawable()?.mutate()
                 setOnClickListener {
                     etSearch?.setText(item.keyword)
                     etSearch?.setSelection(item.keyword.length)

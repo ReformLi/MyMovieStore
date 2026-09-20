@@ -39,11 +39,7 @@
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_detail_card"
                 android:clipChildren="false"
-                android:defaultFocusHighlightEnabled="false"
-                android:descendantFocusability="blocksDescendants"
                 android:elevation="3dp"
-                android:focusable="true"
-                android:foreground="@drawable/bg_tv_focus_ring"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -259,11 +255,7 @@
                 android:layout_marginTop="14dp"
                 android:background="@drawable/bg_detail_card"
                 android:clipChildren="false"
-                android:defaultFocusHighlightEnabled="false"
-                android:descendantFocusability="blocksDescendants"
                 android:elevation="2dp"
-                android:focusable="true"
-                android:foreground="@drawable/bg_tv_focus_ring"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -293,11 +285,7 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_detail_card"
                 android:clipChildren="false"
-                android:defaultFocusHighlightEnabled="false"
-                android:descendantFocusability="blocksDescendants"
                 android:elevation="2dp"
-                android:focusable="true"
-                android:foreground="@drawable/bg_tv_focus_ring"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -328,11 +316,7 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_detail_card"
                 android:clipChildren="false"
-                android:defaultFocusHighlightEnabled="false"
-                android:descendantFocusability="blocksDescendants"
                 android:elevation="2dp"
-                android:focusable="true"
-                android:foreground="@drawable/bg_tv_focus_ring"
                 android:orientation="vertical"
                 android:padding="16dp">
 

@@ -55,11 +55,16 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+          详情 / 历史 / 下载 / Cloudflare 验证窗口：与主页面同一策略「形态定方向」——
+          手机恒竖屏（PORTRAIT）、电视恒横屏（LANDSCAPE），各自在 onCreate 里按 isTv 设置。
+          这里刻意不写 android:screenOrientation：清单分不出形态，写死方向会让**手机竖屏**
+          在打开这些页面时被系统强制转成横屏。
+        -->
         <activity
             android:name=".presentation.activity.DetailActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity"
-            android:screenOrientation="landscape" />
+            android:parentActivityName=".presentation.activity.MainActivity" />
         <!-- 播放器：手机与电视都保持横屏 -->
         <activity
             android:name=".presentation.activity.PlayerActivity"
@@ -72,18 +77,15 @@
         <activity
             android:name=".presentation.activity.HistoryActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity"
-            android:screenOrientation="landscape" />
+            android:parentActivityName=".presentation.activity.MainActivity" />
         <activity
             android:name=".presentation.activity.DownloadActivity"
             android:exported="false"
-            android:parentActivityName=".presentation.activity.MainActivity"
-            android:screenOrientation="landscape" />
+            android:parentActivityName=".presentation.activity.MainActivity" />
         <!-- Cloudflare 人工验证兜底窗口（自动过盾失败时弹出，透明浮层） -->
         <activity
             android:name=".presentation.challenge.CloudflareChallengeActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
             android:theme="@style/Theme.MyMovieStore.Challenge" />
         <service
             android:name=".data.download.DownloadService"

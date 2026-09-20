@@ -62,6 +62,11 @@
     <color name="placeholder">#333333</color>
     <color name="chip_background">#2A2A2A</color>
     <color name="chip_background_selected">#33FF6B35</color>
+    <!-- 搜索历史关键词标签底色（深色模式：比卡片 #1A1A1A 亮一档即可，
+         #383838 偏亮会显得「泛白」，收到 #333333） -->
+    <color name="chip_history_background">#333333</color>
+    <!-- 搜索历史 chip 的描边（深色模式） -->
+    <color name="chip_history_stroke">#4D4D4D</color>
 
     <!-- ======================== 播放器专用（恒定深色，不随主题切换） ======================== -->
     <color name="player_background">#000000</color>

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -76,6 +77,13 @@ class CloudflareChallengeActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 形态定方向：手机竖屏、电视横屏（基线是清单写死 portrait，现改为按形态运行时设置）
+        requestedOrientation =
+            if (com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
         targetUrl = intent.getStringExtra(EXTRA_URL) ?: run {
             finish()
             return

@@ -63,6 +63,14 @@
     <color name="placeholder">#E0E0E0</color>
     <color name="chip_background">#F0F0F0</color>
     <color name="chip_background_selected">#33FF6B35</color>
+    <!-- 搜索历史关键词标签底色：
+         白卡片(#FFFFFF)上的浅灰 chip 必须足够深才看得出是「灰块」——
+         #F0F0F0 差 15 级、#E0E0E0 差 31 级都仍嫌「泛白」，这里一步到位取 #CFCFCF（差 48 级）。
+         chip_background 本身不动，弹窗等处的 backgroundTint 仍在用它 -->
+    <color name="chip_history_background">#CFCFCF</color>
+    <!-- 搜索历史 chip 的描边：必须比填充(#CFCFCF)明显更深才看得见轮廓，
+         不能复用 colorBorder（#CCCCCC，与填充几乎同色） -->
+    <color name="chip_history_stroke">#AEAEAE</color>
 
     <!-- ======================== 播放器专用（恒定深色，不随主题切换） ======================== -->
     <color name="player_background">#000000</color>

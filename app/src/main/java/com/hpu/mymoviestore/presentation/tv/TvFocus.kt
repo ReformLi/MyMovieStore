@@ -14,9 +14,30 @@ import com.hpu.mymoviestore.R
  * 2. 获焦时必须有 **明显的视觉反馈**（描边焦点框 + 轻微放大），否则用户不知道当前在哪；
  * 3. 失焦/复用时必须 **恢复原状**，避免 RecyclerView 复用导致「多个项同时放大」。
  *
- * 手机端影响：D-pad 焦点只有在外接键盘/遥控器时才可见，手机触屏使用无任何变化。
+ * **形态门控（重要）**：本类的一切效果只在电视端生效 —— 每个公开方法入口都用 [isActive]
+ * 拦一道。原因：[View.setFocusableInTouchMode] 置真后**触屏点击同样会拿到焦点**，且自绘的
+ * 焦点框（foreground）会一直挂着，于是手机端会出现「点一下卡片就冒出橙色描边、焦点乱跳」
+ * 这种明显不属于触屏交互的怪异表现。门控放在这里而不是各个调用点，是为了让 40+ 处调用
+ * 一处覆盖、永不遗漏（曾经就是把 TV 逻辑直接写在手机分支里，导致竖屏全面回归）。
  */
 object TvFocus {
+
+    private const val TV_UNKNOWN = 0
+    private const val TV_YES = 1
+    private const val TV_NO = 2
+
+    /** 进程内缓存设备形态：形态在运行期不会改变，避免每次列表 bind 都走 getSystemService */
+    @Volatile
+    private var tvState: Int = TV_UNKNOWN
+
+    /** 电视端才生效；手机端所有方法直接返回，行为与适配前完全一致 */
+    private fun isActive(view: View): Boolean {
+        val cached = tvState
+        if (cached != TV_UNKNOWN) return cached == TV_YES
+        val tv = TvUiSupport.isTelevision(view.context.applicationContext)
+        tvState = if (tv) TV_YES else TV_NO
+        return tv
+    }
 
     /** 获焦放大倍数（1.0 表示不放大） */
     const val FOCUS_SCALE = 1.08f
@@ -39,6 +60,7 @@ object TvFocus {
         scrollContainer: View? = null,
         @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring
     ) {
+        if (!isActive(view)) return
         view.isFocusable = true
         view.isFocusableInTouchMode = true
         // API 26+ 系统默认焦点高亮关掉（自绘焦点框，避免双重描边）
@@ -56,6 +78,7 @@ object TvFocus {
 
     /** 仅让视图可聚焦（不放大动画），适用于已自带焦点态背景的控件 */
     fun applyFocusableOnly(view: View, @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring) {
+        if (!isActive(view)) return
         view.isFocusable = true
         view.isFocusableInTouchMode = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -72,6 +95,7 @@ object TvFocus {
      * 原效果在下、焦点描边在上，两者都不丢失。
      */
     fun attachFocusRing(view: View, @DrawableRes ringRes: Int = R.drawable.bg_tv_focus_ring) {
+        if (!isActive(view)) return
         val ring = ContextCompat.getDrawable(view.context, ringRes) ?: return
         val existing = view.foreground
         when {
@@ -84,6 +108,7 @@ object TvFocus {
 
     /** 恢复未聚焦外观（RecyclerView 复用项绑定时调用，防止残留放大）；正在聚焦的项不动 */
     fun resetAppearance(view: View) {
+        if (!isActive(view)) return
         if (view.isFocused) return
         view.scaleX = 1f
         view.scaleY = 1f
@@ -108,6 +133,7 @@ object TvFocus {
      * （否则用户需先按方向键才能"唤醒"焦点）。
      */
     fun requestInitialFocus(view: View) {
+        if (!isActive(view)) return
         view.post {
             if (!view.isFocused && view.isShown) view.requestFocus()
         }
@@ -118,6 +144,7 @@ object TvFocus {
      * 列表尚未完成布局时先滚动到顶部再取焦点。
      */
     fun focusFirstItem(recyclerView: androidx.recyclerview.widget.RecyclerView) {
+        if (!isActive(recyclerView)) return
         recyclerView.post {
             val lm = recyclerView.layoutManager ?: return@post
             val first = lm.findViewByPosition(0)
@@ -139,6 +166,7 @@ object TvFocus {
      * 请改用 `applyTo(view, scale, scrollContainer)`，两个效果共用一个监听。
      */
     fun scrollIntoViewOnFocus(view: View, container: View) {
+        if (!isActive(view)) return
         view.setOnFocusChangeListener { v, hasFocus ->
             if (hasFocus) scrollIntoView(v, container)
         }
@@ -171,6 +199,7 @@ object TvFocus {
      * @param scale 叶子控件的获焦放大倍数
      */
     fun applyToClickables(root: View, scale: Float = FOCUS_SCALE) {
+        if (!isActive(root)) return
         root.post { walkClickable(root, scale) }
     }
 
@@ -183,6 +212,8 @@ object TvFocus {
      *
      * 适用场景：控件由框架动态创建、拿不到稳定 id，且需要「按下标绑定行为」时
      * （如顶部导航项 —— 第 N 个控件对应第 N 个页签），靠遍历顺序定位最省事。
+     *
+     * 纯查询、无副作用，故不做形态门控（调用方自己判断形态）。
      */
     fun collectClickableViews(root: View): List<View> {
         val out = ArrayList<View>()

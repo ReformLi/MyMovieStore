@@ -1,5 +1,6 @@
 package com.hpu.mymoviestore.presentation.activity
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
@@ -76,6 +77,13 @@ class DownloadActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 形态定方向（必须在 inflate 之前）：手机恒竖屏、电视恒横屏
+        requestedOrientation =
+            if (com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
         binding = ActivityDownloadBinding.inflate(layoutInflater)
         setContentView(binding.root)
 

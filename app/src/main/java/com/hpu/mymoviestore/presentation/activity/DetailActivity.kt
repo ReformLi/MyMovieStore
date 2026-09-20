@@ -1,6 +1,7 @@
 package com.hpu.mymoviestore.presentation.activity
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
@@ -106,10 +107,13 @@ class DetailActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 形态定方向（必须在 inflate 之前 —— 方向决定用 layout/ 还是 layout-land/）：
+        // 手机恒竖屏、电视恒横屏。清单里刻意不写 screenOrientation（清单分不出形态，
+        // 写死会让手机竖屏被强制转横屏），下载按钮显隐与初始焦点也依赖 isTv。
+        isTv = com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
+        applyOrientation()
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        // TV 适配：先判定设备形态 —— 后面的下载按钮显隐、初始焦点都依赖它
-        isTv = com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
         applySystemBarInsets()
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -193,10 +197,10 @@ class DetailActivity : AppCompatActivity() {
             TvFocus.applyTo(binding.btnDownload, scale = 1.04f)
         }
 
-        // TV 适配：四个「信息模块」（影片信息 / 导演 / 主演 / 简介）可聚焦但不可点击。
-        // 布局里已写 focusable="true" + foreground 焦点框，这里只补一件事：
-        // 关掉 API 26+ 系统的默认焦点高亮，避免自绘焦点框外面再套一层系统描边。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // TV 适配：四个「信息模块」（影片信息 / 导演 / 主演 / 简介）在**横屏布局**里可聚焦但不可点击。
+        // 这里只补一件事：关掉 API 26+ 系统的默认焦点高亮，避免自绘焦点框外面再套一层系统描边。
+        // 竖屏布局里这些卡片没有 focusable / 焦点框（手机端不参与遥控器焦点导航），故仅电视端处理。
+        if (isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             listOf(binding.cardInfo, binding.cardDirector, binding.cardActors, binding.cardDescription)
                 .forEach { it.defaultFocusHighlightEnabled = false }
         }
@@ -374,6 +378,17 @@ class DetailActivity : AppCompatActivity() {
      * 因此这里只做兜底：若此刻页面上没有任何焦点，才把焦点交给可用的主操作按钮；
      * 数据就绪后会再调用一次（见 applyCrawlerDetail）。
      */
+    /**
+     * 形态定方向：与 MainActivity.applyOrientation 同一策略（手机竖屏 / 电视横屏，不做动态切换）。
+     */
+    private fun applyOrientation() {
+        requestedOrientation = if (isTv) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
     private fun ensureTvFocus() {
         if (!isTv) return
         binding.root.post {
