@@ -197,18 +197,26 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- 关闭 -->
-        <TextView
+        <!-- 关闭：与其它弹窗的次要按钮（取消）完全同款 —— MaterialButton + chip_background 底。
+
+             ⚠️ 不要再用「TextView + bg_card_rounded + android:foreground="?attr/selectableItemBackground"」这套写法：
+             ?attr/selectableItemBackground 在本 App 主题下解析成 AppCompat 的 **Holo 遗留选择器**
+             （abc_item_background_holo_dark），这个 drawable **自带焦点态与按压态高亮**：
+                 获焦   → #33B5E5 @60% 蓝
+                 按压   → #40CCCCCC（25% 白，视觉上就是「背景刷白」）
+             它作为 foreground 会盖在按钮自身底色之上，于是「一聚焦 / 一按下确定键，按钮背景就变白」，
+             还会和 TvFocus 自绘的橙环抢戏（系统默认焦点高亮已被 TvFocus 关掉，我们又补了自绘环）。
+             MaterialButton 自带 ripple，触屏端的按压反馈不会丢。 -->
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/tvClose"
             android:layout_width="match_parent"
             android:layout_height="44dp"
             android:layout_marginTop="14dp"
-            android:gravity="center"
+            android:backgroundTint="@color/chip_background"
             android:text="@string/close"
             android:textColor="@color/colorOnSurface"
             android:textSize="14sp"
-            android:background="@drawable/bg_card_rounded"
-            android:foreground="?attr/selectableItemBackground" />
+            app:cornerRadius="12dp" />
 
     </LinearLayout>
 

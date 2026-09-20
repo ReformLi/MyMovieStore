@@ -70,6 +70,7 @@ object TvFocus {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             view.defaultFocusHighlightEnabled = false
         }
+        markHandled(view)
         attachFocusRing(view, ringFor(view, ringRes))
         view.setOnFocusChangeListener { v, hasFocus ->
             animateFocus(v, hasFocus, scale)
@@ -88,6 +89,7 @@ object TvFocus {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             view.defaultFocusHighlightEnabled = false
         }
+        markHandled(view)
         attachFocusRing(view, ringFor(view, ringRes))
     }
 
@@ -159,9 +161,33 @@ object TvFocus {
         when {
             existing == null -> view.foreground = ring
             existing.constantState == ring.constantState -> Unit // 布局 XML 已设置同款焦点框
-            existing is android.graphics.drawable.LayerDrawable -> Unit // 已叠加过，避免重复包裹
+            existing is android.graphics.drawable.LayerDrawable -> {
+                // 已是叠加层：按「层里有没有本款焦点环」判重，而不是见了 LayerDrawable 就整批放行。
+                // 旧实现这里直接 Unit（当作"已叠加过"），于是**别人**挂的 layer-list 前景
+                // 会让焦点环被静默吞掉（注意：`?attr/selectableItemBackground` 在 AppCompat 主题下
+                // 其实是 **Holo 选择器** abc_item_background_holo_dark/light，属 StateListDrawable，
+                // 走下面的 else 分支被整份包一层 —— 它自带焦点/按压高亮，见 TvFocus 的弹窗补环说明）：
+                // 控件能获得焦点、系统默认高亮又被关掉了，用户看到的就是"完全没有任何高亮"。
+                if (!existing.hasLayer(ring.constantState)) {
+                    val layers = Array(existing.numberOfLayers + 1) { i ->
+                        if (i < existing.numberOfLayers) existing.getDrawable(i) else ring
+                    }
+                    view.foreground = android.graphics.drawable.LayerDrawable(layers)
+                }
+            }
             else -> view.foreground = android.graphics.drawable.LayerDrawable(arrayOf(existing, ring))
         }
+    }
+
+    /** LayerDrawable 里是否已包含指定外观的某一层（焦点环判重用，避免无限套娃） */
+    private fun android.graphics.drawable.LayerDrawable.hasLayer(
+        state: android.graphics.drawable.Drawable.ConstantState?
+    ): Boolean {
+        if (state == null) return false
+        for (i in 0 until numberOfLayers) {
+            if (getDrawable(i)?.constantState == state) return true
+        }
+        return false
     }
 
     /** 恢复未聚焦外观（RecyclerView 复用项绑定时调用，防止残留放大）；正在聚焦的项不动 */
@@ -296,15 +322,26 @@ object TvFocus {
      * 通用场景：控件结构不确定、或列表/菜单项由框架动态创建（弹窗按钮、底部/顶部导航项等），
      * 逐个布局文件手改容易遗漏。
      *
-     * 已是可聚焦的控件不会被改动；ViewGroup 形式的点击目标只加焦点框、不做放大
-     * （避免整行容器放大后溢出边界）。
+     * **补环判据**：控件「可点击」或「可聚焦」即补焦点环；带本类标记的（[applyTo] /
+     * [applyFocusableOnly] 处理过，如列表适配器在 onCreateViewHolder 里装配好的行）
+     * 一律跳过 —— 既不重复包环，也不会用这里的 scale 顶掉适配器自己挑的缩放。
+     * ViewGroup 形式的点击目标只加焦点框、不做放大（避免整行容器放大后溢出边界）。
+     *
+     * 弹窗本体（root 自身）刻意不作为焦点落点：它是整块卡片，被描边很难看，
+     * 还会在方向键搜索时把「上」这类按键从内部控件手里截走。
      *
      * @param root 容器根视图（弹窗根视图、导航栏等）
      * @param scale 叶子控件的获焦放大倍数
      */
     fun applyToClickables(root: View, scale: Float = FOCUS_SCALE) {
         if (!isActive(root)) return
-        root.post { walkClickable(root, scale) }
+        root.post {
+            if (root is android.view.ViewGroup) {
+                for (i in 0 until root.childCount) walkClickable(root.getChildAt(i), scale)
+            } else {
+                walkClickable(root, scale)
+            }
+        }
     }
 
     /** 语义化别名：[applyToClickables] 用于弹窗场景 */
@@ -334,23 +371,57 @@ object TvFocus {
     }
 
     private fun walkClickable(view: View, scale: Float) {
+        if (view.visibility != View.VISIBLE) return
+
         if (view is android.view.ViewGroup) {
-            // 容器本身也是点击目标（如「检查更新」整行）→ 只加焦点框，不放大（避免整行溢出）
-            if (view.isClickable && !view.isFocusable && view.visibility == View.VISIBLE) {
-                applyTo(view, 1f)
-            }
+            // 容器本身也是点击目标（「检查更新」整行、弹窗条目行）→ 只加焦点框，不放大（避免整行溢出）。
+            // 注意：容器带标记只表示**它自己**处理过了，仍然要继续向下走 ——
+            // 列表行容器（如视频源条目）会被适配器先行标记，若在这里连子树一起跳过，
+            // 行内后来才出现的可交互控件就再也没机会补环了。
+            if (!isHandled(view) && view.isClickable) applyRingAndFocus(view, 1f)
             for (i in 0 until view.childCount) walkClickable(view.getChildAt(i), scale)
             return
         }
-        if (view.visibility != View.VISIBLE || !view.isClickable) return
+        // 叶子：已处理过、或既不可点也不可聚焦的纯展示控件（标题、描述文案）直接跳过
+        if (isHandled(view) || (!view.isClickable && !view.isFocusable)) return
+        applyRingAndFocus(view, scale)
+    }
 
-        // ⚠️ 框架自带的 Button（含 MaterialButton）**默认就是 focusable=true**，
-        // 若沿用「只处理不可聚焦控件」的老判据，弹窗里的「确定 / 取消 / 全选」会被整批跳过 ——
-        // 结果是焦点能落上去（系统默认高亮），却没有任何自绘焦点环，用户看到的就是"按钮没高亮"。
-        // 所以按钮类无视 isFocusable，一律补环（重复调用由 attachFocusRing 内部去重）。
-        val alreadyFocusable = view.isFocusable
-        if (alreadyFocusable && view !is android.widget.Button) return
+    /**
+     * 给「弹窗里本就该被遥控器操作的控件」补上焦点视觉。原则是**能不越界就不越界**：
+     *
+     * - **已可聚焦** → 只挂焦点环 + 关掉系统默认高亮，**不动**它的聚焦能力、缩放与
+     *   OnFocusChangeListener。命中者：框架 Button / MaterialButton（默认 focusable=true）、
+     *   XML 里显式写了 `android:focusable="true"` 的条目行（如 layout-land 下的
+     *   item_clear_cache / item_video_source）。
+     *
+     *   上一轮的漏洞正在这里：老判据「已是可聚焦就跳过」会把这些控件**整批漏掉**，
+     *   而 `defaultFocusHighlightEnabled` 又被我们关成了 false，于是焦点停上去后
+     *   **一点高亮都没有** —— 视频源管理的「全选 / 全不选」、关于页的按钮、
+     *   清理缓存的条目行都是这个症状。
+     * - **可点击但不可聚焦**（普通 TextView 形式的按钮、LinearLayout 行）→ 走完整 [applyTo]，
+     *   补聚焦能力 + 焦点环 + 放大动画。
+     */
+    private fun applyRingAndFocus(view: View, scale: Float) {
+        if (view.isFocusable || view.isFocusableInTouchMode) {
+            applyFocusableOnly(view)
+        } else {
+            applyTo(view, scale)
+        }
+    }
 
-        applyTo(view, scale)
+    /**
+     * 标记 / 查询「该视图已由 TvFocus 处理过」（tag key 见 `values/ids.xml`）。
+     *
+     * 焦点环与焦点监听的装配本身幂等，但**重复装配会用新的参考值覆盖旧的**：弹窗遍历的
+     * scale=1.08 会把列表适配器精心挑好的 1.02 冲掉，并顶掉别人装的 OnFocusChangeListener。
+     * 有了标记，弹窗遍历就只处理「没人管过的控件」—— 这正是敢于删掉
+     * 「已是可聚焦就跳过」那条老判据的前提（老判据在修一批的同时漏另一批）。
+     */
+    private fun isHandled(view: View): Boolean =
+        view.getTag(R.id.tag_tv_focus_handled) == true
+
+    private fun markHandled(view: View) {
+        view.setTag(R.id.tag_tv_focus_handled, true)
     }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局 id 声明（不属于任何布局）：
+  TvFocus 用它作为 View 的 tag key，给「已做过焦点适配」的控件打标记，
+  使弹窗内的通用遍历只处理没人管过的控件（详见 TvFocus.walkClickable）。
+  非 this 声明不可：setTag/getTag 需要一个资源 id 当 key，字符串 key 会与其他库撞车。
+-->
+<resources>
+    <item name="tag_tv_focus_handled" type="id" />
+</resources>

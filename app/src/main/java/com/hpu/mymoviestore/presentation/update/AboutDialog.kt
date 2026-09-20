@@ -179,6 +179,10 @@ class AboutDialog : DialogFragment() {
         renderDownloadState(ApkDownloadManager.state.value, isFreshTransition = false)
         // 卡片展开后重新计算高度限制
         limitContentHeight()
+        // TV 适配：更新卡片是此刻才从 GONE 变 VISIBLE 的，弹窗首次遍历时它整棵子树都不存在，
+        // 「立即更新」按钮会因此完全错过焦点适配（有更新时才出现 → 时好时坏最难查）。
+        // 这里补一次遍历；已适配过的控件带标记会自动跳过，不会重复包环。
+        view?.let { TvFocus.applyToDialogButtons(it) }
     }
 
     /** 「立即更新 / 下载中 / 安装更新 / 重新下载」按钮点击 */

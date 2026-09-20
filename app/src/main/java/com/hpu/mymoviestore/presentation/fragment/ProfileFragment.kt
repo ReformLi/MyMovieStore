@@ -302,6 +302,11 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
             dialogBinding.scrollContent,
             DialogSizing.contentMaxHeightPx(requireContext())
         )
+        // TV 适配：缓存条目行 / 取消 / 清理 按钮可遥控器聚焦。
+        // 本弹窗此前**完全没有任何 TvFocus 调用** —— 条目行靠 layout-land/item_clear_cache.xml 里的
+        // focusable="true" 能停焦点，但没人给它挂焦点环，系统默认高亮又被关掉，
+        // 于是「取消 / 清理」按下去只有焦点在动、屏幕上毫无变化。
+        TvFocus.applyToDialogButtons(dialogBinding.root)
     }
 
     private fun createCacheItemView(
@@ -328,6 +333,11 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
             updateCheckState(ivCheck, newChecked)
             onCheckedChange(newChecked)
         }
+
+        // TV 适配：挂环放在**创建处**而不是弹窗那一次遍历里 —— 勾选「清理全部缓存」会
+        // refreshAllItems() 把条目整批 removeAllViews + 重建，那批新视图赶不上首次遍历，
+        // 会变成「焦点能停上去但一点高亮都没有」。scale 传 1f：整行控件放大必溢出。
+        TvFocus.applyTo(view, 1f)
 
         return view
     }

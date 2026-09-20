@@ -104,18 +104,20 @@
             android:textSize="15sp"
             app:cornerRadius="14dp" />
 
-        <!-- 次按钮：今天不再提醒 -->
-        <TextView
+        <!-- 次按钮：今天不再提醒
+             与「关闭」同款：不要用 foreground="?attr/selectableItemBackground"
+             （Holo 遗留选择器自带焦点/按压高亮 → 聚焦或按下时按钮背景发白），
+             统一走 MaterialButton + chip_background，与其它弹窗次要按钮一致。 -->
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/tvSkipToday"
             android:layout_width="match_parent"
             android:layout_height="44dp"
             android:layout_marginTop="10dp"
-            android:gravity="center"
+            android:backgroundTint="@color/chip_background"
             android:text="@string/update_not_today"
             android:textColor="@color/colorOnSurface"
             android:textSize="14sp"
-            android:background="@drawable/bg_card_rounded"
-            android:foreground="?attr/selectableItemBackground" />
+            app:cornerRadius="12dp" />
 
     </LinearLayout>
 
