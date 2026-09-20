@@ -834,31 +834,12 @@ class PlayerActivity : AppCompatActivity() {
             // 控件一律不参与焦点导航，全部按键由 dispatchKeyEvent 统一接管
             // （详见 applyTvPlaybackControls）。
             applyTvPlaybackControls()
-        } else {
-            // 手机端（触屏）：控制栏控件保持可聚焦（外接遥控器 / 键盘时同样可用）
-            listOf(R.id.btnRewind10, R.id.btnPlayPause, R.id.btnForward10,
-                R.id.btnPlayerSettings).forEach { id ->
-                binding.playerView.findViewById<android.view.View>(id)?.let {
-                    com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.12f)
-                }
-            }
-            // exo_fullscreen 由 media3-ui 库定义（非传递 R 类），需用库的 R 访问
-            binding.playerView.findViewById<android.view.View>(
-                androidx.media3.ui.R.id.exo_fullscreen
-            )?.let {
-                com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.12f)
-            }
-            binding.playerView.findViewById<android.view.View>(R.id.switchDanmaku)?.let {
-                com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
-            }
-            binding.playerView.findViewById<android.view.View>(R.id.spinnerDanmakuSource)?.let {
-                com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(it)
-            }
-            // 顶部/侧边按钮（返回 / 画中画 / 旋转 / 锁定）加焦点框 + 放大
-            listOf(binding.btnBack, binding.btnPiP, binding.btnRotate, binding.btnLock).forEach {
-                com.hpu.mymoviestore.presentation.tv.TvFocus.applyTo(it, scale = 1.15f)
-            }
         }
+        // 手机端（触屏）无需任何焦点装配：控件的可点击性由上面的 setOnClickListener 建立，
+        // 触摸交互不依赖焦点。此处曾有一段 else 分支给控制栏/顶部按钮调 TvFocus.applyTo /
+        // applyFocusableOnly（注释声称「外接遥控器/键盘同样可用」）——但 TvFocus 所有公开
+        // 方法入口都有 isActive() 电视门控，手机端一律直接 return，那些调用从未生效，
+        // 属于纯死代码，已删除（行为零变化）。
 
         // 弹幕控制条跟随播放器控制栏显示/隐藏
         val listener = object : androidx.media3.ui.PlayerView.ControllerVisibilityListener {

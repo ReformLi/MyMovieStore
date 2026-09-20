@@ -63,8 +63,11 @@ class VideoAdapter(
                 false
             )
             LoadMoreViewHolder(binding).apply {
-                // TV 适配：「加载更多」也需可聚焦，否则遥控器无法触发翻页
-                TvFocus.applyTo(binding.root, scale = 1.02f)
+                // TV 适配：「加载更多」也需可聚焦，否则遥控器无法触发翻页。
+                // 满宽整行卡片本会被 canScaleUp 的满宽规则拦掉放大，与首页/历史网格、
+                // 搜索结果整行卡统一取 1.05f + alwaysScale（左右 14dp margin 内、
+                // 列表容器 clipChildren=false，外扩不会被裁）。
+                TvFocus.applyTo(binding.root, scale = 1.05f, alwaysScale = true)
             }
         } else {
             val binding = ItemVideoBinding.inflate(

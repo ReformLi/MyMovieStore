@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -19,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.hpu.mymoviestore.data.CloudflareBypassManager
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 
 /**
  * Cloudflare 人工验证兜底窗口。
@@ -46,6 +48,15 @@ class CloudflareChallengeActivity : AppCompatActivity() {
     private var targetUrl: String = ""
     private lateinit var statusText: TextView
     private var webView: WebView? = null
+
+    /** 「取消」按钮（buildLayout 程序化构建时留存引用，供 TV 焦点装配定位） */
+    private var cancelView: TextView? = null
+
+    /** 是否电视形态：onCreate 一次判定，焦点装配与按键拦截共用同一门控 */
+    private var isTv = false
+
+    /** WebView 中心键 DOWN 是否已手动转发（保证 UP 配对送达，见 dispatchKeyEvent） */
+    private var tvClickDownForwarded = false
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -78,12 +89,12 @@ class CloudflareChallengeActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 形态定方向：手机竖屏、电视横屏（基线是清单写死 portrait，现改为按形态运行时设置）
-        requestedOrientation =
-            if (com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)) {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
+        isTv = com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
+        requestedOrientation = if (isTv) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         targetUrl = intent.getStringExtra(EXTRA_URL) ?: run {
             finish()
             return
@@ -91,6 +102,7 @@ class CloudflareChallengeActivity : AppCompatActivity() {
 
         setContentView(buildLayout())
         setupWebView()
+        attachTvFocusSupport()
 
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
     }
@@ -190,18 +202,20 @@ class CloudflareChallengeActivity : AppCompatActivity() {
             ).apply { topMargin = dp(12) }
         )
 
+        val cancel = TextView(this).apply {
+            text = "取消"
+            setTextColor(0xFF9C9A98.toInt())
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(6))
+            setOnClickListener {
+                Log.d(TAG, "人工验证：用户取消")
+                finishWithResult(null)
+            }
+        }
+        cancelView = cancel
         card.addView(
-            TextView(this).apply {
-                text = "取消"
-                setTextColor(0xFF9C9A98.toInt())
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(0, dp(14), 0, dp(6))
-                setOnClickListener {
-                    Log.d(TAG, "人工验证：用户取消")
-                    finishWithResult(null)
-                }
-            },
+            cancel,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -312,6 +326,72 @@ class CloudflareChallengeActivity : AppCompatActivity() {
                 }
             }
         }, 12_000L)
+    }
+
+    /**
+     * TV 焦点装配 —— 本窗口布局是程序化构建的，此前没有任何 TvFocus 处理：
+     * 电视上「取消」TextView 默认不可聚焦（遥控器焦点落不到、无法按 OK 键取消），
+     * WebView 也未拿到 View 焦点（D-pad 中心键无法向页面投递点击）。这里补齐两端：
+     *
+     * - 「取消」：用 [TvFocus.applyToDialogButtons] 遍历补环 —— 它只处理「可点击」控件，
+     *   取消有 OnClickListener（isClickable=true）会被覆盖到，挂上自绘橙焦点环；
+     *   整行满宽控件在获焦瞬间被 canScaleUp 的满宽规则拦下，只显环不放大。
+     *   挂环后遥控器能停靠、OK 键触发 performClick → 取消。
+     * - WebView：显式 focusable + focusableInTouchMode，使 D-pad 能把 View 焦点移入它，
+     *   配合 [dispatchKeyEvent] 把中心键转成点击。
+     * - 初始焦点落在「取消」：一进入窗口遥控器就有可见落点（WebView 内容此时多半未加载完，
+     *   先停靠取消更符合直觉；用户按上键可把焦点移进 WebView 操作勾选框）。
+     *
+     * 手机端：[isTv] 为 false 直接 return，触摸交互完全不受影响（焦点环/初始焦点均不介入）。
+     */
+    private fun attachTvFocusSupport() {
+        if (!isTv) return
+        // 取消按钮：补自绘焦点环 + 可遥控器聚焦（幂等，已处理控件带标记会跳过）
+        cancelView?.let { TvFocus.applyToDialogButtons(it) }
+        // WebView：参与 View 焦点链（覆盖式设置，不动触摸点击逻辑）
+        webView?.apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+        }
+        // 初始焦点落「取消」，避免电视进入后焦点悬空
+        cancelView?.let { TvFocus.requestInitialFocus(it) }
+    }
+
+    /**
+     * 电视端把方向键中心键（DPAD_CENTER）/ Enter 转成 WebView 的 DOM 点击。
+     *
+     * 焦点在 WebView 上时，D-pad 中心键默认也只会派发给 WebView 本身；个别 TV ROM 会在
+     * ViewGroup 层把 CENTER 提前吃掉做焦点搜索，页面内的勾选框就收不到点击。
+     * 这里手动把一次中心键「DOWN+UP」成对转发给 WebView（Chromium 对 focused DOM 节点
+     * 映射为 click），并消费掉避免二次处理——无论 WebView 是否吃掉 DOWN，默认派发路径
+     * （焦点视图就是 WebView）能做到的我们也已等价做到，不存在额外吞键。
+     * 手机端 [isTv] 为 false，不进入本分支。
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isTv) {
+            val wv = webView
+            val isClickKey = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                event.keyCode == KeyEvent.KEYCODE_ENTER
+            if (wv != null && isClickKey && wv.hasFocus()) {
+                when (event.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        wv.requestFocus()
+                        tvClickDownForwarded = wv.dispatchKeyEvent(
+                            KeyEvent(KeyEvent.ACTION_DOWN, event.keyCode)
+                        )
+                        return true
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        if (tvClickDownForwarded) {
+                            wv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, event.keyCode))
+                            tvClickDownForwarded = false
+                        }
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     /**
