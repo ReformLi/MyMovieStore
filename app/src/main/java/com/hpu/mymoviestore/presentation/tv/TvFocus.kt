@@ -101,6 +101,29 @@ object TvFocus {
     }
 
     /**
+     * 按显隐 / 可用状态切换「遥控器可聚焦」能力 —— **电视端专用**，手机端整体 no-op。
+     *
+     * 为什么必须走本方法、而不是在调用点直接写 `view.isFocusable(InTouchMode) = x`：
+     * `setFocusableInTouchMode(true)` 的语义是「触摸时也把焦点交给该控件」，而触摸模式的
+     * 规则是**取焦点的这一次点击不触发 click**（焦点先落上去，再点一次才响应）——
+     * 手机端表现就是「按钮要点两下才生效」。又因为 `res/layout-land/` 同时是**手机横屏**
+     * 布局（不是 TV 专属目录），任何绕过本类的直接赋值都会立刻污染触屏。
+     *
+     * 列表适配器每次 bind 都要按显隐重设聚焦能力（电视端隐藏按钮不能让遥控器停上去），
+     * 那是真实需求 —— 用本方法表达即可，两端都不丢。
+     *
+     * @param enabled true = 可聚焦（补焦点环 + 获焦放大）；false = 取消聚焦能力并恢复原状
+     */
+    fun setFocusable(view: View, enabled: Boolean, scale: Float = FOCUS_SCALE) {
+        if (!isActive(view)) return
+        applyTo(view, scale)
+        if (enabled) return
+        view.isFocusable = false
+        view.isFocusableInTouchMode = false
+        resetAppearance(view)
+    }
+
+    /**
      * 焦点环按「控件自身底色」自动挑选，避免同一圈颜色在同类底色上看不见。
      *
      * 目前只有一种反转：**品牌橙底 -> 白环**。橙环压在橙底上对比度约 1.1:1 等于没有，

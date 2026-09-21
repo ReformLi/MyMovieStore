@@ -183,6 +183,10 @@ class PlayerActivity : AppCompatActivity() {
     // 手势起点是否落在系统进度条区域（DOWN 时判定一次）
     private var onProgressBarAtDown = false
 
+    // 本次触摸是否「从控制栏显示状态开始」：为 true 时本次触摸不启动拖动手势
+    // （手指落在控制栏按钮/开关/进度条上时，不应变成亮度 / 音量 / 进度手势）
+    private var downWhileControllerVisible = false
+
     /** 电视形态（遥控器交互）。只用于 UI / 按键行为分支，不触碰播放业务逻辑。 */
     private val isTv: Boolean by lazy {
         com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
@@ -1465,13 +1469,34 @@ class PlayerActivity : AppCompatActivity() {
                     Log.d(TAG, "拖动手势中收到 ACTION_DOWN，已忽略（华为 HiTouch 干扰）")
                     return true
                 }
+                // ⚠️ 手势原点与本次触摸标记必须在**任何 return 之前**复位。
+                // 下面几个分支会「不启动拖动手势」，但后续 ACTION_MOVE 依然会调用
+                // tryLockGestureDirection —— 若原点还停留在上一次触摸的位置，位移会被算成
+                // 一大段距离，于是立刻锁定方向并按陈旧原点算偏移，
+                // 表现为「轻点一下、再从别处一划 → 进度 / 亮度 / 音量瞬间跳变」。
                 gestureDirection = 0
                 seekBaseMs = 0L
                 seekTargetMs = 0L
                 gestureStartX = event.x
                 gestureStartY = event.y
-                // 控制器显示中：触摸优先交给控制器控件（按钮/开关/进度条），不启动拖动手势
-                if (isControllerVisible) {
+                downWhileControllerVisible = false
+                // DOWN 时一次性判定是否落在进度条区域，之后整个手势不再重复计算
+                onProgressBarAtDown = isTouchOnProgressBar(event)
+                if (onProgressBarAtDown) {
+                    // 进度条区域交给 ExoPlayer 的 DefaultTimeBar 处理 scrub（不喂手势检测器）
+                    return super.dispatchTouchEvent(event)
+                }
+                // ⚠️ 除进度条区域外，这个 DOWN 必须喂给 gestureDetector，且必须写在下面几个
+                // return 之前：AOSP GestureDetector 的双击判定只写在 case ACTION_DOWN 里，
+                // 少喂一次 DOWN 就永远收不到 onDoubleTap。
+                // 历史 bug：这里原本是「控制栏显示中直接 return」，而第一次点击必然把控制栏
+                // 唤出（PlayerView.performClick → toggleControllerVisibility → 回调把
+                // isControllerVisible 置 true），于是第二次点击的 DOWN 必被吞掉 ——
+                // 双击暂停/播放从来没有生效过。
+                gestureDetector.onTouchEvent(event)
+                // 控制栏显示中：触摸优先交给控制器控件（按钮/开关/进度条），本次触摸不启动拖动手势
+                downWhileControllerVisible = isControllerVisible
+                if (downWhileControllerVisible) {
                     return super.dispatchTouchEvent(event)
                 }
                 // 弹幕状态区（含点击重试）可见时，落点在其区域内交给它处理，避免轻点被误判为拖动
@@ -1480,20 +1505,17 @@ class PlayerActivity : AppCompatActivity() {
                 ) {
                     return super.dispatchTouchEvent(event)
                 }
-                // DOWN 时一次性判定是否落在进度条区域，之后整个手势不再重复计算
-                onProgressBarAtDown = isTouchOnProgressBar(event)
-                if (onProgressBarAtDown) {
-                    // 进度条区域交给 ExoPlayer 的 DefaultTimeBar 处理 scrub
-                    return super.dispatchTouchEvent(event)
-                }
-                // 刚结束手势后的快速触摸不喂 gestureDetector，
-                // 避免轻扫后快速二次触摸被误判为双击（触发播放/暂停）
+                // 刚结束手势后的快速触摸不启动新的拖动手势。
+                // 注意只影响「拖动手势」，不再拦掉 DOWN —— 双击判定由 gestureDetector
+                // 自己的 300ms 窗口负责，拦掉 DOWN 会连带把双击一起废掉。
                 if (SystemClock.elapsedRealtime() - lastGestureEndTimeMs < 300L) {
                     return super.dispatchTouchEvent(event)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (onProgressBarAtDown) return super.dispatchTouchEvent(event)
+                // 本次触摸是从控制栏显示状态开始的：触摸归控制栏控件，不启动拖动手势
+                if (downWhileControllerVisible) return super.dispatchTouchEvent(event)
                 if (!isGesturing) {
                     tryLockGestureDirection(event)
                 }
@@ -1680,6 +1702,7 @@ class PlayerActivity : AppCompatActivity() {
         gestureDirection = 0
         seekBaseMs = 0L
         seekTargetMs = 0L
+        downWhileControllerVisible = false
         lastGestureEndTimeMs = SystemClock.elapsedRealtime()
     }
 

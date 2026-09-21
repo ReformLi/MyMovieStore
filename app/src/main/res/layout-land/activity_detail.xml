@@ -189,6 +189,7 @@
 
                 <!-- ============ 模块 B：主操作 + 播放线路 + 选集（整块即卡片，与模块 A 等高） ============ -->
                 <LinearLayout
+                    android:id="@+id/cardPlayLines"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_marginStart="16dp"
@@ -197,7 +198,9 @@
                     android:clipChildren="false"
                     android:elevation="3dp"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="14dp"
+                    android:visibility="gone"
+                    tools:visibility="visible">
 
                     <!-- 主操作行：横屏（电视端）整体隐藏 —— btnPlay 在布局里 gone、
                          btnDownload 在代码里对电视 gone，不隐藏整行的话这个 46dp 的

@@ -175,11 +175,10 @@ class DownloadingAdapter(
 
         /** 可见且可用的按钮才可聚焦；隐藏按钮取消聚焦，避免遥控器焦点停在不可见项 */
         private fun setupButtonFocus(btn: android.view.View) {
-            TvFocus.applyTo(btn, scale = 1.08f)
             val shown = btn.visibility == android.view.View.VISIBLE && btn.isEnabled
-            btn.isFocusable = shown
-            btn.isFocusableInTouchMode = shown
-            if (!shown) TvFocus.resetAppearance(btn)
+            // 必须走 TvFocus 的统一入口（手机端 no-op）：直接写 isFocusableInTouchMode
+            // 会让触屏「第一次点击只聚焦、第二次才触发」，按钮就成了要点两下
+            TvFocus.setFocusable(btn, shown, scale = 1.08f)
         }
     }
 }

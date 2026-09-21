@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ 本目录同时服务**手机横屏**：勿写 focusable / focusableInTouchMode / 焦点环 foreground ——
+     电视端的可聚焦与焦点环由 TvFocus.applyTo 以代码赋予（入口带 isActive 门控）；
+     XML 里写死会让触屏第一次点击只取焦点、不触发点击（按钮要点两下）。 -->
 <!-- 视频源管理：单条源（**横屏 TV · 仪表盘风**）：独立圆角行卡 + 自定义勾选圆，整行可点击。
      id 与竖屏版一致（tvSourceName / tvCheck）；勾选态由代码 setBackgroundResource 切换。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -6,10 +9,6 @@
     android:layout_height="wrap_content"
     android:layout_marginTop="8dp"
     android:background="@drawable/bg_row_card_ripple"
-    android:defaultFocusHighlightEnabled="false"
-    android:focusable="true"
-    android:focusableInTouchMode="true"
-    android:foreground="@drawable/bg_tv_focus_ring"
     android:gravity="center_vertical"
     android:nextFocusRight="@id/btnCancel"
     android:orientation="horizontal"

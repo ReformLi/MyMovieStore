@@ -137,6 +137,7 @@
 
             <!-- ==================== 模块 B：主操作（在播放线路之上）+ 播放线路 + 选集 ==================== -->
             <LinearLayout
+                android:id="@+id/cardPlayLines"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"

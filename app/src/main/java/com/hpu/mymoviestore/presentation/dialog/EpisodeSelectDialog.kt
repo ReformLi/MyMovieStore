@@ -163,8 +163,9 @@ class EpisodeSelectDialog private constructor(
             // 锁定项置灰且不可交互（对应原生 isEnabled = false + alpha 0.5f），
             // 同时取消可聚焦，避免遥控器焦点停在不动项上
             holder.itemBinding.root.isEnabled = !isLocked
-            holder.itemBinding.root.isFocusable = !isLocked
-            holder.itemBinding.root.isFocusableInTouchMode = !isLocked
+            // 聚焦能力统一交给 TvFocus（手机端 no-op）：直接写 isFocusableInTouchMode
+            // 会让触屏「第一次点击只聚焦、第二次才勾选」
+            TvFocus.setFocusable(holder.itemBinding.root, !isLocked, scale = 1.02f)
             holder.itemBinding.root.alpha = if (isLocked) 0.5f else 1.0f
         }
 

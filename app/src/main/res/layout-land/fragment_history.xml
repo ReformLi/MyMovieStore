@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ 本目录同时服务**手机横屏**：`focusableInTouchMode="true"` 会让触屏第一次点击只取焦点、
+     不触发点击（按钮要点两下）。故：凡「电视端已由 TvFocus.applyTo 以代码接管」的按钮，这里
+     一律不写聚焦属性；翻页按钮例外 —— 它电视端只靠 XML 提供 focusable + 焦点环（代码里自行
+     设置了 onFocusChangeListener，再补 applyTo 会顶掉该监听），故保留 focusable 与 foreground，
+     只去掉 focusableInTouchMode。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -46,10 +51,6 @@
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:background="@drawable/bg_episode_normal"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:defaultFocusHighlightEnabled="false"
-            android:foreground="@drawable/bg_tv_focus_ring"
             android:gravity="center"
             android:paddingStart="14dp"
             android:paddingEnd="14dp"

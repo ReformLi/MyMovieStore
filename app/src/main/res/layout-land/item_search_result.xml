@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ 本目录同时服务**手机横屏**：勿写 focusable / focusableInTouchMode / 焦点环 foreground ——
+     电视端的可聚焦与焦点环由 TvFocus.applyTo 以代码赋予（入口带 isActive 门控）；
+     XML 里写死会让触屏第一次点击只取焦点、不触发点击（按钮要点两下）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -8,9 +11,6 @@
     android:layout_marginTop="7dp"
     android:layout_marginEnd="12dp"
     android:layout_marginBottom="7dp"
-    android:focusable="true"
-    android:focusableInTouchMode="true"
-    android:foreground="@drawable/bg_tv_focus_ring"
     app:cardBackgroundColor="@color/card_background_tv_focusable"
     app:cardCornerRadius="16dp"
     app:cardElevation="2dp">

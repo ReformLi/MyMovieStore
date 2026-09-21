@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.util.Log
 import android.view.View
 import com.hpu.mymoviestore.data.model.danmaku.DanmakuComment
+import com.hpu.mymoviestore.presentation.tv.TvUiSupport
 import kotlin.math.max
 
 /**
@@ -29,6 +30,14 @@ import kotlin.math.max
  * 同时兼容 B 站标准格式 time,mode,字号,color,...（index3 为纯数字时按此解析）
  */
 class DanmakuView(context: Context) : View(context) {
+
+    /**
+     * 电视形态判定（与 PlayerActivity.isTv 同源）。
+     *
+     * 只用于字号推导：电视观看距离远、屏幕物理尺寸大，字号必须额外受「容器高」约束，
+     * 否则会重演「字特别大 + 只有 3 行」；手机端仍以屏宽为准。
+     */
+    private val isTvDevice: Boolean by lazy { TvUiSupport.isTelevision(context) }
 
     // ================== 数据模型 ==================
 
@@ -272,8 +281,18 @@ class DanmakuView(context: Context) : View(context) {
 
         val viewHeight = height.coerceAtLeast(1)
         val viewWidth = width.coerceAtLeast(1)
-        // 根据屏幕宽度动态计算基准字体大小（分母 35 可调整，值越大字体越小）
-        val baseTextSize = (viewWidth / 35f).coerceIn(18f, 50f)
+        // 基准字号 = min(横向密度, 纵向行数预算)，取小者：
+        //   ① 横向 viewWidth / 35f        —— 屏宽的 1/35，控制单行不臃肿
+        //   ② 纵向 viewHeight * 行数系数  —— 电视 0.13（约 5 行）/ 手机 0.16（约 4 行）
+        // ⚠️ 只有横屏（宽而矮）才会触发 ②；竖屏（窄而高）恒由 ① 胜出，取值与改前一致。
+        // ⚠️ 手机横屏与电视横屏的像素尺寸高度重合（2340×1080 vs 1920×1080，容器同为屏高 25%），
+        // 纯几何公式分辨不出二者 —— 而两者物理字高差近 10 倍（43px → 手机 2.8mm / 电视 27mm），
+        // 所以必须按设备身份分档，不能只靠屏幕像素。
+        // 实测：手机竖屏 min(30.9, 93.6) = 30.9px → 12 行；
+        //       手机横屏 min(66.9, 43.2) = 43.2px → 4 行；
+        //       电视横屏 min(54.9, 35.1) = 35.1px → 5 行。
+        val rowsRatio = if (isTvDevice) 0.13f else 0.16f
+        val baseTextSize = minOf(viewWidth / 35f, viewHeight * rowsRatio).coerceIn(18f, 50f)
         // 动态计算最大行数和行高
         val rowHeightPx = baseTextSize * 1.5f  // 行高为字体大小的1.5倍，留出间距
         val maxRows = (viewHeight / rowHeightPx).toInt().coerceAtLeast(2)

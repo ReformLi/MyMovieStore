@@ -463,9 +463,14 @@ class DetailActivity : AppCompatActivity() {
 
         if (playLines.isEmpty()) {
             binding.layoutPlayLinesBlock.visibility = View.GONE
+            // 电视端整卡一并隐藏：主操作行（立即播放 / 下载）在电视上是整体 GONE 的，
+            // 没有播放线路时卡片里只剩一层空背景，会在右栏留一张「空白卡」。
+            // 手机竖屏保留卡片 —— 「立即播放」仍是 videoUrl 直连时的可用入口。
+            if (isTv) binding.cardPlayLines.visibility = View.GONE
             return
         }
 
+        binding.cardPlayLines.visibility = View.VISIBLE
         binding.layoutPlayLinesBlock.visibility = View.VISIBLE
         // 线路 chip 的横向滚动容器：线路较多时把获焦项滚入可视区（否则焦点可能落在屏幕外的 chip 上）
         val lineScrollContainer =
