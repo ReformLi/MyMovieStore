@@ -2,6 +2,8 @@
 
 `MyMovieStore` 是一个使用 Kotlin 开发的 Android 原生影视浏览与播放应用。应用将首页推荐和播放链路拆成两个相对独立的层：内容发现层负责从豆瓣页面发现影视内容，内容播放层负责聚合多个播放源搜索可播放资源、展示详情并播放视频。
 
+同一份 APK **同时兼容手机与 Android TV / 盒子**：设备形态在运行时判定，手机保持触屏交互，电视启用遥控器（D-pad）焦点体系与 10-foot UI；网络层、Repository、ViewModel、数据模型与播放器封装两侧完全共用，适配范围严格限定在 UI 层与配置。详见 [Android TV 适配](#android-tv-适配)。
+
 ## 功能概览
 
 | 模块       | 当前能力                                     | 主要实现                                                                           |
@@ -12,7 +14,7 @@
 | 首页综艺     | 支持综合、国内、国外二级分类                           | `DoubanDiscoverySource.fetchExploreTvRelatedPage()`                            |
 | 首页动漫     | 使用豆瓣电视剧页中的动画数据，不展示二级分类                   | `DoubanDiscoverySource.fetchExploreTvRelatedPage()`                            |
 | 搜索       | 多源并行搜索，结果插空法排序显示，支持分页、搜索历史和结果缓存          | `SearchFragment`、`VideoRepository.searchVideosPage()`                          |
-| 多源播放     | 支持剧集屋、樱花动漫、电影天堂等多个播放源，可独立启用/禁用           | `ProfileFragment` 视频源管理                                                        |
+| 多源播放     | 支持 19 个爬虫播放源（剧集屋、樱花动漫、电影天堂等），可独立启用/禁用；源名称与地址由远程 JSON 动态配置           | `ProfileFragment` 视频源管理                                                        |
 | 首页到搜索联动  | 点击首页影视后跳转搜索页，并按影视名自动搜索                   | `MainActivity.navigateToSearchWithKeyword()`                                   |
 | 详情       | 从搜索结果进入详情，解析播放线路、剧集和简介等信息                | `DetailActivity`、`CrawlerVideoSource.fetchVideoDetail()`                       |
 | 播放       | 使用 Media3 ExoPlayer 播放真实视频地址，支持进度保存和续播   | `PlayerActivity`、`PlayerViewModel`                                             |
@@ -25,6 +27,7 @@
 | 爬虫限流     | 每个播放源独立限流队列，同源请求 3 秒最小间隔，优先级抢占           | `RequestRateLimiter`、`CrawlerVideoSource`                                      |
 | **反爬应对** | **Cloudflare 人机验证自动过盾（Cookie 缓存 + 人工兜底），TLS 指纹拦截自动降级 WebView 抓取** | **`CloudflareBypassManager`、`WebViewHtmlFetcher`、`CloudflareChallengeActivity`** |
 | 细粒度错误提示  | 网络失败时展示具体错误原因（DNS 失败、403、验证码、空结果等）       | `CrawlError`、`CrawlErrorType`                                                  |
+| **Android TV 适配** | **同一 APK 双形态：密度放大的 10-foot UI、遥控器 D-pad 焦点体系、电视顶部导航栏、手机扫码搜索、电视缺失能力守卫** | **`TvUiSupport`、`TvFocus`、`TvSearchServer`、`DialogSizing`**                     |
 
 底部导航当前包含：首页、搜索、我的。历史记录和下载管理已移至"我的"页面内。
 
@@ -70,17 +73,25 @@ CrawlerVideoSource（抽象基类）
     ├── 通用方法：requestDocument()、extractRealVideoUrl()、buildSearchUrl()
     └── 抽象方法：parseVideoDetail()、parseSearchPage()
     ↓
-JujiwuVideoSource     ── 剧集屋（www.******.com）
-YinghuaVideoSource    ── 樱花动漫（www.******.com）
-TiantangVideoSource   ── 电影天堂（www.******.com）
+JujiwuVideoSource       ── 剧集屋【crawler_jju】
+YinghuaVideoSource      ── 樱花动漫【crawler_yinghua】
+TiantangVideoSource     ── 电影天堂【crawler_tiantang】
+ChongchongVideoSource / CechiVideoSource / DadatuVideoSource / DoujiaoVideoSource /
+HantvVideoSource / NongminTvVideoSource / NongmingVideoSource / NiuerVideoSource /
+DaMaoVideoSource / HanSenVideoSource / BaJieVideoSource / ZaiXianVideoSource /
+ShenMaVideoSource / A38TvVideoSource / XingChenVideoSource / KaCheVideoSource
+                        ── 其余 16 个子类，共 19 个，全部位于 data/source/impl/
 ```
 
 新增播放源只需：
 
 1. 继承 `CrawlerVideoSource`
-2. 配置 `sourceId`、`sourceName`、`baseUrl` 等属性
+2. 声明 `sourceId`、`cachePrefix`、`rateLimiterTag`、`logTag`（`sourceName` / `baseUrl` 由远程配置注入，**不在代码里写死**）
 3. 实现 `parseVideoDetail()` 和 `parseSearchPage()` 两个解析方法
-4. 在 `MovieApplication` 中注册实例
+4. 在 `VideoSourceConfigManager.knownSourceClasses` 中登记该类（供反射实例化）
+5. 在远程 JSON 的 `video_sources` 中追加条目（`source_id` 与代码里的 `sourceId` 一致）
+
+> `sourceName` 与 `baseUrl` 是可变属性，由 `VideoSourceConfigManager` 在构建实例后从远程 JSON 注入 —— 站点换域名时改远程配置即可，无需发版。
 
 ## 多源搜索与排序
 
@@ -120,9 +131,10 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 | 弹幕开关     | 独立于"我的"页面总开关的播放器子开关                                                                                                 |
 | **本地优先** | **弹幕已下载/已缓存时零联网加载；本地文件 → 弹幕缓存 → 联网级联三级优先链**                                                                         |
 | **远程权限** | **弹幕联网由远程配置** **`switches.enable_danmaku`** **控制（app\_name/version 匹配才生效）；权限关闭时不做任何联网获取，无论开关状态只显示「弹幕已关闭」；获取失败默认放行** |
-| 弹幕同步     | 弹幕与播放进度实时同步，支持 seek 后重新对齐                                                                                           |
+| 弹幕同步     | 弹幕与播放进度实时同步，支持 seek 后重新对齐
+| **字号/行数自适应** | **`baseTextSize = min(屏宽 / 35, 屏高 × 行数系数)`，行数系数按设备分档：电视 0.13（≈5 行）、手机 0.16（≈4 行）。三形态实测：电视横屏 35px / 5 行、手机横屏 43px / 4 行、手机竖屏 31px / 12 行**                                                                                           |
 | 弹幕缓存     | 搜索、分集、弹幕列表均缓存 1 天，统一过期时间；空弹幕列表不写缓存                                                                                  |
-| 失败重试     | 弹幕接口网络失败自动重试最多 3 次，间隔 10 秒，单次请求超时 15 秒；服务端错误自动重试，业务空结果不重试                                                           |
+| 失败重试     | **自动重试已移除**（`MAX_RETRY = 1`，网络失败只请求一次即返回失败），改由 UI 手动重试兜底（播放页点击重试 / 更换弹幕源、下载页重试弹幕）；单次请求超时 20 秒；服务端错误向上抛 `IOException`，业务空结果按「无弹幕」处理                                                           |
 
 弹幕控制位于播放器底部控制栏，与进度条融为一体，跟随播放器控制栏一起显示/隐藏。
 
@@ -229,6 +241,10 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 
 * 50ms 手势节流，避免每帧 IPC 卡顿
 
+> **双击与控制器共存的约束**：`GestureDetector` 的双击判定整段写在 `ACTION_DOWN` 分支里，而 media3 `PlayerView` 的单击走 View 点击路径（`setClickable(true)` + `performClick()`）—— 所以**第一次点击必然把控制栏唤出**。推论：`dispatchTouchEvent` 中**任何「控制栏可见就不喂 DOWN」的提前 return 都会直接废掉双击**；正确做法是把「手势原点复位」与「喂 `gestureDetector`」放在所有 return 之前，若要保留「控制栏显示时不启动拖动手势」的原设计，改用一个**本次触摸的标记**在 MOVE 分支里拦。
+>
+> 同一处顺带解决：手势原点（`gestureStartX/Y`、方向锁、本次触摸标记）若在那些 return 之后才赋值，会出现「轻点一下再滑动」时拿陈旧原点算位移 → 表现为进度/亮度/音量瞬间跳变。
+
 **屏幕锁定**：左侧中间显示锁定按钮，点击后：
 
 * 隐藏播放器控制栏和弹幕控制
@@ -250,6 +266,154 @@ TiantangVideoSource   ── 电影天堂（www.******.com）
 * 快进/快退统一为 10 秒
 
 * 播放/暂停、快进、快退按钮使用自定义矢量图标
+
+## Android TV 适配
+
+同一份 APK 同时面向手机与 Android TV / 盒子，形态在运行时判定。**网络层 / Repository / ViewModel / 数据模型 / 播放器封装零改动**，适配范围严格限定在 UI 层与配置。
+
+### 形态判定与方向策略
+
+| 项 | 手机 | 电视 / 盒子 |
+| ------- | ---------------------------- | --------------------------------------- |
+| 判定 | 默认 | `TvUiSupport.isTelevision()`：`UiModeManager.currentModeType == UI_MODE_TYPE_TELEVISION` |
+| 页面方向 | 竖屏页面跟随传感器（播放页恒横屏） | 全部锁横屏 |
+| 布局来源 | `res/layout/`（竖屏）；播放页与横屏走 `res/layout-land/` | `res/layout-land/` |
+| 导航 | 底部 `BottomNavigationView` | 顶部 `tvNavBar`（`item_tv_nav` 页签） |
+
+* 方向在 `onCreate` 里按 `isTv` 设置 `requestedOrientation`，**再** inflate 布局。清单刻意**不写** `android:screenOrientation`、**不声明** `configChanges=orientation|screenSize`：清单分不出形态，写死方向会让手机竖屏被强制转横屏；声明 `configChanges` 则会在方向与 inflate 时配置不一致时（如手机横握冷启动）停在错的布局上。
+* 形态入口：清单中 `android.software.leanback` 与 `android.hardware.touchscreen` 均声明为 `required="false"`，`MainActivity` 同时注册 `LAUNCHER` 与 `LEANBACK_LAUNCHER`，并提供 `android:banner`。
+* ⚠️ **`res/layout-land/` 不是 TV 专属目录** —— 播放页对所有设备强制横屏，手机播放页与手机横屏吃的就是这一份。改动必须两个形态一起验算。
+
+### 10-foot UI：靠密度而非改布局
+
+`TvUiSupport.wrapContext()` 在各 Activity 的 `attachBaseContext` 中调用，电视上把 `densityDpi` 放大 **1.45 倍**，dp 画布随之缩小，等于把布局内所有 dp/sp 尺寸（字号、按钮、间距、卡片）等比放大。这样无需逐页改写布局，手机端也就不会被改坏。
+
+* 实测：1080p 电视 `densityDpi ≈ 320` → 画布 960dp；放大后 ≈662dp，正文 14sp 渲染约 41px，符合 3 米视距下的可读性要求。
+* ⚠️ 改 `densityDpi` **必须同步重算** `screenWidthDp` / `screenHeightDp` / `smallestScreenWidthDp`，否则会留下「物理 1080p、密度 464、却仍声称宽 960dp」这种自相矛盾的 Configuration，任何读 `screenWidthDp` 的代码（含资源限定符匹配）都会拿到错值。
+* ⚠️ 密度放大对**纯 px 直算的自绘 View 无效**（如 `DanmakuView`），这类尺寸必须自己按形态分档 —— 见下方「弹幕字号随形态自适应」。
+
+### 遥控器焦点体系（`TvFocus`）
+
+电视没有触摸屏，所有交互依赖方向键 + 确定键，因此「可聚焦 + 明确视觉反馈 + 复用可还原」三件事必须成体系地解决。`presentation/tv/TvFocus.kt` 是**全 App 焦点适配的唯一入口**：
+
+| 方法 | 用途 |
+| -------------------------------------------------------- | ------------------------------------ |
+| `applyTo(view, scale)` | 让可点击控件可聚焦 + 挂焦点环 + 获焦缩放（列表条目根、按钮） |
+| `applyFocusableOnly(view, ringRes)` | 只挂焦点环，不改动聚焦能力 / 缩放 / 监听（已可聚焦的控件） |
+| `setFocusable(view, enabled, scale)` | 按显隐**重设聚焦能力**；`false` 时清掉聚焦能力并还原外观 |
+| `attachFocusRing` / `resetAppearance` | 挂环 / 还原（RecyclerView 复用必须还原，避免多项同时放大） |
+| `requestInitialFocus` / `focusFirstItem` / `scrollIntoViewOnFocus` | 初始焦点、首个条目、获焦自动滚入可视区 |
+| `applyToClickables` / `applyToDialogButtons` / `collectClickableViews` | 弹窗与容器级通用遍历 |
+| `neutralizeCardFocusStroke` | 抹掉 Material3 卡片自带的白描边获焦态 |
+
+**焦点环规范**：全 App 单圈 **3dp 描边**（圆角 14dp）。普通底色用品牌橙 `shape_tv_focus_ring`；**品牌橙底控件必须换纯白环** `shape_tv_focus_ring_light`（橙压橙对比度约 1.1:1，等于没有焦点框）；顶部导航页签用 `bg_tv_nav_focus`（inset 药丸形 —— 满屏宽贴边描边会糊成一整行大方框）。
+
+**三条必须遵守的规则**：
+
+1. **门控下沉到工具类入口**：`TvFocus` 每个公开方法首行 `if (!isActive(view)) return`，手机端一律 no-op。门控放在工具类而不是各个调用点，才能让 40+ 处调用一处覆盖、永不遗漏。
+2. ⚠️ **门控挡不住调用点直接赋值**：适配器里写 `btn.isFocusable = shown` / `btn.isFocusableInTouchMode = shown` 会绕过门控 —— 而 `focusableInTouchMode = true` 在触屏上的语义是「触摸也把焦点交给该控件」，且**取焦点的这一次点击不触发 click**，手机上的表现就是**按钮要点两下**。凡「按显隐重设聚焦能力」一律走 `TvFocus.setFocusable()`。
+3. **`res/layout-land/` 里不得写死** `focusable` / `focusableInTouchMode` / `foreground=bg_tv_focus_ring`：电视端由代码 `TvFocus.applyTo(root)` 赋予，写死在 XML 里对电视是冗余、对手机横屏是污染。自检：`grep -rn 'focusableInTouchMode="true"' app/src/main/res/layout-land/` 应只剩 `EditText`。
+
+**焦点遍历的判据不是「是否 `isFocusable`」，而是「有没有被 `TvFocus` 处理过」**：处理时会在 View 上打 `tag_tv_focus_handled` 标记（声明在 `res/values/ids.xml`）。原因是 `MaterialButton` 与 XML 里写了 `focusable="true"` 的条目行，其 `isFocusable` 恒为 true；用「已可聚焦就跳过」的老判据会整批漏掉，而 `defaultFocusHighlightEnabled` 已被关成 false → 症状是「焦点能停上去、屏幕上毫无变化」。
+
+### 电视顶部导航与焦点移交
+
+电视端导航换成顶部横向 `tvNavBar`（`layout-land/activity_main.xml`，条目 `item_tv_nav.xml`：图标 20dp + 文字 13sp + 底部橙色指示条），采用**焦点即选中**：只有当前页签可聚焦，`MainActivity.dispatchKeyEvent` 接管左右键切换页签。
+
+⚠️ **遥控器按键只投递给持有焦点的那个视图，且不冒泡到父容器** —— 所以跨容器 / 跨页面的焦点移交必须写在 `Activity.dispatchKeyEvent`。也不能指望 `RecyclerView.focusSearch()`：它把候选限制在自身子树内，「网格最后一行按下键」既找不到候选、也翻不出容器。为此定义了两个页面侧接口：
+
+| 接口 | 作用 |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `TvInitialFocusProvider.tvInitialFocusView()` | 内容页向顶部导航暴露「下键时接收焦点的首个控件」，由 `MainActivity` 显式移交 |
+| `TvContentKeyHandler.onContentDirectionKey(direction)` | 内容页对方向键的兜底接管（如从结果网格翻到网格外的分页栏） |
+
+⚠️ 两个接口都**必须实时返回当前有效视图，禁止缓存** —— `ViewPager2` 会复用 Fragment，`onViewCreated` 只在首次调用，缓存会在切页后过期。
+
+### 手机扫码搜索
+
+电视遥控器输入片名极其不便，搜索页在电视端提供「手机扫码 → 手机输入 → 电视搜索」的通道：
+
+```text
+SearchFragment.prepareQrCode()
+        ↓ ① TvSearchServer.getLocalIpAddress() 取局域网 IP
+        ↓ ② QrCodeGenerator.generate(url, 512)（ZXing）
+电视搜索页右栏显示二维码 http://<ip>:8234/search.html
+        ↓ 局域网 IP 取不到 → 隐藏二维码，服务器本次会话内不再启动
+手机扫码打开网页并提交关键词
+        ↓ POST /api/search
+TvSearchServer 回调 → SearchFragment 执行搜索
+```
+
+* `TvSearchServer` 是纯 `ServerSocket` 实现的轻量 HTTP 服务，固定端口 **8234**，提供 `GET /search.html`、`POST /api/search`、`GET /api/last_query`。
+* **生命周期严格跟着二维码可见性**：只有二维码可见且搜索页处于 resumed 时才启动服务器，离开页面或隐藏二维码立即 `stop()` 释放端口（`updateSearchServerState()` 是二维码可见性的唯一改动点）。
+
+### 电视端播放页交互
+
+播放页在电视上先**把焦点关干净**（`playerView` 设 `FOCUS_BLOCK_DESCENDANTS`，顶部四键 `isFocusable = false`），再全部走 `dispatchKeyEvent`：
+
+| 按键 | 行为 |
+| ------- | ------------------------------- |
+| 确定键 | 播放 / 暂停 |
+| ← / → | 快退 / 快进 10 秒 |
+| ↓ | 唤出控制栏（进度条） |
+| 长按（`repeatCount > 0`） | 一律吞掉，不重复触发 |
+
+**隐藏按钮 ≠ 隐藏功能**：`isFocusable = false` 只让按钮点不到，按钮**仍画在屏幕上**。电视上把「画中画 / 屏幕旋转 / 锁定」三个按钮直接置 `GONE`，并给对应点击逻辑加守卫。⚠️ 锁定按钮的 visibility 会被控制栏的 `ControllerVisibilityListener` 动态接管，**置 `GONE` 的同时必须给那段逻辑加 `!isTv` 守卫**，否则控制栏一显一隐它就被拉回来。
+
+> ⚠️ 画中画按钮与代码均额外用**能力判据**守卫（`pipSupported`），因为电视虽为 Android 12（满足 `SDK >= O`）却并不支持 PiP —— 按版本判是错的。
+
+### 电视缺失的系统能力
+
+电视 / 盒子是「裁剪过的 Android」，部分系统服务会**直接返回 null** 或能力缺失。已实测的崩溃与处理：
+
+| 能力 | 电视表现 | 处理 |
+| ---------------------- | --------------------------- | ------------------------------------------------------------ |
+| 电池 `BATTERY_SERVICE` | 接市电无电池，部分 ROM **返回 null** | `as BatteryManager` 直接崩（**Kotlin 的 `as` 对平台类型相当于 `!!`**）→ 判据 `batterySupported` = 非 TV **且** 服务在 **且** `getIntProperty(CAPACITY) in 0..100`；为 false 时不读电量、不注册 `ACTION_BATTERY_CHANGED`、电量图标 `GONE` |
+| 画中画 | 系统不支持 | `pipSupported = SDK >= O && hasSystemFeature(FEATURE_PICTURE_IN_PICTURE)`；按钮点击、`RemoteAction` 接收器注册、`setPictureInPictureParams()` **三处统一守卫** |
+| 屏幕旋转 | 无意义 | 旋转按钮 `GONE` + 点击守卫 |
+| 锁屏 | 无触屏，锁定后无法解锁 | 锁屏按钮 `GONE` + `setupLockButton()` 整段不装配 |
+| 软键盘 `INPUT_METHOD_SERVICE` | 多数没有软键盘 | `as?` + 早返回 |
+| 安装未知应用 | 很多 ROM 裁掉该设置页 / 无系统安装器组件 | `Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES` 与安装 Intent 一律 `runCatching`；`ApkInstaller` 改为返回 `Boolean`，关于页按返回值给出「去系统设置授权」或「用 U 盘手动安装」的差异化提示 |
+
+⚠️ **别只写 `isTv` 判断**：部分盒子不上报 `UI_MODE_TYPE_TELEVISION`。能力缺失与形态判定是两件事，要按**能力**判。
+
+反向地，`NotificationManager` / `PowerManager` / `AudioManager` / `ConnectivityManager` 是系统绑定服务，**任何 Android 设备上都有**，保留 `as` 强转即可，不必加一堆空安全调用制造噪音。
+
+> 排查手法：把调用点列成清单，逐条问三件事 —— **这个能力电视有没有？没有的话走到这里会不会崩？崩之前 UI 上有没有它的入口？**
+
+### 弹幕字号随形态自适应
+
+弹幕是**纯 px 直算**的自绘 View，不走 density 体系（`TvUiSupport` 的放大对它无效），因此字号单独按设备分档：
+
+```kotlin
+val rowsRatio = if (isTvDevice) 0.13f else 0.16f          // 电视 ≈5 行 / 手机 ≈4 行
+val baseTextSize = minOf(viewWidth / 35f, viewHeight * rowsRatio).coerceIn(18f, 50f)
+```
+
+* 横向约束「单行不臃肿」、纵向约束「行数预算」，取小者；只有横屏（宽而矮）才会触发纵向约束，竖屏恒由横向胜出。
+* ⚠️ **必须按设备身份分档，不能只靠屏幕像素**：手机横屏与电视横屏像素尺寸高度重合（2340×1080 vs 1920×1080，弹幕容器同为屏高 25% ≈ 270px），物理字高却差近 10 倍，纯几何公式必然误伤。
+* ⚠️ 系数要留取整余量：`maxRows = (viewHeight / rowHeight).toInt()` 是**向下取整**，`0.167 × 270 → 3.99 → 3 行`（正好踩空），故 4 行取 `0.16f`。
+
+### 电视端页面形态清单
+
+| 页面 | 电视 / 横屏形态 |
+| -------- | ------------------------------------------------------------ |
+| 主页面 | 顶部 `tvNavBar` 替代底部导航 |
+| 首页 | 网格列数按 120dp 基准重算（电视约 5 列） |
+| 搜索结果 | 右栏 = 二维码伴侣；结果网格之外的分页栏由 `TvContentKeyHandler` 接管「翻出容器」的下键 |
+| 详情页 | 左右分栏：左「影片信息」**纯展示不可聚焦**，右上「线路 / 选集」+ 右下三张信息卡；主操作行在电视端整行 `GONE`（播放入口即选集网格）；无播放线路时整张线路卡 `GONE` |
+| 我的 | 左右 2:3 分栏；下载管理入口在电视端剔除 |
+| 播放历史 | 紧凑操作条 + 网格列表 |
+| 播放页 | 隐藏电量 / 画中画 / 旋转 / 锁屏，按键全走 `dispatchKeyEvent` |
+| 下载管理 | **仍是竖屏形态**（`res/layout-land/` 尚未提供 `activity_download.xml`） |
+
+> 纯只读区块（无点击、无交互）**不要给它焦点** —— 既浪费按键，又会霸占初始焦点兜底落点。
+
+### 弹窗尺寸与横屏分栏
+
+弹窗宽度统一走 `presentation/dialog/DialogSizing.kt`，**以屏幕短边为基准**：`min(屏宽 × 0.88, 屏高 × 0.90, 460dp)`。原因是横屏（电视 / 手机横屏）「宽而矮」，按屏宽百分比定宽会得到 596dp 宽的扁条。
+
+视频源管理 / 清理缓存 / 帮助三个弹窗在横屏下改为**左右分栏**（左侧内容区 + 右侧固定 132dp 按钮栏），宽度单独放宽为 `min(屏宽 × 0.80, 屏高 × 1.55, 620dp)` —— 第二个约束**不是高度约束，而是宽高比上限**。⚠️ 两份布局（`layout/` 与 `layout-land/`）的 **id 集合必须完全一致**，否则 ViewBinding 取限定符并集时字段会退化成可空。详见 [`UI 视觉统一规范文档.md`](./UI%20视觉统一规范文档.md)。
 
 ## 下载管理
 
@@ -379,11 +543,12 @@ DownloadActivity ── 下载管理页面（下载中/已完成标签页）
 
 | 类型      | 技术                                                                          |
 | ------- | --------------------------------------------------------------------------- |
-| 开发语言    | Kotlin 2.0                                                                  |
-| 构建工具    | Gradle、Android Gradle Plugin 8.5.0                                          |
+| 开发语言    | Kotlin 2.0.0                                                                |
+| 构建工具    | Gradle 8.9（腾讯镜像）、Android Gradle Plugin 8.5.0、KSP 2.0.0-1.0.21            |
 | 最低版本    | minSdk 24                                                                   |
 | 目标版本    | targetSdk 36                                                                |
 | UI      | XML Layout、ViewBinding、Material Components、RecyclerView、CardView、ViewPager2 |
+| 双形态布局   | `res/layout/`（手机竖屏）+ `res/layout-land/`（横屏：电视 + 手机横屏共用），密度放大约 1.45 倍实现 10-foot UI |
 | 架构      | MVVM + Repository + Data Source                                             |
 | 异步      | Kotlin Coroutines、LiveData、Flow                                             |
 | 本地存储    | Room 2.6.1                                                                  |
@@ -392,6 +557,7 @@ DownloadActivity ── 下载管理页面（下载中/已完成标签页）
 | JSON 解析 | Moshi 1.15.1、org.json                                                       |
 | 网络与解析   | OkHttp 4.12.0、Jsoup                                                         |
 | 代码生成    | KSP                                                                         |
+| 二维码生成   | ZXing 3.5.3（电视端「手机扫码搜索」）                                                      |
 
 ## 首页内容发现
 
@@ -498,6 +664,8 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 多源缓存隔离：所有爬虫相关缓存键都包含源标识前缀（`crawler` / `yinghua`），确保不同源的缓存互不干扰。
 
+爬虫请求失败时按**错误类型写入负缓存**（`NEG_TYPE_*`），避免反复发无效请求：搜索结果为空 → 1 天；HTTP 5xx 服务端错误 → 1 小时；HTTP 4xx 客户端错误 → 1 天；连接超时 / 网络不可达 → 1 小时；WebView 引擎不兼容导致 CF 过盾失败 → 1 小时（升级系统 WebView 后自愈）。
+
 ## 数据存储
 
 Room 当前持久化五张表：
@@ -536,17 +704,24 @@ app/src/main/
 │   └── presentation/
 │       ├── activity/
 │       ├── adapter/
+│       ├── challenge/     ← Cloudflare 人工验证兜底窗口
 │       ├── danmaku/
+│       ├── dialog/        ← DialogSizing / ConfirmDialog / EpisodeSelectDialog
 │       ├── fragment/
+│       ├── help/          ← HelpDialog
 │       ├── settings/
 │       ├── source/
+│       ├── tv/            ← TV 适配（TvUiSupport / TvFocus / TvSearchServer / QrCodeGenerator …）
 │       ├── update/
 │       └── viewmodel/
 └── res/
+    ├── color/
     ├── drawable/
-    ├── layout/
+    ├── layout/           ← 手机竖屏
+    ├── layout-land/      ← 横屏（电视 + 手机横屏共用，**非 TV 专属**）
     ├── menu/
     ├── values/
+    ├── values-night/
     └── xml/
 ```
 
@@ -568,6 +743,10 @@ Debug APK 输出位置：
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Release 包签名使用根目录的 `MovieStore_key.jks`（已 gitignore），**v1 + v2 双签**：`ApkVerifier` 校验走 v1（`GET_SIGNATURES` 仅支持 v1），而 minSdk 24 时 AGP 默认关闭 v1，会导致应用内更新误报「无法解析签名」。
+
+> ⚠️ `:app:assembleRelease` 在**命令行**会失败于 `packageRelease`（keystore 密码取自环境变量或默认值，命令行环境下读不到），与代码改动无关 —— 正式包请在 Android Studio 中构建。
+
 ## 权限说明
 
 | 权限                                                | 用途                                    |
@@ -580,11 +759,24 @@ app/build/outputs/apk/debug/app-debug.apk
 | `android.permission.WAKE_LOCK`                    | 下载时保持 CPU 唤醒                          |
 | `android.permission.REQUEST_INSTALL_PACKAGES`     | 应用内更新安装 APK（Android 8.0+ 需「安装未知应用」授权） |
 
+## 设备形态声明
+
+清单不申请任何额外敏感权限，仅通过 `uses-feature` 声明双形态能力（均为 `required="false"`，不会把手机或电视排除在安装范围之外）：
+
+| 声明                                | 取值                 | 含义                    |
+| --------------------------------- | ------------------ | --------------------- |
+| `android.software.leanback`       | `required="false"` | 声明支持 Android TV 形态    |
+| `android.hardware.touchscreen`    | `required="false"` | 声明不依赖触摸屏（电视无触摸输入）     |
+
+配套清单项：`MainActivity` 同时注册 `LAUNCHER` 与 `LEANBACK_LAUNCHER` 入口，`application` 提供 `android:banner`（电视启动器横幅图 `tv_banner`），播放页声明 `supportsPictureInPicture="true"`（运行时仍按能力守卫）。
+
 ## 当前版本说明
 
-* 版本号：`1.0`
+* 版本号：`1.3.0`（`versionCode = 1`）
 
 * applicationId：`com.hpu.mymoviestore`
+
+* 设备形态：手机 + Android TV / 盒子（同一 APK）
 
 * compileSdk：`36`
 
@@ -601,6 +793,10 @@ app/build/outputs/apk/debug/app-debug.apk
 * 增加首页下拉刷新，用于主动刷新已过期或手动清空的发现缓存。
 
 * 增加收藏功能。
+
+* 补齐电视端页面形态：`layout-land/` 目前仍缺 `activity_history.xml` / `activity_download.xml`（下载管理页在电视上仍为竖屏布局）。
+
+* 弹幕字号设置项（小 / 中 / 大）：当前字号按「设备 × 形态」自动分档，参数算得再准也不如让用户自己调，换设备或换视距都不必再改代码。
 
 ### 应用内更新：已确认暂缓的优化项
 

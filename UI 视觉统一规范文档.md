@@ -332,6 +332,7 @@
 - [x] Toast / Snackbar
 - [x] 进度条、加载动画
 - [x] 空状态、错误状态视图
+- [x] **Android TV / 大屏（10-foot UI）—— 见第十一章**
 
 检查项：背景、文字、按钮、边框、分割线、圆角、间距是否与规范一致。
 
@@ -386,6 +387,93 @@
 
 ---
 
-**文档版本**：1.1  
+## 十一、Android TV / 大屏（10-foot UI）视觉规范
+
+> 完整设计见 [`README.md` 的「Android TV 适配」](./README.md)；本章只列**视觉层面**的约定。
+> 电视与手机共用同一份布局资源，形态差异靠「密度放大 + 焦点样式」实现，**不新增页面级配色**。
+
+### 11.1 尺寸：靠密度放大，不逐个改布局
+
+电视端由 `presentation/tv/TvUiSupport.wrapContext()` 在 `attachBaseContext` 中把 `densityDpi` 放大 **1.45 倍**，dp 画布随之缩小 —— 等于把第四章的所有 dp/sp 尺寸（字号、按钮高度、间距、圆角）**整体等比放大**，无需为电视单独维护一套布局。
+
+| 形态 | densityDpi | dp 画布 | 正文 14sp 渲染 |
+|------|-----------|--------|---------------|
+| 手机 1080p | 基准 | 按设备 | 按设备 |
+| 电视 1080p | ≈320 → **464** | 960dp → **662dp** | 约 41px（3 米视距可读） |
+
+因此**不要**为电视另写「大号」尺寸常量；确需电视专属数值时（网格列数的 120dp 基准、弹窗宽度上限）应基于实测。
+
+> ⚠️ 纯 px 直算的自绘 View 不吃密度放大（如 `DanmakuView`），其尺寸须自行按形态分档：
+> `baseTextSize = min(屏宽 / 35, 屏高 × 行数系数)`，电视系数 0.13（≈5 行）/ 手机 0.16（≈4 行）。
+
+### 11.2 焦点视觉：全 App 一套
+
+遥控器交互下「当前焦点在哪」必须一眼可见，规范为**单圈 3dp 描边、圆角 14dp**，配轻微放大与抬升：
+
+| 控件场景 | 焦点环资源 | 颜色 |
+|---------|-----------|------|
+| 普通底色（卡片、页面背景） | `shape_tv_focus_ring` / `bg_tv_focus_ring` | 品牌橙 `#FF6B35` |
+| **品牌橙底控件**（主按钮、`bg_play_button` 等） | `shape_tv_focus_ring_light` / `bg_tv_focus_ring_light` | **纯白 `#FFFFFF`** |
+| 顶部导航页签 | `bg_tv_nav_focus` | 品牌橙（inset 8dp / 6dp 药丸形，填充色 `tv_focus_pill_fill` = `#26FF6B35`） |
+
+* **橙底必须换白环**：品牌橙上再描品牌橙，对比度约 1.1:1，等于没有焦点框。`TvFocus.ringFor()` 对 `backgroundTint == colorPrimary` 的按钮自动换白环；橙底 `TextView` 按钮（`bg_play_button`）需在调用点显式传 `ringRes`。
+* **顶部导航不用满宽描边**：满整屏宽贴边描边会变成占满一行的大方框，改用 inset 药丸。
+* ⚠️ **绝不用 `layer-list` 叠多层描边** —— `stroke` 是硬边无渐变，多层只会叠出「红框套白框」；质感靠放大动画 + `translationZ`。
+* ⚠️ **焦点 selector 绝不能含 `state_selected`** —— 页签 / chip 长期处于选中态，焦点框会永久卡在选中项上。
+* ⚠️ **Material3 卡片自带获焦白边**（`m3_card_stroke_color` 的 `state_focused` = `?attr/colorOnSurface`，深色下为纯白）→ 用 `TvFocus.neutralizeCardFocusStroke()` 抹掉（把 `strokeColorStateList` 钉成 `defaultColor` + `stateListAnimator = null`；**不可把 `strokeWidth` 置 0**）。
+
+### 11.3 焦点态底色（结果卡片）
+
+电视端可聚焦的**列表条目**改用状态列表底色，获焦时整体提亮为暖色：
+
+| 资源 | 深色值 | 浅色值 | 说明 |
+|------|-------|-------|------|
+| `surface_background` | 常规卡片底色 | 同左 | 失焦态 |
+| `surface_background_focused` | `#453123` | `#FFE7D1` | 获焦态（暖色提亮） |
+
+由 `color/card_background_tv_focusable.xml` 组成 ColorStateList 赋给 `MaterialCardView` 的 `cardBackgroundColor`，**状态切换完全由系统焦点机制驱动**（条目根卡片自身 `focusable=true`）。**仅横屏（TV）条目布局使用**，手机竖屏布局维持纯色。
+
+### 11.4 控件交互反馈的禁用清单
+
+| 禁用 | 原因 | 替代 |
+|------|------|------|
+| `?attr/selectableItemBackground`（含 `Borderless`） | AppCompat 下解析到 **Holo 遗留选择器**：获焦态是 `#33B5E5` 60% 蓝、按压态是 `#40CCCCCC` 25% 白 —— 在深色主题上突兀，且会给按钮留下常驻蓝底 | 只要涟漪时自建 `ripple_clickable.xml`（`#33FFFFFF`）；弹窗次要按钮用 `MaterialButton + backgroundTint=chip_background + cornerRadius=12dp` |
+| 在 `res/layout-land/` 中写死 `focusable` / `focusableInTouchMode` / `foreground=bg_tv_focus_ring` | 该目录**同时是手机横屏布局**；`focusableInTouchMode=true` 会让触屏「第一次点击只取焦点、当次不触发 click」 | 电视端由代码 `TvFocus.applyTo(root)` 赋予；仅「电视端只靠 XML」的控件（搜索页翻页按钮）可保留 `focusable` + 焦点环，但**必须删掉** `focusableInTouchMode`（`EditText` 除外） |
+
+### 11.5 弹窗尺寸（横屏与分栏）
+
+`presentation/dialog/DialogSizing.kt` 统一尺寸策略 —— **以屏幕短边为基准**，而不是屏宽百分比：
+
+```text
+竖排 / 常规：宽度 = min(屏宽 × 0.88, 屏高 × 0.90, 460dp)
+横屏分栏：  宽度 = min(屏宽 × 0.80, 屏高 × 1.55, 620dp)
+```
+
+| 形态 | 弹框宽度 | 占屏宽 |
+|------|---------|-------|
+| 竖屏手机 1080×2400 | 317dp | 88%（与旧行为一致） |
+| 电视 1920×1080 | 335dp（分栏 530dp） | 51%（分栏 80%） |
+| 手机横屏 2400×1080 | 324dp（分栏 558dp） | 40% |
+
+* 分栏版用于视频源管理 / 清理缓存 / 帮助三个弹窗（左侧内容区 + 右侧固定 132dp 按钮栏）。⚠️ 第二个约束 **`屏高 × 1.55` 是宽高比上限、不是高度约束** —— 照抄 `× 0.90` 会把分栏弹窗压回 335dp，左列只剩 160dp。
+* 内容限高：常规 `0.50` 屏高、列表型 `0.45`；**分栏横屏取 `0.44`，比竖排更小**（左列多了「全选行 / 缓存大小 / 底部提示」等固定行）。
+* `applyCenteredCard(dialog, ctx, split)` **必须在 `show()` 之后调用**。
+* ⚠️ 同一弹窗的两份布局（`layout/` 与 `layout-land/`）**id 集合必须完全一致**，否则 ViewBinding 取限定符并集时字段退化成可空。
+
+### 11.6 电视端顶部导航栏
+
+| 元素 | 规格 |
+|------|------|
+| 容器 | 高 44dp，背景 `colorSurface` |
+| 页签 | 图标 20dp + 文字 13sp，水平内边距 24dp；常态文字 `colorOnSurfaceSecondary` |
+| 选中指示条 | 24dp × 2dp，品牌橙（`bg_tv_nav_indicator`） |
+| 获焦反馈 | `bg_tv_nav_focus` inset 药丸（不用满宽描边） |
+| 交互模型 | **焦点即选中** —— 只有当前页签可聚焦，左右键由 `MainActivity.dispatchKeyEvent` 接管切换 |
+
+> 手机端仍用底部 `BottomNavigationView`，两套导航在同一份 `layout-land/activity_main.xml` 的 `navContainer` 内运行时二选一。
+
+---
+
+**文档版本**：1.2  
 **适用项目**：MyMovieStore Android App  
-**更新日期**：2026-08-31
+**更新日期**：2026-09-21

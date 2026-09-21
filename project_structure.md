@@ -29,9 +29,6 @@ MyMovieStore/
 │   ├── build.gradle.kts
 │   ├── proguard-rules.pro
 │   └── src/
-├── example/
-│   ├── douban/
-│   └── yinghua/
 ├── gradle/
 │   ├── libs.versions.toml
 │   └── wrapper/
@@ -40,17 +37,20 @@ MyMovieStore/
 ├── gradle.properties
 ├── gradlew
 ├── gradlew.bat
+├── AGENTS.md
 ├── README.md
+├── UI 视觉统一规范文档.md
 └── project_structure.md
 ```
 
 | 文件或目录 | 说明 |
 |------------|------|
 | `app/` | Android 应用模块 |
-| `example/` | 页面源代码示例，用于辅助爬虫解析（含豆瓣和樱花动漫示例） |
 | `gradle/libs.versions.toml` | 统一管理依赖和插件版本 |
-| `README.md` | 项目功能、构建和使用说明 |
-| `project_structure.md` | 当前架构与文件职责说明 |
+| `AGENTS.md` | 面向协作方的工程约定（构建命令、工具链、架构要点、领域约定） |
+| `README.md` | 项目功能、构建和使用说明（含 Android TV 适配章节） |
+| `project_structure.md` | 当前架构与文件职责说明（本文档） |
+| `UI 视觉统一规范文档.md` | 颜色/字体/间距/组件与 TV 焦点视觉规范 |
 
 ## 应用模块结构
 
@@ -66,7 +66,8 @@ app/src/main/
 └── res/
     ├── color/
     ├── drawable/
-    ├── layout/
+    ├── layout/            ← 手机竖屏
+    ├── layout-land/       ← 横屏（电视 + 手机横屏共用，**非 TV 专属**）
     ├── menu/
     ├── mipmap-*/
     ├── values/
@@ -78,18 +79,24 @@ app/src/main/
 
 ### `MovieApplication.kt`
 
-`MovieApplication` 是应用级初始化入口：
+`MovieApplication` 是应用级初始化入口，`onCreate` 中按以下顺序完成：
 
-- 初始化 Room 数据库 `MovieDatabase`。
-- 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`PermissionConfigRepository`。
-- 初始化 `CloudflareBypassManager`（读取设备 WebView 真实 UA，供过盾与爬虫请求统一使用）。
-- 创建本地挡板源 `VideoSourceManager`。
-- 爬虫源由 `VideoSourceConfigManager` **远程动态加载**（非硬编码），启动时同步缓存或异步重试最多 5 次获取源配置。
-- 创建首页发现源 `DoubanDiscoverySource`。
-- 创建 `VideoRepository`，供视频相关 ViewModel 使用。
-- 启动时清理过期的 `api_cache` 记录。
-- 提供全局 Coil `ImageLoader`，为豆瓣图片自动补充 `Referer`、`Origin` 和浏览器 `User-Agent`，处理图片防盗链。
-- 提供全局 `allVideoSources` 访问器，供"我的"页面管理播放源。
+1. 记录静态单例 `instance`，随后 `ThemeManager.applySaved(this)` 应用持久化的浅色/深色模式（**必须在任何 Activity 创建前调用**）。
+2. `CloudflareBypassManager.init(this)`：读取设备 WebView 真实 UA，供过盾与爬虫请求统一使用。
+3. 初始化 Room 数据库 `MovieDatabase`。
+4. 初始化 `PlayHistoryRepository`、`SearchHistoryRepository`、`ApiCacheRepository`、`DownloadRepository`、`PermissionConfigRepository`。
+5. 创建本地挡板源 `VideoSourceManager`（`assets/sample_video_source.json` + `api_cache` TTL 缓存）与首页发现源 `DoubanDiscoverySource`。
+6. 创建 `VideoRepository`（初始源列表为空，后续由配置管理器注入）。
+7. `VideoSourceConfigManager.initConfig()`：爬虫源**由远程 JSON 动态构建**（非硬编码），有缓存则同步加载（毫秒级）并异步做每日更新，无缓存则重试最多 5 次；`state` 被观察，失败时打日志。
+8. 启动即执行、此后每 6 小时一轮的过期 `api_cache` 清理循环。
+9. `downloadRepository.pauseAll()`：应用重启后把数据库里「下载中/等待中」的任务重置为**暂停**（`DownloadEngine` 是内存态，重启后任务已丢失）。
+10. 后台静默触发一次权限配置检查（`fetchPermissionAsync()`）。
+
+另提供：
+
+- 全局 Coil `ImageLoader`（`newImageLoader()`）：为豆瓣图片自动补充 `Referer`、`Origin` 与浏览器 `User-Agent` 处理防盗链；磁盘缓存**收敛到 128MB**（默认 250MB 偏大）。
+- 全局 `allVideoSources` 访问器 + `updateVideoSources()`，供「我的」页面管理播放源并同步注入 `VideoRepository`。
+- `applicationScope`（`SupervisorJob + Dispatchers.IO`），供跨 Activity 生存周期的后台任务使用。
 
 当前全局依赖通过 `MovieApplication.get()` 获取。
 
@@ -152,17 +159,28 @@ data/
     ├── DoubanDiscoverySource.kt
     ├── RequestRateLimiter.kt
     ├── VideoSource.kt
+    ├── VideoSourceConfigManager.kt
     ├── VideoSourceManager.kt
-    └── impl/
-        ├── CechiVideoSource.kt
-        ├── DadatuVideoSource.kt
-        ├── DoujiaoVideoSource.kt
-        ├── HantvVideoSource.kt
-        ├── JujiwuVideoSource.kt
-        ├── NongminTvVideoSource.kt
-        ├── NongmingVideoSource.kt
-        ├── TiantangVideoSource.kt
-        └── YinghuaVideoSource.kt
+    └── impl/                      ← 19 个爬虫源子类
+        ├── A38TvVideoSource.kt        （crawler_a38tv）
+        ├── BaJieVideoSource.kt        （crawler_bajie）
+        ├── CechiVideoSource.kt        （crawler_cechi）
+        ├── ChongchongVideoSource.kt   （crawler_chongchong）
+        ├── DaMaoVideoSource.kt        （crawler_damao）
+        ├── DadatuVideoSource.kt       （crawler_dadatu）
+        ├── DoujiaoVideoSource.kt      （crawler_dj）
+        ├── HanSenVideoSource.kt       （crawler_hansen）
+        ├── HantvVideoSource.kt        （crawler_hantv）
+        ├── JujiwuVideoSource.kt       （crawler_jju）
+        ├── KaCheVideoSource.kt        （crawler_kache）
+        ├── NiuerVideoSource.kt        （crawler_niuer）
+        ├── NongminTvVideoSource.kt    （crawler_nongmin_tv）
+        ├── NongmingVideoSource.kt     （crawler_nm）
+        ├── ShenMaVideoSource.kt       （crawler_shenma）
+        ├── TiantangVideoSource.kt     （crawler_tiantang）
+        ├── XingChenVideoSource.kt     （crawler_xingchen）
+        ├── YinghuaVideoSource.kt      （crawler_yinghua）
+        └── ZaiXianVideoSource.kt      （crawler_zaixian）
 ```
 
 ### 反爬应对组件（data/ 根目录）
@@ -199,7 +217,7 @@ data/
 |--------|------|
 | `crawlerClient` | 爬虫专用 OkHttpClient，拦截器统一注入 `CloudflareBypassManager.userAgent()`（动态读取，与过盾 WebView 一致）及浏览器化请求头 |
 
-**`HttpClientProvider.kt`** 整合全部 OkHttpClient 实例（标准/弹幕/下载/爬虫四类），超时 15~20 秒，消除重复配置。
+**`HttpClientProvider.kt`** 整合全部 OkHttpClient 实例（标准/弹幕/下载/爬虫四类），超时分别为 **标准 15s / 弹幕 20s / 下载 30s**（爬虫沿用标准客户端），消除重复配置。
 
 ### 数据库
 
@@ -279,7 +297,7 @@ data/
 | `PlayHistoryRepository` | 播放历史去重写入（含 sourceName）、进度更新、清空和按视频读取历史 |
 | `SearchHistoryRepository` | 搜索词新增或更新、删除、清空和历史列表读取 |
 | `ApiCacheRepository` | 封装 `api_cache` 的读写、失效、按前缀删除、过期清理和剩余 TTL 查询 |
-| `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存和失败重试机制；空弹幕列表不写缓存，空缓存视为未命中 |
+| `DanmakuRepository` | 弹幕搜索、分集获取、弹幕列表获取，带缓存（搜索/分集/弹幕列表统一 1 天过期）；**自动重试已移除**（`MAX_RETRY = 1` 只试一次，失败由 UI 手动重试兜底）；空弹幕列表不写缓存，空缓存视为未命中 |
 | `DownloadRepository` | 下载任务管理，封装 `DownloadTaskDao` 和 `DownloadedVideoIndexDao`，提供任务创建/查询/控制/删除、进度更新、弹幕状态更新、离线播放进度更新、存储空间查询 |
 | `PermissionConfigRepository` | 从远程 JSON 文件获取 App 各项配置（搜索 `switches.myapp`、弹幕 `switches.enable_danmaku`、更新 `switches.enable_update` + `strings.force_update_url`/`update_details`/`update_sha256`），与本地 app_name/version 匹配后生效；缓存 1 天且带 `cached_for_version` 版本校验（升级后自动失效重拉）；网络获取失败默认全部放行；`checkSearchPermissionFast()` 搜索页调用，`checkDanmakuPermissionFast()` 播放器/弹幕下载调用，`checkUpdate()` 启动更新检查调用（`update_sha256` 随 `UpdateInfo.sha256` 透传给下载器做完整性校验） |
 
@@ -353,44 +371,35 @@ data/
 | `parseVideoDetail(doc, detailUrl)` | 解析详情页 HTML |
 | `parseSearchPage(doc, keyword, page)` | 解析搜索页 HTML |
 
-### `JujiwuVideoSource`
+### 爬虫播放源清单（`source/impl/`，共 19 个）
 
-剧集屋播放源，继承 `CrawlerVideoSource`：
+所有源均继承 `CrawlerVideoSource`，**已全部实现真实解析规则**（无 TODO 占位）。`sourceName` 与 `baseUrl` 不在代码里写死 —— 它们是可变属性，由 `VideoSourceConfigManager` 从远程 JSON 注入，因此站点换域名无需发版。
 
-| 配置 | 值 |
-|------|-----|
-| `sourceId` | `crawler_jju` |
-| `sourceName` | `剧集屋` |
-| `baseUrl` | `https://www.******.com` |
-| `cachePrefix` | `crawler` |
+| 类 | `sourceId` | `cachePrefix` |
+|------|------|------|
+| `A38TvVideoSource` | `crawler_a38tv` | `a38tv` |
+| `BaJieVideoSource` | `crawler_bajie` | `bajie` |
+| `CechiVideoSource` | `crawler_cechi` | `cechi` |
+| `ChongchongVideoSource` | `crawler_chongchong` | `chongchong` |
+| `DaMaoVideoSource` | `crawler_damao` | `damao` |
+| `DadatuVideoSource` | `crawler_dadatu` | `dadatu` |
+| `DoujiaoVideoSource` | `crawler_dj` | `doujiao` |
+| `HanSenVideoSource` | `crawler_hansen` | `hansen` |
+| `HantvVideoSource` | `crawler_hantv` | `hantv` |
+| `JujiwuVideoSource` | `crawler_jju` | `crawler` |
+| `KaCheVideoSource` | `crawler_kache` | `kache` |
+| `NiuerVideoSource` | `crawler_niuer` | `niuer` |
+| `NongminTvVideoSource` | `crawler_nongmin_tv` | `nongmin_tv` |
+| `NongmingVideoSource` | `crawler_nm` | `nongming` |
+| `ShenMaVideoSource` | `crawler_shenma` | `shenma` |
+| `TiantangVideoSource` | `crawler_tiantang` | `tiantang` |
+| `XingChenVideoSource` | `crawler_xingchen` | `xingchen` |
+| `YinghuaVideoSource` | `crawler_yinghua` | `yinghua` |
+| `ZaiXianVideoSource` | `crawler_zaixian` | `zaixian` |
 
-解析规则适配 `www.******.com` 的页面结构。
+每个源在构造时持有独立的 `RequestRateLimiter`（如 `RequestRateLimiter("JJU", 3_000L, 3)`），并声明自己的 `rateLimiterTag` 与 `logTag`。解析规则的差异集中在 `parseVideoDetail()` / `parseSearchPage()` 两个方法中，分别适配各站点的页面结构（MyUI / 苹果CMS 等）。
 
-### `YinghuaVideoSource`
-
-樱花动漫播放源，继承 `CrawlerVideoSource`：
-
-| 配置 | 值 |
-|------|-----|
-| `sourceId` | `crawler_yinghua` |
-| `sourceName` | `樱花动漫` |
-| `baseUrl` | `https://wap.******.com` |
-| `cachePrefix` | `yinghua` |
-
-解析规则适配 `wap.******.com` 的 MyUI / 苹果CMS 页面结构。
-
-### `TiantangVideoSource`
-
-电影天堂播放源，继承 `CrawlerVideoSource`：
-
-| 配置 | 值 |
-|------|-----|
-| `sourceId` | `crawler_tiantang` |
-| `sourceName` | `电影天堂` |
-| `baseUrl` | `https://www.******.com` |
-| `cachePrefix` | `crawler` |
-
-框架已搭建，`parseVideoDetail()` 和 `parseSearchPage()` 为 TODO 占位，待根据实际页面结构实现。
+> 新增一个源：新建子类 → 在 `VideoSourceConfigManager.knownSourceClasses` 登记 → 在远程 JSON 的 `video_sources` 追加条目。`proguard-rules.pro` 已 `-keep` 该包下的无参构造器。
 
 ### `DoubanDiscoverySource`
 
@@ -426,7 +435,7 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 | `getBangumi(animeId)` | 获取番剧分集信息 |
 | `getDanmakuComments(episodeId)` | 获取某集的弹幕列表 |
 
-错误处理策略：服务端错误（HTTP 非 2xx、响应体为空、JSON 解析失败）抛出 `IOException`，由上层 `DanmakuRepository.retryWithBackoff` 重试；业务级空结果（`success=false` 或确实无数据）返回空列表/null，调用方按"无弹幕"处理，不触发重试。
+错误处理策略：服务端错误（HTTP 非 2xx、响应体为空、JSON 解析失败）抛出 `IOException`，交由上层 `DanmakuRepository` 处理 —— 注意**自动重试已移除**：`retryWithBackoff` 仍在，但 `MAX_RETRY = 1` 意味着只请求一次、失败立即返回，重试入口交给 UI 手动兜底（播放页重试/换源、下载页重试弹幕）；业务级空结果（`success=false` 或确实无数据）返回空列表/null，调用方按「无弹幕」处理。
 
 ### `RequestRateLimiter`
 
@@ -461,7 +470,19 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 
 ### `VideoSourceConfigManager`
 
-`VideoSourceConfigManager` 负责从远程动态配置读取播放源名称和 URL，启动时先同步本地缓存（毫秒级），随后异步发起 HTTP 请求获取最新配置；失败最多重试 5 次，每次间隔 10 秒。远程 JSON 每个源条目支持 `enabled` 字段（与 `name` 同级，缺省视为 `true`）：为 `false` 时该源直接跳过构建——不参与搜索/详情，也不出现在视频源管理列表。加载成功后通过 `MovieApplication.updateVideoSources()` 更新全局源列表并注入到 `VideoRepository`。
+`VideoSourceConfigManager` 负责从远程动态配置读取播放源名称和 URL，并据此**反射构建** `VideoSource` 实例：
+
+| 项 | 说明 |
+|------|------|
+| 配置来源 | `CONFIG_URL_DEFAULT`（jsDelivr CDN），可通过 `setConfigUrl()` 覆盖并持久化 |
+| 源类登记 | `knownSourceClasses` 硬编码 19 个 `impl` 子类的 `Class` 对象，逐个用反射 `newInstance()` 构建（**已取代早期废弃的 DexFile 扫描**） |
+| 启动策略 | 有缓存 → 同步加载（毫秒级）并异步做每日更新（每天一次请求，内容变化才落盘）；无缓存 → 首次获取，失败重试 5 次、每次间隔 10 秒 |
+| 状态 | `LiveData<ConfigState>`：`LOADING` / `READY` / `FAILED`，`FAILED` 时可由 `retryFetch()` 手动重试 |
+| 远程开关 | JSON 每个源条目支持 `enabled` 字段（与 `name` 同级，缺省 `true`）：为 `false` 时该源不构建、不参与搜索/详情、不出现在源管理列表 —— 站点失效时可远程一键下线，无需发版 |
+| 缓存 | SharedPreferences（`video_source_config`）：`cached_config_json` / `last_fetch_date` / `config_url` |
+| 调试开关 | `USE_MOCK_CONFIG = true` 时改用内置 JSON，不联网（仅测试用） |
+
+构建完成后通过 `MovieApplication.updateVideoSources()` 更新全局源列表并注入 `VideoRepository`。
 
 ## 缓存策略
 
@@ -472,10 +493,13 @@ https://m.douban.com/rexxar/api/v2/subject/recent_hot/tv
 | 首页全部豆瓣内容 | `home:tab:all:v1` | 1 天 | 豆瓣发现成功后写入 |
 | 首页电影分页 | `home:tab:movie:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 同一分类分页同时过期 |
 | 首页电视剧/动漫/综艺分页 | `home:tab:tv_related:v1:` | 首页 1 天，后续页跟随首页剩余 TTL | 三个默认分栏会一起预缓存 |
-| 搜索结果页 | `crawler:search:v3` / `yinghua:search:v3` | 30 分钟 | 各源独立缓存 |
+| 搜索结果页 | `crawler:search:v3` / `yinghua:search:v3` | 1 天 | 各源独立缓存；后续页跟随首页/第一页的剩余 TTL |
 | 详情页首个播放页链接 | `crawler:detail:first_play_page` / `yinghua:detail:first_play_page` | 1 天 | 各源独立缓存 |
 | 真实播放地址 | `crawler:play:real_url` / `yinghua:play:real_url` | 30 分钟 | 短时效真实播放地址只做短缓存 |
-| 详情页元数据 | `crawler:detail:meta` / `yinghua:detail:meta` | 30 分钟 | 详情页 HTML 解析结果 |
+| 详情页元数据 | `crawler:detail:meta` / `yinghua:detail:meta` | 1 天 | 详情页 HTML 解析结果 |
+| 负缓存：搜索结果为空 | `crawler:neg:empty` | 1 天 | 按错误类型写入，避免反复发无效请求 |
+| 负缓存：HTTP 5xx / 连接超时 / CF 引擎不兼容 | `crawler:neg:*` | 1 小时 | 引擎不兼容项在升级系统 WebView 后自愈 |
+| 负缓存：HTTP 4xx 客户端错误 | `crawler:neg:client` | 1 天 | — |
 | 弹幕搜索 | `search_{keyword}` | 1 天 | SharedPreferences 存储 |
 | 弹幕分集 | `bangumi_{animeId}` | 1 天 | SharedPreferences 存储 |
 | 弹幕列表 | `comments_{episodeId}` | 1 天 | SharedPreferences 存储 |
@@ -509,17 +533,26 @@ presentation/
 │   └── DanmakuView.kt
 ├── dialog/
 │   ├── ConfirmDialog.kt
-│   ├── EpisodeSelectDialog.kt
-│   └── HelpDialog.kt
+│   ├── DialogSizing.kt
+│   └── EpisodeSelectDialog.kt
 ├── fragment/
 │   ├── HistoryFragment.kt
 │   ├── HomeFragment.kt
 │   ├── ProfileFragment.kt
 │   └── SearchFragment.kt
+├── help/
+│   └── HelpDialog.kt
 ├── settings/
 │   └── ThemeManager.kt
 ├── source/
 │   └── VideoSourceDialog.kt
+├── tv/
+│   ├── QrCodeGenerator.kt
+│   ├── TvContentKeyHandler.kt
+│   ├── TvFocus.kt
+│   ├── TvInitialFocusProvider.kt
+│   ├── TvSearchServer.kt
+│   └── TvUiSupport.kt
 ├── update/
 │   ├── AboutDialog.kt
 │   ├── ApkDownloadManager.kt
@@ -544,6 +577,9 @@ presentation/
 | `PlayerActivity` | 播放器页面，使用 Media3 ExoPlayer 播放视频，支持弹幕系统、手势控制（长按 300ms 后方向锁定，水平拖拽暂停播放并实时 seek，进度条和数字毫秒级跟随；垂直拖拽调节亮度/音量）、屏幕锁定（含只读进度条）、播放生命周期和进度保存；**离线播放时保存进度到下载任务而非历史记录**；离线弹幕统一由播放器加载流水线处理（任务弹幕文件 → 弹幕源索引文件回退 → 在线搜索），不再触发后台弹幕重试，本地弹幕已加载时在线搜索失败静默处理；**弹幕开关打开时先经 `tryRestoreLocalDanmaku()` 尝试本地弹幕（本地文件 → 弹幕缓存 → 联网级联三级优先，本地命中零联网并显示「已加载本地弹幕」），仅当无已保存弹幕源时才联网搜索候选源** |
 | `HistoryActivity` | 历史记录页面容器，承载 `HistoryFragment`，从"我的"页面跳转进入 |
 | `DownloadActivity` | **下载管理页面**，使用 ViewPager2 分"下载中"和"已完成"两个标签页；首次进入时若下载中列表为空自动切换到已完成；支持多选删除 |
+| `CloudflareChallengeActivity`（`challenge/`） | **Cloudflare 人工验证兜底窗口**：自动过盾失败时弹出，卡片内嵌 WebView + 轮询 `cf_clearance`；主题**必须不透明**（translucent 在部分华为设备上 WebView 白屏） |
+
+> **形态与方向**：`MainActivity` / `DetailActivity` / `HistoryActivity` / `DownloadActivity` / `CloudflareChallengeActivity` 均在 `onCreate` 里按 `isTv` 设置 `requestedOrientation`（手机竖屏、电视横屏）**之后**才 inflate 布局；`PlayerActivity` 则在清单写死 `landscape`（手机与电视都保持横屏）。清单刻意不写 `screenOrientation`、不声明 `configChanges=orientation|screenSize`。
 
 ### Fragment
 
@@ -601,6 +637,35 @@ presentation/
 | `ThemeManager`（settings/） | 主题模式管理：持久化到 SharedPreferences（`app_settings`/`theme_mode`），`applySaved()` 在 Application 创建时应用，ProfileFragment 头部按钮切换（`AppCompatDelegate.setDefaultNightMode()`） |
 | `VideoSourceDialog`（source/） | 视频源管理（居中卡片 Dialog）：RecyclerView 列表勾选源、全选/全不选切换 + 已选计数、确定时校验至少一个源并持久化到 SharedPreferences |
 
+## TV 适配（`presentation/tv/`）
+
+`presentation/tv/` 承载电视形态的全部适配代码，**只作用于 UI 层与配置**，不改动网络 / Repository / ViewModel / 数据模型 / 播放器封装。
+
+| 文件 | 职责 |
+|------|------|
+| `TvUiSupport.kt` | 形态判定 `isTelevision()`（`UiModeManager.currentModeType == UI_MODE_TYPE_TELEVISION`）；`wrapContext()` 在电视端把 `densityDpi` **放大 1.45 倍**实现 10-foot UI，并**同步重算** `screenWidthDp/screenHeightDp/smallestScreenWidthDp` |
+| `TvFocus.kt` | **全 App 焦点适配的唯一入口**：`applyTo` / `applyFocusableOnly` / `setFocusable` / `attachFocusRing` / `resetAppearance` / `requestInitialFocus` / `focusFirstItem` / `scrollIntoViewOnFocus` / `applyToClickables` / `applyToDialogButtons` / `collectClickableViews` / `neutralizeCardFocusStroke`；每个公开方法首行 `if (!isActive(view)) return` 做**形态门控**（手机端一律 no-op），处理过的控件打 `tag_tv_focus_handled` 标记 |
+| `TvInitialFocusProvider.kt` | 页面侧接口：向顶部导航暴露「下键时接收焦点的首个控件」，由 `MainActivity` 显式移交。**必须实时返回，禁止缓存**（`ViewPager2` 复用 Fragment） |
+| `TvContentKeyHandler.kt` | 页面侧接口：方向键兜底接管 —— `RecyclerView.focusSearch()` 只在自身子树内找候选，「网格最后一行按下键」翻不出容器 |
+| `TvSearchServer.kt` | 纯 `ServerSocket` 的轻量 HTTP 服务（固定端口 **8234**）：`GET /search.html`、`POST /api/search`、`GET /api/last_query`；生命周期**跟随二维码可见性**，离开搜索页或隐藏二维码立即 `stop()` 释放端口 |
+| `QrCodeGenerator.kt` | ZXing 生成二维码 Bitmap，供电视搜索页展示局域网地址 `http://<ip>:8234/search.html` |
+
+配套资源：
+
+| 资源 | 用途 |
+|------|------|
+| `layout-land/activity_main.xml` 的 `tvNavBar` + `layout-land/item_tv_nav.xml` | 电视端顶部导航页签（图标 20dp + 文字 13sp + 底部橙色指示条），替代底部 `BottomNavigationView` |
+| `drawable/bg_tv_focus_ring.xml` / `shape_tv_focus_ring.xml` | 普通底色的橙色焦点环（单圈 3dp、圆角 14dp） |
+| `drawable/bg_tv_focus_ring_light.xml` / `shape_tv_focus_ring_light.xml` | 品牌橙底控件专用的纯白焦点环（橙压橙对比度约 1.1:1，等于没有焦点框） |
+| `drawable/bg_tv_nav_focus.xml` / `bg_tv_nav_item.xml` / `bg_tv_nav_indicator.xml` | 顶部导航页签的获焦药丸 / 常态 / 选中指示条 |
+| `color/card_background_tv_focusable.xml` | 结果卡片获焦时的底色状态列表（提亮为暖色 `surface_background_focused`） |
+| `values/ids.xml` | `tag_tv_focus_handled` 标记 id（`TvFocus` 门控判据用，非布局资源） |
+| `drawable/tv_banner.xml` | 电视启动器横幅（清单 `android:banner`） |
+
+⚠️ **`res/layout-land/` 不是 TV 专属目录** —— 播放页对所有设备强制横屏，手机播放页与手机横屏落的都是它。因此该目录下**不得写死** `focusable` / `focusableInTouchMode` / `foreground=bg_tv_focus_ring`（电视端由代码赋予，写死在 XML 里对电视是冗余、对手机横屏是污染），改动后必须两个形态一起验算。
+
+> 完整设计（形态判定与方向策略、焦点体系三条铁律、手机扫码搜索链路、电视缺失系统能力清单、弹幕字号分档、电视端页面形态清单、弹窗尺寸与横屏分栏）见 [`README.md` 的「Android TV 适配」](./README.md) 与 [`UI 视觉统一规范文档.md`](./UI%20视觉统一规范文档.md)。
+
 ## 资源结构
 
 ```text
@@ -632,18 +697,30 @@ res/
 │   ├── anim_loading_rotate.xml
 │   ├── bg_badge.xml
 │   ├── bg_card_rounded.xml
+│   ├── bg_check_selected.xml
+│   ├── bg_check_unselected.xml
 │   ├── bg_chip.xml
 │   ├── bg_chip_selected.xml
+│   ├── bg_circle_primary.xml
 │   ├── bg_detail_card.xml
 │   ├── bg_detail_page.xml
 │   ├── bg_dialog_rounded.xml
 │   ├── bg_download_progress.xml
 │   ├── bg_episode_normal.xml
 │   ├── bg_episode_selected.xml
+│   ├── bg_icon_chip.xml
+│   ├── bg_icon_chip_ripple.xml
 │   ├── bg_play_button.xml
 │   ├── bg_player_gesture_tip.xml
 │   ├── bg_player_top_gradient.xml
 │   ├── bg_poster_round.xml
+│   ├── bg_row_card.xml
+│   ├── bg_row_card_ripple.xml
+│   ├── bg_tv_focus_ring.xml
+│   ├── bg_tv_focus_ring_light.xml
+│   ├── bg_tv_nav_focus.xml
+│   ├── bg_tv_nav_indicator.xml
+│   ├── bg_tv_nav_item.xml
 │   ├── ic_about.xml
 │   ├── ic_arrow_right.xml
 │   ├── ic_battery_1.xml
@@ -685,7 +762,11 @@ res/
 │   ├── ic_theme_sun.xml
 │   ├── ic_wifi.xml
 │   ├── movie_background.png
-│   └── movie_background_light.png
+│   ├── movie_background_light.png
+│   ├── ripple_clickable.xml
+│   ├── shape_tv_focus_ring.xml
+│   ├── shape_tv_focus_ring_light.xml
+│   └── tv_banner.xml
 ├── layout/
 │   ├── activity_detail.xml
 │   ├── activity_download.xml
@@ -715,9 +796,24 @@ res/
 │   ├── item_video.xml
 │   ├── item_video_source.xml
 │   └── layout_loading_overlay.xml
+├── layout-land/          ← 横屏（电视 + 手机横屏共用），25 个文件
+│   ├── activity_detail.xml
+│   ├── activity_main.xml           ← 含电视端 tvNavBar
+│   ├── activity_player.xml
+│   ├── dialog_about.xml / dialog_clear_cache.xml / dialog_confirm.xml
+│   ├── dialog_episode_select.xml / dialog_help.xml / dialog_update_tip.xml
+│   ├── dialog_video_source.xml     ← 上述 dialog_* 为左右分栏版
+│   ├── exo_player_control_view.xml
+│   ├── fragment_history.xml / fragment_home.xml
+│   ├── fragment_profile.xml / fragment_search.xml
+│   ├── item_clear_cache.xml / item_completed.xml / item_downloading.xml
+│   ├── item_episode_select.xml / item_history.xml / item_home_load_more.xml
+│   ├── item_search_result.xml / item_video.xml / item_video_source.xml
+│   └── item_tv_nav.xml             ← 电视端顶部导航页签（仅此目录有）
 ├── values/
 │   ├── colors.xml
 │   ├── dimens.xml
+│   ├── ids.xml           ← tag_tv_focus_handled（TvFocus 门控标记）
 │   ├── strings.xml
 │   ├── styles.xml
 │   └── themes.xml
@@ -725,7 +821,8 @@ res/
 │   ├── colors.xml
 │   └── themes.xml
 ├── color/
-│   └── bottom_nav_color.xml
+│   ├── bottom_nav_color.xml
+│   └── card_background_tv_focusable.xml
 ├── menu/
 │   ├── bottom_nav_menu.xml
 │   ├── menu_download_batch_delete.xml
@@ -759,6 +856,12 @@ res/
 | `item_downloading.xml` | `DownloadingAdapter`（下载中任务卡片） |
 | `item_completed.xml` | `CompletedAdapter`（已完成任务卡片，含播放进度） |
 | `item_download_page.xml` | `DownloadPagerAdapter` 的 ViewPager2 页面容器 |
+| `layout_loading_overlay.xml` | 全屏加载覆盖层 |
+| `item_tv_nav.xml`（仅 `layout-land/`） | 电视端顶部导航页签 |
+
+> 上表列的是 `res/layout/`（手机竖屏）。`res/layout-land/`（横屏，电视 + 手机横屏共用）提供 **25 个同名覆盖布局**，与竖屏版本同名同 id 集合；其中 `item_tv_nav.xml` 为电视专属。**未提供横屏版本**的是 `layout_loading_overlay.xml` 与 `activity_history.xml` / `activity_download.xml` / `item_download_page.xml`（下载管理与历史页在电视上仍是竖屏形态）。
+>
+> ⚠️ 同一页面的两份布局 **id 集合必须完全一致** —— ViewBinding 取限定符并集，缺一个字段就退化成 `@Nullable`，需要加空安全调用。
 
 ## 页面导航
 
@@ -947,6 +1050,35 @@ DanmakuPrefs.saveAnimeId(videoIdFromTask, anime.animeId)
 播放器开关打开 → getSavedAnimeId 命中 → 本地文件直接加载，零联网
 ```
 
+### 电视扫码搜索
+
+```text
+SearchFragment.prepareQrCode()
+        ↓ TvSearchServer.getLocalIpAddress()（纯 ServerSocket 取局域网 IP）
+        ↓ QrCodeGenerator.generate(url, 512)（ZXing）
+layout-land/fragment_search.xml 右栏显示二维码 http://<ip>:8234/search.html
+        ↓ 局域网 IP 取不到 → 隐藏二维码，服务器本次会话内不再启动
+手机浏览器扫码打开 GET /search.html
+        ↓ POST /api/search
+TvSearchServer 回调
+        ↓
+SearchFragment 执行搜索（等价于本地输入）
+```
+
+服务器启停由 `updateSearchServerState()` 统一驱动：**二维码可见 且 搜索页 resumed** 才启动，其余情况立即停止释放端口。
+
+### 应用形态分流（启动期）
+
+```text
+Activity.attachBaseContext(base)
+        ↓ TvUiSupport.wrapContext()（电视：densityDpi × 1.45 + 重算 dp 尺寸）
+Activity.onCreate()
+        ↓ isTv = TvUiSupport.isTelevision(this)
+        ↓ applyOrientation()（手机竖屏 / 电视横屏）
+        ↓ inflate 布局 → 系统按当前方向匹配 res/layout/ 或 res/layout-land/
+        ↓ 电视端：TvFocus.applyTo(...) 赋焦 + 焦点环；MainActivity 装配 tvNavBar
+```
+
 ### 播放历史与续播
 
 ```text
@@ -1042,7 +1174,7 @@ Toast 提示清理结果
 | minSdk | `24` |
 | targetSdk | `36` |
 | versionCode | `1` |
-| versionName | `1.0` |
+| versionName | `1.3.0` |
 | Java 版本 | `17` |
 | Kotlin JVM Target | `17` |
 | ViewBinding | 已启用 |
@@ -1078,7 +1210,7 @@ Toast 提示清理结果
 ## 当前实现边界
 
 - 首页内容发现只适配豆瓣相关页面和接口；豆瓣失败时回退本地挡板。
-- 内容播放当前支持 9 个爬虫播放源，通过 `VideoSource` 接口可扩展更多源；源配置由 `VideoSourceConfigManager` 远程动态加载。
+- 内容播放当前支持 **19 个**爬虫播放源，通过 `VideoSource` 接口可扩展更多源；源名称/地址与可用性由 `VideoSourceConfigManager` 从远程 JSON 动态加载。
 - 本地挡板不写入首页 `api_cache`。
 - 搜索结果、详情播放入口和真实播放地址有独立缓存周期，各源缓存前缀不同。
 - 爬虫限流器每个播放源独立，队列容量和间隔为固定值。
@@ -1086,4 +1218,6 @@ Toast 提示清理结果
 - 下载管理功能已完整实现，支持 M3U8 分片下载、弹幕下载、前台通知、离线播放和降低影响策略。
 - 下载引擎已实现多层限流：并发限制、分片间延迟、速度限制、剧集间解析间隔。
 - 离线播放有独立进度体系，不记录到在线播放历史。
+- **双形态**：同一 APK 兼容手机与 Android TV / 盒子。电视侧适配严格限定在 UI 层与配置（形态判定、密度放大、焦点体系、顶部导航、扫码搜索、缺失能力守卫），网络 / Repository / ViewModel / 数据模型 / 播放器封装两侧共用。
+- 电视端页面形态尚未补齐：`layout-land/` 缺 `activity_history.xml` 与 `activity_download.xml`（下载管理页在电视上仍为竖屏）。
 - 收藏功能未实现。
