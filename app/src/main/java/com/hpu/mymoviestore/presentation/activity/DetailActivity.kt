@@ -81,6 +81,10 @@ class DetailActivity : AppCompatActivity() {
     private var playLines: List<PlayLine> = emptyList()
     private var selectedLineIndex: Int = 0
     private var selectedEpisode: PlayEpisode? = null
+
+    /** TV 适配：选集网格里「当前高亮那集」的视图，供 ensureTvFocus 把初始焦点直接交给它 */
+    private var selectedEpisodeView: View? = null
+
     private var hasSelectedEpisodeHistory: Boolean = false
 
     companion object {
@@ -258,6 +262,8 @@ class DetailActivity : AppCompatActivity() {
         if (playLines.isNotEmpty()) {
             renderPlayLines()
             updatePlayButtonText()
+            // Activity 重建后视图都是新的、没有焦点，补一次初始焦点兜底
+            ensureTvFocus()
         }
     }
 
@@ -403,7 +409,15 @@ class DetailActivity : AppCompatActivity() {
         binding.root.post {
             if (binding.root.findFocus() != null) return@post
             val target = when {
-                binding.btnPlay.isEnabled -> binding.btnPlay as View
+                // 横屏布局里 btnPlay 是 visibility=gone（播放入口就是选集网格），
+                // 但它仍可能处于 enabled 状态；GONE 的 View requestFocus 会静默失败，
+                // 必须同时检查可见性，否则初始焦点落空、页面没有焦点落点
+                binding.btnPlay.isEnabled && binding.btnPlay.visibility == View.VISIBLE ->
+                    binding.btnPlay as View
+                // 选集网格已渲染：初始焦点直接给「高亮那集」——
+                // 无历史时它就是第一集，有继续观看历史时它就是历史进度对应的那集，
+                // 焦点和高亮（bg_episode_selected）天然落在同一集上
+                selectedEpisodeView != null -> selectedEpisodeView as View
                 binding.layoutPlayLines.childCount > 0 -> binding.layoutPlayLines.getChildAt(0)
                 // 兜底：数据还没回来时按钮是 disabled（取不到焦点），
                 // 至少把焦点停到左上角的影片信息模块上，保证进页面就有落点
@@ -462,6 +476,7 @@ class DetailActivity : AppCompatActivity() {
         // TV 适配：重渲染会销毁旧视图，先记录焦点是否在集数网格内，渲染后还给选中项
         val gridHadFocus = binding.gridEpisodes.findFocus() != null
         binding.gridEpisodes.removeAllViews()
+        selectedEpisodeView = null
         binding.tvEpisodeTitle.text = if (line.episodes.size <= 1) "播放入口" else "选集 · 共 ${line.episodes.size} 集"
         var selectedView: View? = null
 
@@ -497,6 +512,8 @@ class DetailActivity : AppCompatActivity() {
 
         // 焦点重定位：仅当重渲染前焦点在网格内时才交还，避免初次进入抢走播放按钮焦点
         if (gridHadFocus) selectedView?.let { TvFocus.requestInitialFocus(it) }
+        // 记录高亮集视图，供 ensureTvFocus 做初始焦点兜底
+        selectedEpisodeView = selectedView
     }
 
     private fun updatePlayButtonText(hasProgress: Boolean = hasSelectedEpisodeHistory) {

@@ -34,6 +34,7 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
@@ -192,6 +193,50 @@ class PlayerActivity : AppCompatActivity() {
     // 屏幕锁定
     private var isScreenLocked = false
 
+    /** TV 适配：全屏下防误触返回 —— 两次返回键间隔小于该值才真正退出播放页 */
+    private var lastBackPressTimeMs = 0L
+
+    /**
+     * TV 适配：播放页返回键的统一拦截（防误触退出，与「再按一次退出应用」同款交互）。
+     *
+     * 为什么必须挂这里而不是 dispatchKeyEvent：targetSdk 36 起（预测性返回），
+     * 系统不再保证把 BACK 以 KeyEvent 形式派发 —— BACK 直接走
+     * OnBackInvokedCallback → OnBackPressedDispatcher，dispatchKeyEvent 根本收不到，
+     * 在那里拦截会出现「按一下返回直接退出、提示代码从未执行」。
+     * 挂在 dispatcher 上则新旧系统都汇聚到同一入口：
+     * - 旧系统：BACK KeyEvent → Activity.onKeyDown/onKeyUp → dispatcher
+     * - 新系统：系统直接回调 dispatcher
+     *
+     * 行为：控制栏可见 → 先收起；隐藏状态第一次按 → 提示；2 秒内第二次按 → 退出播放页。
+     * 非 TV 端 callback 保持禁用，返回行为与系统默认一致。
+     */
+    private val tvBackCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
+                // PiP 下的返回维持系统默认行为（关闭画中画窗口）
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+                return
+            }
+            if (isScreenLocked) {
+                // 锁屏态维持旧行为：返回直接退出
+                finish()
+                return
+            }
+            if (isControllerVisible) {
+                binding.playerView.hideController()
+                return
+            }
+            if (SystemClock.elapsedRealtime() - lastBackPressTimeMs < BACK_EXIT_INTERVAL_MS) {
+                finish()
+            } else {
+                lastBackPressTimeMs = SystemClock.elapsedRealtime()
+                Toast.makeText(this@PlayerActivity, "再按一次退出播放", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // 状态信息显示（时间、电量、网络）
     private var batteryReceiver: BroadcastReceiver? = null
     private var networkReceiver: BroadcastReceiver? = null
@@ -206,6 +251,7 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PlayerActivity"
         private const val SEEK_STEP_MS = 10_000L
+        private const val BACK_EXIT_INTERVAL_MS = 2_000L
         private const val PIP_ACTION_REWIND = "pip_action_rewind"
         private const val PIP_ACTION_PLAY_PAUSE = "pip_action_play_pause"
         private const val PIP_ACTION_FORWARD = "pip_action_forward"
@@ -306,6 +352,11 @@ class PlayerActivity : AppCompatActivity() {
         binding.danmakuContainer.bringToFront()
         binding.danmakuContainer.clipChildren = true
         binding.danmakuContainer.clipToPadding = false
+
+        // TV 适配：返回键拦截统一挂 OnBackPressedDispatcher（见 tvBackCallback 注释）。
+        // 必须 here 注册而非等 KeyEvent：新系统根本不下发 BACK KeyEvent。
+        onBackPressedDispatcher.addCallback(this, tvBackCallback)
+        tvBackCallback.isEnabled = isTv
 
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -2026,43 +2077,41 @@ class PlayerActivity : AppCompatActivity() {
      * 播放页只承担两类操作，其余按键一律不做适配（默认什么也不做）：
      * - **确定键**（OK / 回车 / 遥控器播放暂停键）→ 播放 / 暂停
      * - **左右键** → 后退 / 快进 10 秒
-     * - **下键** → 唤出进度条；进度条已在时，按 上 / 下 / 返回 收起它
+     * - **上 / 下键** → 唤出进度条（全屏隐藏状态下）；进度条已在时，按 上 / 下 / 返回 收起它
      *
-     * 两点实现约束：
+     * 三点实现约束：
      * 1. 电视端所有控件都不可聚焦（见 [applyTvPlaybackControls]），`currentFocus` 恒为空，
      *    按键必定落到这里，不会再出现「焦点停在控制栏按钮上、确定键变成按钮点击」的第二套行为。
      * 2. 长按产生的重复事件（`repeatCount > 0`）要吞掉而不是透传，即「一次按键 = 一次操作」：
-     *    否则按住左右键会连续跳 10s、按住下键会让进度条反复显隐。
+     *    否则按住左右键会连续跳 10s、按住上下键会让进度条反复显隐。
+     * 3. 已接管按键成对的 ACTION_UP 也必须吞掉：media3 的 PlayerView.dispatchKeyEvent
+     *    对任何未被消费的 DPAD 键（**含 UP**）都会 `maybeShowController(true)` 强制唤出
+     *    控制栏 —— 只吞 DOWN 的话，收起控制栏那次按键的 UP 会立刻把控制栏再拉起来，
+     *    表现为「瞬间消失又出现」。
+     *
+     * 返回键（BACK）不在这里处理：targetSdk 36 起预测性返回下系统不再下发 BACK KeyEvent，
+     * 返回逻辑统一挂在 OnBackPressedDispatcher（见 [tvBackCallback]）。
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (!isTv) return super.dispatchKeyEvent(event)
-        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         if (isScreenLocked) return super.dispatchKeyEvent(event)
         // 未接管的按键原样交给系统（不做任何适配）
         if (event.keyCode !in TV_KEY_CODES) return super.dispatchKeyEvent(event)
+        // 成对吞掉已接管按键的 ACTION_UP（BACK 例外：放行给系统，
+        // 旧系统靠它触发 dispatcher → tvBackCallback；新系统收不到 BACK，此分支不会命中）
+        if (event.action == KeyEvent.ACTION_UP) {
+            return if (event.keyCode == KeyEvent.KEYCODE_BACK) super.dispatchKeyEvent(event) else true
+        }
         // 长按重复事件：不做操作，但要吞掉
         if (event.repeatCount > 0) return true
 
         return when (event.keyCode) {
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                // 没有进度条 → 唤出；已有进度条 → 收起
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                // 双态开关：全屏隐藏状态 → 唤出进度条；进度条已在 → 收起
                 if (isControllerVisible) binding.playerView.hideController()
                 else binding.playerView.showController()
                 true
-            }
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                // 上键只用于收起进度条；没有进度条时什么也不做（不会唤出）
-                if (isControllerVisible) binding.playerView.hideController()
-                true
-            }
-            KeyEvent.KEYCODE_BACK -> {
-                // 有进度条 → 先收起；没有进度条 → 交回系统（退出播放页）
-                if (isControllerVisible) {
-                    binding.playerView.hideController()
-                    true
-                } else {
-                    super.dispatchKeyEvent(event)
-                }
             }
             KeyEvent.KEYCODE_DPAD_CENTER,
             KeyEvent.KEYCODE_ENTER,
