@@ -684,7 +684,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     }
 
     private fun hideKeyboard() {
-        val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        // 电视端多数没有软键盘（收起键盘本身无意义），且部分盒子 INPUT_METHOD_SERVICE 可能缺失，
+        // 因此安全转换 + 空判断，避免「收键盘」这个收尾动作反而把应用搞崩。
+        val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            ?: return
         val view = activity?.currentFocus ?: (if (isTvMode) tvEtSearch else binding.etSearch)
         imm.hideSoftInputFromWindow(view?.windowToken, 0)
     }

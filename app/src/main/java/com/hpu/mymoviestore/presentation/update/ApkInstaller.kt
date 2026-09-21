@@ -29,15 +29,22 @@ object ApkInstaller {
         }
     }
 
-    /** 跳转到「安装未知应用」授权设置页（Android 8.0+） */
-    fun requestInstallPermission(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                data = Uri.parse("package:${context.packageName}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+    /**
+     * 跳转到「安装未知应用」授权设置页（Android 8.0+）。
+     *
+     * 电视 / 盒子上很多系统裁掉了该设置页（或压根没有「未知来源」开关），
+     * 直接 startActivity 会抛 ActivityNotFoundException 把应用打崩，故返回是否成功跳转。
+     */
+    fun requestInstallPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     /**
@@ -45,17 +52,20 @@ object ApkInstaller {
      *
      * @param apkFile 下载完成的 APK 文件（须位于 cacheDir 下）
      */
-    fun install(context: Context, apkFile: File) {
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
+    fun install(context: Context, apkFile: File): Boolean {
+        return runCatching {
+            val uri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 }

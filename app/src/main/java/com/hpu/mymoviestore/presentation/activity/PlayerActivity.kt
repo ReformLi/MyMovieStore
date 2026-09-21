@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -152,7 +153,10 @@ class PlayerActivity : AppCompatActivity() {
     private var screenWidth = 0
     private var screenHeight = 0
     private val handler = Handler(Looper.getMainLooper())
-    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    // AUDIO_SERVICE 理论上必然存在，仍用安全转换兜底（个别定制电视 ROM 会裁服务）
+    private val audioManager: AudioManager? by lazy {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
     private val touchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop }
 
     // 亮度/音量（垂直手势的起始值，手势中按绝对位移线性映射）
@@ -182,6 +186,34 @@ class PlayerActivity : AppCompatActivity() {
     /** 电视形态（遥控器交互）。只用于 UI / 按键行为分支，不触碰播放业务逻辑。 */
     private val isTv: Boolean by lazy {
         com.hpu.mymoviestore.presentation.tv.TvUiSupport.isTelevision(this)
+    }
+
+    /**
+     * 设备是否有电池。
+     *
+     * 电视 / 盒子没有电池，实测部分设备上 `BATTERY_SERVICE` 直接返回 null，
+     * 原先的 `as BatteryManager` 非空转换会抛
+     * `null cannot be cast to non-null type android.os.BatteryManager` 把播放页打崩。
+     *
+     * 判据取「服务存在 且 能读到有效电量」：凡是拿不到电量的一律按无电池处理，
+     * 电池图标、电池广播、初始读数全部关闭（不做无效的 registerReceiver）。
+     */
+    private val batterySupported: Boolean by lazy {
+        if (isTv) return@lazy false
+        val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return@lazy false
+        bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) in 0..100
+    }
+
+    /**
+     * 是否支持画中画。
+     *
+     * Android TV 不支持 PiP —— 系统不会声明 `FEATURE_PICTURE_IN_PICTURE`，
+     * 此时既不显示画中画按钮，也不调用 setPictureInPictureParams / enterPictureInPictureMode
+     * （个别电视 ROM 会直接抛 IllegalStateException）。
+     */
+    private val pipSupported: Boolean by lazy {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     }
 
     // 播放器控制器当前是否显示（由 ControllerVisibilityListener 维护）
@@ -378,7 +410,7 @@ class PlayerActivity : AppCompatActivity() {
 
         screenWidth = resources.displayMetrics.widthPixels
         screenHeight = resources.displayMetrics.heightPixels
-        maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
 
         Log.d(TAG, "========== PlayerActivity.onCreate ==========")
         Log.d(TAG, "收到 Intent: videoId=$videoId, title=$videoTitle, category=$category, source=$sourceName")
@@ -840,14 +872,17 @@ class PlayerActivity : AppCompatActivity() {
             finish()
         }
         binding.btnPiP.setOnClickListener {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                updatePiPParams()
-                enterPictureInPictureMode()
-            } else {
-                Toast.makeText(this, "Android 8.0 以下不支持画中画", Toast.LENGTH_SHORT).show()
+            if (!pipSupported) {
+                Toast.makeText(this, "本设备不支持画中画", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            updatePiPParams()
+            runCatching { enterPictureInPictureMode() }
+                .onFailure { Log.w(TAG, "进入画中画失败: ${it.message}") }
         }
         binding.btnRotate.setOnClickListener {
+            // 电视恒横屏，旋转没有意义（该按钮在电视端也已隐藏）
+            if (isTv) return@setOnClickListener
             val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
             requestedOrientation = if (isPortrait) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -898,7 +933,9 @@ class PlayerActivity : AppCompatActivity() {
                 isControllerVisible = visibility == View.VISIBLE
                 binding.topControls.visibility = visibility
                 binding.statusContainer.visibility = visibility
-                if (!isScreenLocked) {
+                // 电视端锁屏按钮已由 applyTvPlaybackControls() 统一置 GONE，
+                // 这里不能再按控制栏显隐把它拉回 VISIBLE
+                if (!isTv && !isScreenLocked) {
                     binding.btnLock.visibility = if (visibility == View.VISIBLE) View.VISIBLE else View.GONE
                 }
             }
@@ -927,6 +964,13 @@ class PlayerActivity : AppCompatActivity() {
             it.isFocusable = false
             it.isFocusableInTouchMode = false
         }
+        // 电视上不存在的能力直接不显示：
+        // - 画中画：Android TV 不支持
+        // - 屏幕旋转：形态恒横屏
+        // - 锁屏：没有触屏，一旦锁定根本没有解锁手势可用（只能按返回强制退出），是纯死按钮
+        binding.btnPiP.visibility = View.GONE
+        binding.btnRotate.visibility = View.GONE
+        binding.btnLock.visibility = View.GONE
         // 进页面时进度条是收起的：显隐只由遥控器按键决定
         binding.playerView.hideController()
     }
@@ -1236,6 +1280,8 @@ class PlayerActivity : AppCompatActivity() {
 
     @UnstableApi
     private fun setupLockButton() {
+        // 电视端没有锁屏能力（无触屏、按钮也不显示）—— 整个功能不装配
+        if (isTv) return
         binding.btnLock.setOnClickListener {
             if (isScreenLocked) {
                 // 解锁
@@ -1275,7 +1321,7 @@ class PlayerActivity : AppCompatActivity() {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun setupPiP() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!pipSupported) return
         pipReceiver?.let { unregisterReceiver(it) }
         pipReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -1311,7 +1357,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun updatePiPParams() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!pipSupported) return
         player?.let { p ->
             val aspectRatio = Rational(p.videoSize.width, p.videoSize.height)
             val rewindIntent = Intent(PIP_ACTION_REWIND).setPackage(packageName)
@@ -1341,12 +1387,14 @@ class PlayerActivity : AppCompatActivity() {
                 )
             )
 
-            setPictureInPictureParams(
-                PictureInPictureParams.Builder()
-                    .setAspectRatio(aspectRatio)
-                    .setActions(actions)
-                    .build()
-            )
+            runCatching {
+                setPictureInPictureParams(
+                    PictureInPictureParams.Builder()
+                        .setAspectRatio(aspectRatio)
+                        .setActions(actions)
+                        .build()
+                )
+            }.onFailure { Log.w(TAG, "更新画中画参数失败: ${it.message}") }
         }
     }
 
@@ -1552,8 +1600,9 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             // 垂直手势：记录起始亮度/音量，之后按绝对位移线性映射
             gestureStartBrightness = window.attributes.screenBrightness.let { if (it < 0) 0.5f else it }
-            gestureStartVolumeFloat = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
-            gestureVolumeApplied = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            gestureStartVolumeFloat =
+                audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC)?.toFloat() ?: 0f
+            gestureVolumeApplied = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: -1
         }
         // 锁定后立即用已累积的位移执行一次调节，不浪费这次 MOVE
         handleGestureMove(event)
@@ -1660,7 +1709,7 @@ class PlayerActivity : AppCompatActivity() {
         val newVolume = newVolumeFloat.roundToInt()
         if (newVolume != gestureVolumeApplied) {
             gestureVolumeApplied = newVolume
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+            audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
             showGestureTip("音量 ${if (maxVolume > 0) (newVolume * 100 / maxVolume) else 0}%")
         }
     }
@@ -2154,6 +2203,7 @@ class PlayerActivity : AppCompatActivity() {
     // ================== 状态信息显示（时间、电量、网络） ==================
 
     private fun updateBatteryDrawable(batteryPct: Int) {
+        if (!batterySupported) return
         val pct = batteryPct.coerceIn(0, 100)
         Log.d(TAG, "更新电量图标: $pct%")
         val res = when {
@@ -2171,24 +2221,13 @@ class PlayerActivity : AppCompatActivity() {
         updateTime()
         updateNetwork()
 
-        // 初始电量：直接从 BatteryManager 读取，不依赖粘性广播
-        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        val initialPct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        Log.d(TAG, "BatteryManager 初始电量: $initialPct%")
-        if (initialPct in 0..100) updateBatteryDrawable(initialPct)
-
-        batteryReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-                Log.d(TAG, "电量广播: level=$level, scale=$scale")
-                if (level >= 0 && scale > 0) {
-                    val pct = (level * 100 / scale.toFloat()).toInt()
-                    updateBatteryDrawable(pct)
-                }
-            }
+        if (batterySupported) {
+            initBatteryInfo()
+        } else {
+            // 电视 / 盒子没有电池：图标隐藏，电池广播也不注册（无电池时该广播本就不会更新）
+            binding.ivBattery.visibility = View.GONE
+            Log.d(TAG, "设备无电池（电视/盒子），已关闭电量显示")
         }
-        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
         networkReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -2207,14 +2246,40 @@ class PlayerActivity : AppCompatActivity() {
         timeUpdateHandler?.postDelayed(timeUpdateRunnable!!, 30_000L)
     }
 
+    /**
+     * 电量显示初始化（仅在 [batterySupported] 为 true 时调用）。
+     *
+     * 初始值直接读 BatteryManager，不依赖粘性广播；随后注册电量变化广播持续刷新。
+     * 无电池设备（电视 / 盒子）永远不会走到这里 —— 这正是崩溃的那一行。
+     */
+    private fun initBatteryInfo() {
+        val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return
+        val initialPct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        Log.d(TAG, "BatteryManager 初始电量: $initialPct%")
+        if (initialPct in 0..100) updateBatteryDrawable(initialPct)
+
+        batteryReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                Log.d(TAG, "电量广播: level=$level, scale=$scale")
+                if (level >= 0 && scale > 0) {
+                    val pct = (level * 100 / scale.toFloat()).toInt()
+                    updateBatteryDrawable(pct)
+                }
+            }
+        }
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    }
+
     private fun updateTime() {
         val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.tvTime.text = currentTime
     }
 
     private fun updateNetwork() {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val networkInfo: NetworkInfo? = cm.activeNetworkInfo
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val networkInfo: NetworkInfo? = cm?.activeNetworkInfo
         val isConnected = networkInfo?.isConnected == true
         if (isConnected) {
             when (networkInfo?.type) {

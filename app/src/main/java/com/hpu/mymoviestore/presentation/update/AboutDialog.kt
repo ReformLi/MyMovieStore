@@ -272,15 +272,18 @@ class AboutDialog : DialogFragment() {
         }
         if (!ApkInstaller.canInstall(context)) {
             // 未授予「安装未知应用」权限 → 跳转系统设置，用户授权后回来再点「安装更新」
-            Toast.makeText(context, "请先允许安装未知应用，授权后重试", Toast.LENGTH_LONG).show()
-            ApkInstaller.requestInstallPermission(context)
+            val jumped = ApkInstaller.requestInstallPermission(context)
+            Toast.makeText(
+                context,
+                if (jumped) "请先允许安装未知应用，授权后重试"
+                else "本设备没有「安装未知应用」设置页，请在系统设置里授予后重试",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
-        try {
-            ApkInstaller.install(context, apk)
-        } catch (e: Exception) {
-            Log.e(TAG, "发起安装失败: ${e.message}", e)
-            Toast.makeText(context, "安装失败：${e.message}", Toast.LENGTH_LONG).show()
+        if (!ApkInstaller.install(context, apk)) {
+            // 电视 / 盒子上可能被厂商锁定，或系统里没有 APK 安装器组件
+            Toast.makeText(context, "无法唤起系统安装器，请用 U 盘手动安装", Toast.LENGTH_LONG).show()
         }
     }
 
