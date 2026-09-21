@@ -85,6 +85,15 @@ class DetailActivity : AppCompatActivity() {
     /** TV 适配：选集网格里「当前高亮那集」的视图，供 ensureTvFocus 把初始焦点直接交给它 */
     private var selectedEpisodeView: View? = null
 
+    /**
+     * TV 适配：首次进入的初始焦点是否已交付给「高亮那一集」。
+     *
+     * 只交付一次 —— 之后焦点完全交给方向键几何搜索与用户操作，页面不再抢焦点。
+     * 数据尚未就绪（[selectedEpisodeView] 仍为 null，例如页面刚 onCreate、选集还在爬）时
+     * **不消费这次机会**，留给下一次调用重试。
+     */
+    private var initialEpisodeFocusDone: Boolean = false
+
     private var hasSelectedEpisodeHistory: Boolean = false
 
     companion object {
@@ -210,11 +219,12 @@ class DetailActivity : AppCompatActivity() {
             )
         }
 
-        // TV 适配：四个「信息模块」（影片信息 / 导演 / 主演 / 简介）在**横屏布局**里可聚焦但不可点击。
+        // TV 适配：下方三个「信息模块」（导演 / 主演 / 简介）在**横屏布局**里可聚焦但不可点击。
         // 这里只补一件事：关掉 API 26+ 系统的默认焦点高亮，避免自绘焦点框外面再套一层系统描边。
         // 竖屏布局里这些卡片没有 focusable / 焦点框（手机端不参与遥控器焦点导航），故仅电视端处理。
+        // 左栏「影片信息」卡不在列 —— 它在横屏布局里已改为不可聚焦，本就没有高亮可关。
         if (isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            listOf(binding.cardInfo, binding.cardDirector, binding.cardActors, binding.cardDescription)
+            listOf(binding.cardDirector, binding.cardActors, binding.cardDescription)
                 .forEach { it.defaultFocusHighlightEnabled = false }
         }
 
@@ -351,14 +361,23 @@ class DetailActivity : AppCompatActivity() {
         selectedLineIndex = 0
         selectedEpisode = playLines.firstOrNull()?.episodes?.firstOrNull()
 
-        val latestHistory = MovieApplication.get().playHistoryRepository.getLatestHistoryByDetailUrl(detail.detailUrl)
-        if (latestHistory != null && latestHistory.playPageUrl.isNotBlank()) {
-            playLines.forEachIndexed { lineIndex, line ->
-                val matched = line.episodes.firstOrNull { it.playPageUrl == latestHistory.playPageUrl }
+        // 恢复上次播放位置：先按 detailUrl 找该详情页的最近记录，查不到再按 videoId 兜底
+        // （从首页/搜索进入时 detailUrl 可能为空，此时 detailUrl 查询恒为空集）。
+        // 命中后把 selectedLineIndex / selectedEpisode 一并切到历史那一集 ——
+        // 选集网格的高亮（bg_episode_selected）与电视端初始焦点都取自 selectedEpisode，
+        // 因此两者天然落在同一集上。
+        val historyRepo = MovieApplication.get().playHistoryRepository
+        val latestHistory = (if (detail.detailUrl.isNotBlank()) {
+            historyRepo.getLatestHistoryByDetailUrl(detail.detailUrl)
+        } else null) ?: historyRepo.getHistoryByVideoId(videoId)
+        val historyEpisodeUrl = latestHistory?.playPageUrl.orEmpty()
+        if (historyEpisodeUrl.isNotBlank()) {
+            for ((lineIndex, line) in playLines.withIndex()) {
+                val matched = line.episodes.firstOrNull { it.playPageUrl == historyEpisodeUrl }
                 if (matched != null) {
                     selectedLineIndex = lineIndex
                     selectedEpisode = matched
-                    return@forEachIndexed
+                    break
                 }
             }
         }
@@ -381,18 +400,11 @@ class DetailActivity : AppCompatActivity() {
         binding.btnDownload.isEnabled = selectedEpisode != null || videoUrl.isNotBlank()
         updatePlayButtonText(false)
         loadProgressFromHistory()
-        // 数据就绪后按钮才可用，这里补一次焦点兜底（首次进入时按钮还是 disabled，取不到焦点）
+        // 数据就绪：把首次进入的初始焦点交给「高亮那一集」
+        // （无历史 = 第 1 集；有历史 = 历史进度那一集），而不是笼统的兜底落点
         ensureTvFocus()
     }
 
-    /**
-     * TV 适配：确保页面上有焦点落点。
-     *
-     * 电视没有触摸输入，进入页面必须有默认焦点，否则用户要先按一次方向键才「唤醒」焦点。
-     * 详情页的数据是异步加载的（播放按钮初始 disabled，取不到焦点），
-     * 因此这里只做兜底：若此刻页面上没有任何焦点，才把焦点交给可用的主操作按钮；
-     * 数据就绪后会再调用一次（见 applyCrawlerDetail）。
-     */
     /**
      * 形态定方向：与 MainActivity.applyOrientation 同一策略（手机竖屏 / 电视横屏，不做动态切换）。
      */
@@ -404,24 +416,42 @@ class DetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * TV 适配：确保页面上有焦点落点。分两步，都 post 到主线程队列执行。
+     *
+     * **1. 初始焦点（只交付一次）** —— 选集渲染完成后，把焦点交给「高亮那一集」：
+     * 无播放历史时高亮是第 1 集，有「继续观看」历史时高亮是历史进度那一集
+     * （见 [applyCrawlerDetail] 的历史匹配）—— 焦点与高亮因此天然落在同一集上。
+     * 数据未就绪（[selectedEpisodeView] 为 null）**不消费这次机会**，留给后续调用重试。
+     *
+     * **2. 兜底落点（可重复）** —— 只在「当前一个获焦视图都没有」时才补一个安全落点，
+     * 避免数据加载失败或极慢时页面完全没有焦点（遥控器要先按方向键才「唤醒」）。
+     *
+     * 候选里刻意没有左栏「影片信息」卡 —— 它在横屏布局里已改为不可聚焦，
+     * 遥控器焦点只走「右栏（线路 / 选集）+ 下方三卡」；竖屏手机端由 isTv 守卫整体跳过。
+     */
     private fun ensureTvFocus() {
         if (!isTv) return
+
+        // 1. 初始焦点：数据就绪后才消费这一次机会
+        if (!initialEpisodeFocusDone) {
+            selectedEpisodeView?.let { target ->
+                initialEpisodeFocusDone = true
+                binding.root.post { TvFocus.requestInitialFocus(target) }
+            }
+        }
+
+        // 2. 兜底落点
         binding.root.post {
             if (binding.root.findFocus() != null) return@post
             val target = when {
-                // 横屏布局里 btnPlay 是 visibility=gone（播放入口就是选集网格），
-                // 但它仍可能处于 enabled 状态；GONE 的 View requestFocus 会静默失败，
-                // 必须同时检查可见性，否则初始焦点落空、页面没有焦点落点
-                binding.btnPlay.isEnabled && binding.btnPlay.visibility == View.VISIBLE ->
-                    binding.btnPlay as View
-                // 选集网格已渲染：初始焦点直接给「高亮那集」——
-                // 无历史时它就是第一集，有继续观看历史时它就是历史进度对应的那集，
-                // 焦点和高亮（bg_episode_selected）天然落在同一集上
-                selectedEpisodeView != null -> selectedEpisodeView as View
+                // 竖屏布局里的主播放按钮（横屏布局下它是 GONE，播放入口就是选集网格）。
+                // GONE 的 View requestFocus 会静默失败，故必须同时判可见性
+                binding.btnPlay.isEnabled && binding.btnPlay.visibility == View.VISIBLE -> binding.btnPlay
+                // 选集网格已渲染：交给线路 chip 里的第一个（几何搜索也能到选集）
                 binding.layoutPlayLines.childCount > 0 -> binding.layoutPlayLines.getChildAt(0)
-                // 兜底：数据还没回来时按钮是 disabled（取不到焦点），
-                // 至少把焦点停到左上角的影片信息模块上，保证进页面就有落点
-                else -> binding.cardInfo as View
+                // 兜底：数据还没回来时焦点先停在下方「导演」卡上（左栏影片信息卡已不可聚焦）
+                else -> binding.cardDirector
             }
             TvFocus.requestInitialFocus(target)
         }

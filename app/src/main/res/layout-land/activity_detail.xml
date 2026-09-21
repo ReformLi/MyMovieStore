@@ -21,11 +21,10 @@
 
     几个刻意的结构决策：
 
-    1. **主操作行（立即播放）在模块 B 的最上方，位于播放线路之上**。
-       电视首次进入的初始焦点就是「立即播放」。若它被放在海报/影片信息下方，
-       ScrollView 为了让它可见会自动下滚，用户第一眼看到的是页面中段
-       （海报被裁掉一半、上方的播放线路被顶出屏幕）。移到线路之上后，初始焦点
-       就落在页面顶部，不触发任何滚动，首屏构图天然完整。
+    1. **电视首次进入的初始焦点是「选集里高亮的那一集」**：无播放历史时即第 1 集，
+       有「继续观看」历史时是历史进度那一集（见 DetailActivity.ensureTvFocus）。
+       主操作行（立即播放 / 下载）在电视端整行 GONE —— 播放入口就是选集网格，
+       故它只保留 id 供 ViewBinding 对齐，不参与任何布局。
 
     2. 上半区高度固定 300dp，左右两栏都是 match_parent 高度，且**各自就是一张卡片** ——
        这样两张卡片才是真正的等高（若把按钮行抽到卡片外面，右卡片就矮了一截），
@@ -43,6 +42,11 @@
     5. 下方三个信息模块（导演 / 主演 / 简介）**可聚焦但不可点击**：
        给遥控器多几个稳定的停靠点，同时不绑定任何点击行为。
        焦点框直接走 XML 的 foreground，无需代码介入。
+
+       ⚠️ 与之相对，**左栏「影片信息」卡刻意不可聚焦**（focusable=false、无 foreground）：
+       遥控器焦点只允许在「右栏（播放线路 / 选集）+ 下方三卡」之间移动。
+       它若可聚焦，首次进入的兜底焦点会停在左栏，把初始焦点从选集上抢走
+       （历史上正是这个原因导致「高亮在第二集、焦点却在左边海报」）。
 
     6. 滚动容器（ScrollView / HorizontalScrollView）显式 focusable="false"：
        这两个类在构造时都会 setFocusable(true)，方向键会落到没有焦点框的
@@ -85,7 +89,12 @@
                 android:clipChildren="false"
                 android:orientation="horizontal">
 
-                <!-- ============ 模块 A：海报 + 标题 + 元信息（可聚焦，无点击行为） ============ -->
+                <!-- ============ 模块 A：海报 + 标题 + 元信息（**纯展示，不可聚焦**） ============
+
+                     遥控器焦点刻意排除本卡：它是只读信息区，给焦点既没有可执行的操作，
+                     又会在首次进入时把兜底焦点从选集上抢走。
+                     `descendantFocusability="blocksDescendants"` 保留作双保险 ——
+                     卡片内的 TextView 将来若被加上 clickable，也不会在这里切出一个焦点落点。 -->
                 <LinearLayout
                     android:id="@+id/cardInfo"
                     android:layout_width="0dp"
@@ -93,11 +102,9 @@
                     android:layout_weight="3"
                     android:background="@drawable/bg_detail_card"
                     android:clipChildren="false"
-                    android:defaultFocusHighlightEnabled="false"
                     android:descendantFocusability="blocksDescendants"
                     android:elevation="3dp"
-                    android:focusable="true"
-                    android:foreground="@drawable/bg_tv_focus_ring"
+                    android:focusable="false"
                     android:orientation="vertical"
                     android:padding="14dp">
 
