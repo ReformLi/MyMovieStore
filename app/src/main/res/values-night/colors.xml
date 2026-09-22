@@ -21,6 +21,8 @@
     <color name="colorBackground">#0D0D0D</color>
     <color name="colorSurface">#1A1A1A</color>
     <color name="colorSurfaceHighlight">#2A2A2A</color>
+    <!-- 按压 / 涟漪色（= colorControlHighlight）：深色底用半透明白 -->
+    <color name="colorRipple">#1FFFFFFF</color>
     <!-- 兼容旧引用 -->
     <color name="background">#0D0D0D</color>
     <color name="surface_background">#1A1A1A</color>

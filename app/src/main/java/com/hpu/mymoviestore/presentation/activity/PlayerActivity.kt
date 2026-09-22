@@ -37,6 +37,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import android.net.Uri
 import android.net.ConnectivityManager
@@ -139,11 +143,113 @@ class PlayerActivity : AppCompatActivity() {
     private var hasLocalDanmaku = false
     private var lastSelectedPosition = 0
 
-    // PlayerView 内部的弹幕控件引用
+    // PlayerView 内部的弹幕控件引用。
+    //
+    // 这里的 `!!` 是安全的，且**不受 media3 升版影响**：控制器布局不是库自带的默认布局，
+    // 而是本项目自己的 res/layout(exo_player_control_view.xml)（由 activity_player.xml 的
+    // app:controller_layout_id 引用），两个 id 由我们自己维护；PlayerView 在构造期就把
+    // 控制器 inflate 好，所以 binding 建好之后必定能找到。
+    // （审计报告曾担心「media3 改默认控制器布局会导致 NPE」—— 该场景在本项目不成立。）
     private val switchDanmaku: android.widget.Switch get() =
         binding.playerView.findViewById(R.id.switchDanmaku)!!
     private val danmakuSpinner: android.widget.Spinner get() =
         binding.playerView.findViewById(R.id.spinnerDanmakuSource)!!
+
+    /**
+     * 弹幕开关监听。
+     *
+     * 抽成字段而不是留在 setupDanmakuUi() 里作局部匿名对象：「方向重排」后会拿到一个
+     * 全新的 Switch 实例，复位状态时必须先摘掉监听再赋初值 —— 否则赋值本身就会触发
+     * 一整轮切换逻辑（重复建 adapter、重复联网搜索）。局部对象拿不到引用，无法摘除。
+     */
+    private val danmakuSwitchListener =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, isChecked ->
+            danmakuEnabled = isChecked
+            Log.d(TAG, "弹幕子开关切换: $isChecked")
+            danmakuManager?.setDanmakuEnabled(isChecked)
+            if (isChecked) {
+                // 弹幕权限：远程配置 enable_danmaku 未开启时，开关打开也无效，只显示「弹幕已关闭」
+                if (!isDanmakuPermissionEnabled()) {
+                    Log.d(TAG, "弹幕权限未开启，开关打开无效: videoId=$videoId")
+                    showDanmakuClosedState()
+                    return@OnCheckedChangeListener
+                }
+                // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；
+                // 否则优先尝试本地弹幕（savedAnimeId 关联），本地未命中才联网补搜索
+                if (danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty()) {
+                    isRestoringSelection = true
+                    setupSourceAdapter(candidateList)
+                    if (lastSelectedPosition in candidateList.indices) {
+                        danmakuSpinner.setSelection(lastSelectedPosition)
+                    }
+                    isRestoringSelection = false
+                    showDanmakuSpinner()
+                } else {
+                    tryRestoreLocalDanmaku()
+                }
+            } else {
+                // 关闭开关：取消进行中的搜索/加载，左侧显示灰色「弹幕已关闭」
+                danmakuSearchJob?.cancel()
+                danmakuLoadJob?.cancel()
+                showDanmakuClosedState()
+            }
+        }
+
+    /** 弹幕源下拉选择监听（同样抽成字段：重排后要重新挂到新 Spinner 上）。 */
+    private val danmakuSpinnerListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        override fun onItemSelected(
+            parent: android.widget.AdapterView<*>?,
+            view: View?,
+            position: Int,
+            id: Long
+        ) {
+            if (isRestoringSelection) {
+                Log.d(TAG, "弹幕源 onItemSelected 跳过（恢复中）: position=$position")
+                return
+            }
+            when (danmakuSourceState) {
+                DanmakuSourceState.FAILED -> {
+                    if (isRetrying) {
+                        Log.d(TAG, "弹幕源 onItemSelected 跳过（重试中）")
+                        return
+                    }
+                    Log.d(TAG, "弹幕源 onItemSelected 触发重试")
+                    retryDanmakuSearch()
+                    return
+                }
+                DanmakuSourceState.SEARCHING -> {
+                    Log.d(TAG, "弹幕源 onItemSelected 跳过（搜索中）")
+                    return
+                }
+                DanmakuSourceState.SUCCESS -> { /* 继续执行下方选择逻辑 */ }
+            }
+            if (position < 0 || position >= candidateList.size) {
+                Log.w(TAG, "弹幕源 onItemSelected 越界: position=$position, size=${candidateList.size}")
+                return
+            }
+            val anime = candidateList[position]
+            Log.d(TAG, "用户选择弹幕源: videoId=$videoId, position=$position, animeId=${anime.animeId}, title=${anime.animeTitle}")
+            lastSelectedPosition = position
+            DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
+            lastLoadedAnimeId = 0L
+            val epNum = extractEpisodeNumber(episodeTitle)
+            // 缓存优先：命中弹幕列表缓存时不再联网；无缓存时仍会联网获取
+            loadDanmakuForAnime(anime.animeId, epNum)
+        }
+
+        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+    }
+
+    /** 弹幕源触摸监听：搜索失败时点一下即重试。 */
+    private val danmakuSpinnerTouchListener = android.view.View.OnTouchListener { _, event ->
+        if (event.action == MotionEvent.ACTION_UP && danmakuSourceState == DanmakuSourceState.FAILED) {
+            Log.d(TAG, "弹幕源触摸触发重试")
+            retryDanmakuSearch()
+            true
+        } else {
+            false
+        }
+    }
 
     // 手势相关
     private lateinit var gestureDetector: GestureDetector
@@ -228,6 +334,16 @@ class PlayerActivity : AppCompatActivity() {
 
     // 屏幕锁定
     private var isScreenLocked = false
+
+    // 弹幕开关的当前状态 —— 旋转重排后据此复位开关；prefs 只提供初始值
+    private var danmakuEnabled = true
+
+    // 弹幕显示区域高度比例（0.25/0.5/0.75/1.0）—— 由 applyDanmakuDisplayArea 同步维护，
+    // 重排后不需要再读 prefs（运行中用户可能已改过）
+    private var danmakuAreaRatio = 0.25f
+
+    // 当前已 inflate 的播放页布局对应哪种方向，用于判断旋转后是否需要重排
+    private var isLayoutPortrait = false
 
     /** TV 适配：全屏下防误触返回 —— 两次返回键间隔小于该值才真正退出播放页 */
     private var lastBackPressTimeMs = 0L
@@ -384,6 +500,11 @@ class PlayerActivity : AppCompatActivity() {
 
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // 记录本次 inflate 命中哪一份布局（清单把播放页锁在 landscape，正常必是横屏版），
+        // 供 onConfigurationChanged 判断旋转后是否需要重排
+        isLayoutPortrait =
+            resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
         binding.danmakuContainer.bringToFront()
         binding.danmakuContainer.clipChildren = true
@@ -948,6 +1069,9 @@ class PlayerActivity : AppCompatActivity() {
 
         // 初始化状态信息显示（时间、电量、网络）
         initStatusInfo()
+        // 沉浸式下系统栏浮在画面上：把 insets 叠加到上下控制条的 padding 上。
+        // 放这里而不是 onCreate，是因为方向重排也会走本方法（重排会换掉整棵视图树）。
+        applyPlayerInsets()
     }
 
     /**
@@ -996,12 +1120,22 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** 弹幕显示区域高度比例（0.25/0.5/0.75/1.0）—— 动态调整 danmakuContainer 约束高度 */
+    /**
+     * 弹幕显示区域高度比例（0.25/0.5/0.75/1.0）—— 动态调整 danmakuContainer 约束高度。
+     *
+     * 位置恒为「贴屏幕顶部」：这里显式复位 top 约束并清掉 bottom 约束。
+     * 若 XML 侧误加了 layout_constraintBottom_toBottomOf，ConstraintLayout 会按
+     * verticalBias（默认 0.5）把容器摆到屏幕垂直中央，弹幕就会跑到画面正中——
+     * 竖屏下尤其明显（竖屏时 1/4 屏高恰好等于居中的横版画面高度）。
+     */
     private fun applyDanmakuDisplayArea(ratio: Float) {
+        danmakuAreaRatio = ratio.coerceIn(0.25f, 1.0f)
         val lp = binding.danmakuContainer.layoutParams as?
             androidx.constraintlayout.widget.ConstraintLayout.LayoutParams ?: return
         lp.height = 0
-        lp.matchConstraintPercentHeight = ratio.coerceIn(0.25f, 1.0f)
+        lp.matchConstraintPercentHeight = danmakuAreaRatio
+        lp.topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+        lp.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET
         binding.danmakuContainer.layoutParams = lp
         Log.d(TAG, "弹幕显示区域比例应用: ${lp.matchConstraintPercentHeight}")
     }
@@ -1065,109 +1199,60 @@ class PlayerActivity : AppCompatActivity() {
     // ================== 弹幕 UI ==================
 
     private fun setupDanmakuUi() {
-        val container = binding.danmakuContainer
-        container.setBackgroundColor(Color.TRANSPARENT)
-        container.clipChildren = true
-        container.isClickable = false
-        container.isFocusable = false
-        Log.d(TAG, "弹幕容器使用 XML 约束高度 25%")
-
-        val dm = DanmakuManager(this)
-        dm.attachToContainer(container)
-        this.danmakuManager = dm
+        this.danmakuManager = DanmakuManager(this)
 
         val prefs = DanmakuPrefs(this)
         // 恢复上次保存的弹幕显示区域（默认 1/4 屏）
-        applyDanmakuDisplayArea(prefs.getDisplayAreaRatio())
-        val masterEnabled = prefs.isMasterEnabled()
-        val subEnabled = masterEnabled
-        switchDanmaku.isChecked = subEnabled
-        dm.setDanmakuEnabled(subEnabled)
-        Log.d(TAG, "弹幕子开关初始状态: $subEnabled (总开关=$masterEnabled)")
+        danmakuAreaRatio = prefs.getDisplayAreaRatio()
+        danmakuEnabled = prefs.isMasterEnabled()
+        Log.d(TAG, "弹幕子开关初始状态: $danmakuEnabled (总开关=$danmakuEnabled)")
 
-        switchDanmaku.setOnCheckedChangeListener { _, isChecked ->
-            Log.d(TAG, "弹幕子开关切换: $isChecked")
-            dm.setDanmakuEnabled(isChecked)
-            if (isChecked) {
-                // 弹幕权限：远程配置 enable_danmaku 未开启时，开关打开也无效，只显示「弹幕已关闭」
-                if (!isDanmakuPermissionEnabled()) {
-                    Log.d(TAG, "弹幕权限未开启，开关打开无效: videoId=$videoId")
-                    showDanmakuClosedState()
-                    return@setOnCheckedChangeListener
+        bindDanmakuViews()
+    }
+
+    /**
+     * 弹幕相关 view 的装配（onCreate 与「方向重排」后都会调用）。
+     *
+     * 刻意不在这里创建 DanmakuManager：重排时它保持存活，只把同一个 DanmakuView
+     * 迁到新容器（见 [DanmakuManager.reattachToContainer]）。若改成释放后重建，
+     * 已加载弹幕会被清空，而 [loadDanmakuForAnime] 因 animeId 未变会直接跳过加载，
+     * 弹幕就会一直空着。
+     */
+    private fun bindDanmakuViews() {
+        val dm = danmakuManager ?: return
+
+        val container = binding.danmakuContainer
+        container.setBackgroundColor(Color.TRANSPARENT)
+        container.clipChildren = true
+        container.clipToPadding = false
+        container.isClickable = false
+        container.isFocusable = false
+        dm.reattachToContainer(container)
+
+        applyDanmakuDisplayArea(danmakuAreaRatio)
+
+        // 先摘监听再赋初值：赋初值本身也会触发 OnCheckedChangeListener
+        switchDanmaku.setOnCheckedChangeListener(null)
+        switchDanmaku.isChecked = danmakuEnabled
+        switchDanmaku.setOnCheckedChangeListener(danmakuSwitchListener)
+        dm.setDanmakuEnabled(danmakuEnabled)
+
+        danmakuSpinner.onItemSelectedListener = danmakuSpinnerListener
+        danmakuSpinner.setOnTouchListener(danmakuSpinnerTouchListener)
+
+        // 重排后 spinner 与左侧状态文案都是新实例，adapter / 文案必须重新挂
+        when {
+            !danmakuEnabled || !isDanmakuPermissionEnabled() -> showDanmakuClosedState()
+            danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty() -> {
+                isRestoringSelection = true
+                setupSourceAdapter(candidateList)
+                if (lastSelectedPosition in candidateList.indices) {
+                    danmakuSpinner.setSelection(lastSelectedPosition)
                 }
-                // 打开开关：已有候选源恢复候选 adapter（关闭期间可能被「弹幕已关闭」状态文本替换）；
-                // 否则优先尝试本地弹幕（savedAnimeId 关联），本地未命中才联网补搜索
-                if (danmakuSourceState == DanmakuSourceState.SUCCESS && candidateList.isNotEmpty()) {
-                    isRestoringSelection = true
-                    setupSourceAdapter(candidateList)
-                    if (lastSelectedPosition in candidateList.indices) {
-                        danmakuSpinner.setSelection(lastSelectedPosition)
-                    }
-                    isRestoringSelection = false
-                    showDanmakuSpinner()
-                } else {
-                    tryRestoreLocalDanmaku()
-                }
-            } else {
-                // 关闭开关：取消进行中的搜索/加载，左侧显示灰色「弹幕已关闭」
-                danmakuSearchJob?.cancel()
-                danmakuLoadJob?.cancel()
-                showDanmakuClosedState()
+                isRestoringSelection = false
+                showDanmakuSpinner()
             }
-        }
-
-        if (subEnabled && isDanmakuPermissionEnabled()) {
-            danmakuSpinner.visibility = View.VISIBLE
-            updateDanmakuSourceUI()
-        } else {
-            showDanmakuClosedState()
-        }
-
-        danmakuSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (isRestoringSelection) {
-                    Log.d(TAG, "弹幕源 onItemSelected 跳过（恢复中）: position=$position")
-                    return
-                }
-                when (danmakuSourceState) {
-                    DanmakuSourceState.FAILED -> {
-                        if (isRetrying) {
-                            Log.d(TAG, "弹幕源 onItemSelected 跳过（重试中）")
-                            return
-                        }
-                        Log.d(TAG, "弹幕源 onItemSelected 触发重试")
-                        retryDanmakuSearch()
-                        return
-                    }
-                    DanmakuSourceState.SEARCHING -> {
-                        Log.d(TAG, "弹幕源 onItemSelected 跳过（搜索中）")
-                        return
-                    }
-                    DanmakuSourceState.SUCCESS -> { /* 继续执行下方选择逻辑 */ }
-                }
-                if (position < 0 || position >= candidateList.size) {
-                    Log.w(TAG, "弹幕源 onItemSelected 越界: position=$position, size=${candidateList.size}")
-                    return
-                }
-                val anime = candidateList[position]
-                Log.d(TAG, "用户选择弹幕源: videoId=$videoId, position=$position, animeId=${anime.animeId}, title=${anime.animeTitle}")
-                lastSelectedPosition = position
-                DanmakuPrefs(this@PlayerActivity).saveAnimeId(videoId, anime.animeId)
-                lastLoadedAnimeId = 0L
-                val epNum = extractEpisodeNumber(episodeTitle)
-                // 缓存优先：命中弹幕列表缓存时不再联网；无缓存时仍会联网获取
-                loadDanmakuForAnime(anime.animeId, epNum)
-            }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-        }
-
-        danmakuSpinner.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP && danmakuSourceState == DanmakuSourceState.FAILED) {
-                Log.d(TAG, "弹幕源触摸触发重试")
-                retryDanmakuSearch()
-                return@setOnTouchListener true
-            }
-            false
+            else -> updateDanmakuSourceUI()
         }
     }
 
@@ -2120,14 +2205,71 @@ class PlayerActivity : AppCompatActivity() {
         return if (number != null && title.contains("集")) "第${number}集" else title
     }
 
+    /**
+     * 进入沉浸式（隐藏系统栏）。
+     *
+     * targetSdk 36 下 `View.SYSTEM_UI_FLAG_*` 已全部废弃：其中 LAYOUT_FULLSCREEN /
+     * LAYOUT_HIDE_NAVIGATION / LAYOUT_STABLE 在 Android 15+ 是 **no-op**，
+     * 只剩 IMMERSIVE_STICKY 还在起作用 —— 也就是说旧写法在 API 36 上只能隐一半、
+     * 且一旦唤出系统栏就不再自动收回了。改用 WindowInsetsControllerCompat：
+     * 语义等价，且 API 24–36 走同一套实现。
+     */
     private fun enterImmersiveMode() {
-        window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    /**
+     * 沉浸式播放页的 inset 适配。
+     *
+     * 播放页全屏沉浸 —— 系统栏是**浮在画面之上**的，所以不能像其它页面那样给整页加 padding
+     * （那会把视频画面挤变形），只能给「浮在视频之上的控制条」自己加：
+     * - 顶部覆盖条 topControls：补 left / top / right
+     * - 控制器底部两行（exo_bottom_controls）：补 left / right / bottom
+     *
+     * 基准 padding 只在挂监听前取一次，之后 = XML 值 + insets，与布局里为电视 overscan
+     * 预留的安全边距**叠加**而不是互相覆盖。
+     *
+     * 必须在 [setupPlayerUi] 末尾调用、而不是 onCreate：方向重排会整棵换掉视图树，
+     * 监听挂在旧 binding 上会随旧视图一起失效。
+     */
+    @UnstableApi
+    private fun applyPlayerInsets() {
+        val topBar = binding.topControls
+        val bottomBar = binding.playerView.findViewById<View>(R.id.exo_bottom_controls)
+        if (bottomBar == null) {
+            Log.w(TAG, "控制器布局缺少 exo_bottom_controls，底部控制条跳过 inset 适配")
+        }
+        val topBase = intArrayOf(
+            topBar.paddingStart, topBar.paddingTop, topBar.paddingEnd, topBar.paddingBottom
+        )
+        val bottomBase = bottomBar?.let {
+            intArrayOf(it.paddingStart, it.paddingTop, it.paddingEnd, it.paddingBottom)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            topBar.setPaddingRelative(
+                topBase[0] + bars.left,
+                topBase[1] + bars.top,
+                topBase[2] + bars.right,
+                topBase[3]
+            )
+            if (bottomBar != null && bottomBase != null) {
+                bottomBar.setPaddingRelative(
+                    bottomBase[0] + bars.left,
+                    bottomBase[1],
+                    bottomBase[2] + bars.right,
+                    bottomBase[3] + bars.bottom
+                )
+            }
+            insets
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -2216,11 +2358,84 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    @UnstableApi
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         enterImmersiveMode()
         screenWidth = resources.displayMetrics.widthPixels
         screenHeight = resources.displayMetrics.heightPixels
+
+        // 清单声明了 configChanges=orientation|screenSize|screenLayout，旋转不会重建 Activity，
+        // 已 inflate 的布局也不会自动换成另一形态那一份 —— 必须在这里手工按方向重排。
+        val portraitNow = newConfig.orientation == Configuration.ORIENTATION_PORTRAIT
+        if (portraitNow != isLayoutPortrait) {
+            rebindForOrientation(portraitNow)
+        }
+    }
+
+    /**
+     * 按新方向重新装配播放页界面（仅手机形态触发）。
+     *
+     * 为什么不删掉 configChanges 让系统重建 Activity：player 是 Activity 字段
+     * （initializePlayer 里 ExoPlayer.Builder(this) 创建），且全类没有 onSaveInstanceState，
+     * 重建等于播放器销毁重来 —— 黑屏 + 重新拉流。这里改为「保留播放器，只换视图」。
+     *
+     * 四步顺序不能变：
+     * 1) 拆：停掉挂在旧视图上的进度同步 Runnable（它的宿主是 binding.playerView）、
+     *    注销状态广播（由 setupPlayerUi → initStatusInfo 注册，重排会重跑它）与 PiP 广播，
+     *    并把 player 从旧 PlayerView 摘下来（player 实例本身保留，播放不中断）；
+     * 2) 重建：此时 layoutInflater 已带新方向的 Configuration，inflate 会命中另一份布局；
+     * 3) 装配：重跑 onCreate 里同一组 setup，顺序保持一致；
+     * 4) 复位：恢复播放图标、锁定态、控制栏显隐，并重新挂上 Runnable。
+     *
+     * setupGestures() 不需要重跑：它只重建 gestureDetector（由 dispatchTouchEvent 手动喂
+     * 事件），闭包通过 this.binding 动态取视图，重排后自动指向新视图。
+     */
+    @UnstableApi
+    private fun rebindForOrientation(portrait: Boolean) {
+        // 电视恒横屏（layout-land 是唯一形态）；PiP 小窗下也不该重排界面
+        if (isTv) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) return
+
+        val exoPlayer = player
+        Log.d(TAG, "方向变化 → 重排播放页布局: ${if (portrait) "竖屏" else "横屏"}")
+
+        // ---- 1. 拆掉挂在旧视图上的东西 ----
+        stopProgressSyncRunnable()
+        unregisterStatusReceivers()
+        unregisterPipReceiver()
+        binding.playerView.player = null
+
+        // ---- 2. 按新方向重新 inflate ----
+        binding = ActivityPlayerBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        isLayoutPortrait = portrait
+        binding.danmakuContainer.bringToFront()
+        binding.danmakuContainer.clipChildren = true
+        binding.danmakuContainer.clipToPadding = false
+
+        // ---- 3. 重新装配（与 onCreate 同一组、同一顺序）----
+        setupPlayerUi()
+        bindDanmakuViews()
+        setupLockButton()
+        setupPiP()
+
+        // ---- 4. 复位运行态 ----
+        binding.playerView.player = exoPlayer
+        isControllerVisible = false
+        updatePlayPauseIcon(exoPlayer?.isPlaying == true)
+        if (isScreenLocked) {
+            binding.btnLock.setImageResource(R.drawable.ic_player_lock)
+            binding.playerView.useController = false
+            binding.playerView.hideController()
+            binding.lockedProgressBar.visibility = View.VISIBLE
+            updateLockedProgress()
+        } else {
+            // 旋转后主动显示一次控制栏：新 PlayerView 的控制栏初始状态不确定，
+            // 不显式触发一次会让 topControls 停在 XML 默认值（visible）上
+            binding.playerView.showController()
+        }
+        startProgressSyncRunnable()
     }
 
     // ================== 状态信息显示（时间、电量、网络） ==================

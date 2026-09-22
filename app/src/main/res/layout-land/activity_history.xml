@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  历史记录页 · 横屏 / 电视（10-foot UI）
+
+  ⚠️ 本目录（res/layout-land/）同时服务**手机横屏**，不是 TV 专属目录：
+  这里一律**不写** focusable / focusableInTouchMode / foreground 焦点环 —— 写死会让触屏
+  第一次点击只取焦点、不触发点击（按钮要点两下）。工具栏与内容区的可聚焦能力由代码
+  （TvFocus）在**电视端**赋予，入口带 isActive 门控。
+
+  三个刻意决策：
+
+  1. **id 与竖屏布局严格一致**（toolbar / container），一个不少。
+     ViewBinding 按两份限定符的并集生成字段，只在一侧出现的 id 会在另一侧退化成 @Nullable，
+     代码里直接用就编译不过（要么空判、要么崩）。
+
+  2. 工具栏压到 40dp，并同时写 android:minHeight="40dp"。
+     Material3 的 toolbarStyle 链（Widget.MaterialComponents.Toolbar）给 Toolbar 设了
+     minHeight = @dimen/mtrl_toolbar_default_height（56dp），它经 View.getSuggestedMinimumHeight()
+     进入 Toolbar.onMeasure 的 Math.max(height, ...)，随后交给 View.resolveSizeAndState；
+     而 layout_height 是 EXACTLY 规格时 resolveSizeAndState 直接返回规格值 —— 所以 40dp 本来就会
+     生效（已反编译 appcompat 1.7.0 的 Toolbar.onMeasure 核对）。显式再写一遍 minHeight：
+     一是把 56dp 这个下限彻底钉死（父容器若改用 wrap_content / AT_MOST，它就成了真实下限），
+     二是让「这里的高度是有意压过的」在 XML 里一眼可见。
+     横屏可视高度只有竖屏一半左右（电视 1080p 经 TvUiSupport 放大密度后约 372dp），
+     顶部 chrome 每省 1dp 都是留给内容区的。
+
+  3. 安全边距 24dp 走 Toolbar 的 paddingStart/End + container 的 padding，**不能写在根节点上**：
+     HistoryActivity.applySystemBarInsets() 对 binding.root 调的是 setPadding(0, top, 0, bottom)，
+     根节点的左右 padding 会被整段覆盖（电视端 systemBars insets 通常为 0，等于被清零）。
+     同理 contentInsetStart/End 归零、把左右留白完全交给 padding 控制，避免出现 16 + 24 的双重缩进。
+
+  另：container 放开 clipChildren/clipToPadding —— 历史网格卡片获焦会放大（TvFocus），
+  不放裁剪的话贴边那张会被切平。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="vertical">
+
+    <!-- 顶部工具栏：左右留 24dp 安全边距（电视 5% overscan），背景仍铺满整行 -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:minHeight="40dp"
+        android:background="@color/colorSurface"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:title="历史记录"
+        android:titleTextColor="@color/colorOnSurface"
+        app:contentInsetStart="0dp"
+        app:contentInsetEnd="0dp"
+        app:contentInsetStartWithNavigation="0dp" />
+
+    <!-- 内容区：HistoryFragment（横屏走 layout-land/fragment_history.xml 的网格形态） -->
+    <FrameLayout
+        android:id="@+id/container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="12dp" />
+</LinearLayout>

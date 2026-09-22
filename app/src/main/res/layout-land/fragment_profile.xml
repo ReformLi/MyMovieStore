@@ -16,7 +16,10 @@
     android:layout_height="match_parent"
     android:background="@color/background"
     android:orientation="horizontal"
-    android:padding="16dp">
+    android:paddingStart="32dp"
+    android:paddingEnd="32dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
 
     <!-- ==================== 左栏：头部图片（唯一焦点 = 主题切换按钮） ==================== -->
     <com.google.android.material.card.MaterialCardView
@@ -85,13 +88,13 @@
                  位于图片右上角；本页左栏唯一可聚焦控件（焦点框由 ProfileFragment 挂载） -->
             <ImageView
                 android:id="@+id/btnThemeToggle"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:layout_gravity="top|end"
                 android:layout_margin="12dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/theme_toggle_desc"
-                android:padding="8dp"
+                android:padding="12dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_theme_sun"
                 app:tint="@color/header_text_on_image" />

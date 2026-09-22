@@ -400,6 +400,13 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         } else {
             tvBtnBackToSearch?.let { TvFocus.applyTo(it, scale = 1.05f) }
             tvBtnBackToSearch?.setOnClickListener { returnToInput() }
+            // 翻页按钮的聚焦能力原先写死在 layout-land/fragment_search.xml（focusable + 焦点环）。
+            // 已下沉到这里：XML 只留视觉，能力由 TvFocus 在电视端赋予 —— 本目录同时服务手机横屏，
+            // 写死会让触屏形态也带上橙环。
+            // 用 applyFocusableOnly 而不是 applyTo：后者会重设 OnFocusChangeListener，
+            // 顶掉 setupPaginationFocusWatch() 装好的「焦点离开分页栏就收起」监听。
+            tvBtnPrevPage?.let { TvFocus.applyFocusableOnly(it) }
+            tvBtnNextPage?.let { TvFocus.applyFocusableOnly(it) }
             // TV 端翻页
             tvBtnPrevPage?.setOnClickListener {
                 // focusResult=false：翻页时焦点留在分页栏，方便连续翻页（不抢到首个结果）
@@ -525,6 +532,10 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
      * （本项目已多次被「看不见却可聚焦」坑过）。
      */
     private fun applyPaginationVisibility() {
+        // 整段逻辑只服务遥控器焦点导航，手机端不参与：显式收口。
+        // （tvLayoutPagination 在竖屏布局里不存在，原来靠 `?: return` 间接兜住；
+        //  但下面写的是 descendantFocusability 这种「正向」焦点能力，不该依赖间接推断。）
+        if (!isTvMode) return
         // descendantFocusability 是 ViewGroup 的属性，这里按 ViewGroup 取用
         val bar = tvLayoutPagination as? ViewGroup ?: return
         if (!paginationAvailable) {

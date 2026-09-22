@@ -194,9 +194,11 @@ object TvFocus {
             existing is android.graphics.drawable.LayerDrawable -> {
                 // 已是叠加层：按「层里有没有本款焦点环」判重，而不是见了 LayerDrawable 就整批放行。
                 // 旧实现这里直接 Unit（当作"已叠加过"），于是**别人**挂的 layer-list 前景
-                // 会让焦点环被静默吞掉（注意：`?attr/selectableItemBackground` 在 AppCompat 主题下
-                // 其实是 **Holo 选择器** abc_item_background_holo_dark/light，属 StateListDrawable，
-                // 走下面的 else 分支被整份包一层 —— 它自带焦点/按压高亮，见 TvFocus 的弹窗补环说明）：
+                // 会让焦点环被静默吞掉（`?attr/selectableItemBackground` 是平台 RippleDrawable，
+                // 自带焦点/按压高亮，走下面的 else 分支被整份包一层）。
+                // ⚠️ 归因更正：它**不是** AppCompat 的 Holo 遗留选择器 —— 那套只存在于
+                // API < 21 的 Base.V7.Theme.AppCompat；本项目 minSdk = 24 走 Base.V21，
+                // 解析到的是 <ripple android:color="?attr/colorControlHighlight">。
                 // 控件能获得焦点、系统默认高亮又被关掉了，用户看到的就是"完全没有任何高亮"。
                 if (!existing.hasLayer(ring.constantState)) {
                     val layers = Array(existing.numberOfLayers + 1) { i ->

@@ -75,15 +75,15 @@
             android:layout_marginTop="16dp"
             android:background="@color/divider" />
 
-        <!-- ============ 更新内容（远程配置、长度不可控 → 限高可滚动） ============ -->
+        <!-- ============ 更新内容（远程配置、长度不可控 → 限高可滚动） ============
+             本容器是电视端的「焦点停靠点」（能滚、不可点）：聚焦能力与焦点环由
+             MainActivity.showUpdateTipDialog() 用 TvFocus.applyFocusableOnly 在电视端赋予 ——
+             本目录同时服务手机横屏，写死焦点属性会让触屏形态也带上橙环。 -->
         <ScrollView
             android:id="@+id/scrollUpdateContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:defaultFocusHighlightEnabled="false"
-            android:focusable="true"
-            android:foreground="@drawable/bg_tv_focus_ring"
             android:overScrollMode="never"
             android:scrollbars="none">
 
@@ -135,7 +135,7 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/tvSkipToday"
                 android:layout_width="0dp"
-                android:layout_height="46dp"
+                android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:text="@string/update_not_today"

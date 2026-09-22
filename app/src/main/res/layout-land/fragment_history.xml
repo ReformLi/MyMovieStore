@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- ⚠️ 本目录同时服务**手机横屏**：`focusableInTouchMode="true"` 会让触屏第一次点击只取焦点、
-     不触发点击（按钮要点两下）。故：凡「电视端已由 TvFocus.applyTo 以代码接管」的按钮，这里
-     一律不写聚焦属性；翻页按钮例外 —— 它电视端只靠 XML 提供 focusable + 焦点环（代码里自行
-     设置了 onFocusChangeListener，再补 applyTo 会顶掉该监听），故保留 focusable 与 foreground，
-     只去掉 focusableInTouchMode。 -->
+     不触发点击（按钮要点两下）。故：**这里一律不写任何焦点属性**（含 tvClear —— 它由
+     HistoryFragment 在电视端用 TvFocus.applyTo 以代码接管）。本页无文本输入框、无翻页按钮，
+     不需要任何例外。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -49,7 +48,7 @@
         <TextView
             android:id="@+id/tvClear"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
+            android:layout_height="48dp"
             android:background="@drawable/bg_episode_normal"
             android:gravity="center"
             android:paddingStart="14dp"

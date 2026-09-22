@@ -185,6 +185,12 @@ class MainActivity : AppCompatActivity() {
         )
         // TV 适配：「知道了 / 今天不再提醒」可遥控器聚焦
         com.hpu.mymoviestore.presentation.tv.TvFocus.applyToDialogButtons(view)
+        // 更新说明的滚动容器同样是电视端的「焦点停靠点」（能滚、不可点）。
+        // 聚焦能力原先写死在 layout-land/dialog_update_tip.xml，已下沉到这里 ——
+        // 本目录同时服务手机横屏，写死会让触屏形态也带上橙环。
+        com.hpu.mymoviestore.presentation.tv.TvFocus.applyFocusableOnly(
+            view.findViewById(R.id.scrollUpdateContent)
+        )
     }
 
     // ======================== ViewPager2 ========================
@@ -513,7 +519,10 @@ class MainActivity : AppCompatActivity() {
     private fun isFocusInNavBar(): Boolean {
         var v: View? = currentFocus
         while (v != null) {
-            if (v === binding.bottomNavigation || v === binding.tvNavBar) return true
+            if (v === binding.bottomNavigation) return true
+            // tvNavBar 只在电视端存在（ViewBinding 为 @Nullable）：竖屏下它恒为 null，
+            // 直接参与 === 比较等于「v === null」恒 false。用 let 明确表达「存在才比」。
+            binding.tvNavBar?.let { nav -> if (v === nav) return true }
             v = v.parent as? View
         }
         return false
@@ -524,7 +533,10 @@ class MainActivity : AppCompatActivity() {
      * 电视端选中项即 [binding.viewPager] 当前页，比 BottomNavigationView 的 selectedItemId 更可靠。
      */
     private fun syncNavFocusability() {
-        if (navItemViews.isEmpty()) return
+        // 显式形态门控，不再依赖「binding.tvNavBar 为 null ⇒ navItemViews 为空」这条间接推断。
+        // 本方法写的是 isFocusableInTouchMode：一旦在手机端执行，点页签就变成
+        // 「第一下只取焦点、第二下才切换」（触摸模式的取焦点击不触发 click）。
+        if (navItemViews.isEmpty() || !isTv) return
         val selectedIndex = binding.viewPager.currentItem
             .takeIf { it in tabIds.indices } ?: 0
         applyNavSelectedVisual(selectedIndex)
@@ -629,10 +641,33 @@ class MainActivity : AppCompatActivity() {
 
     // ======================== 系统适配 ========================
 
+    /**
+     * 消费系统栏 insets：**叠加**到布局声明的 padding 之上，而不是替代它。
+     *
+     * 基准 padding 只在挂监听前取一次，此后恒为「XML 值 + insets」。
+     * 旧实现 `setPadding(0, top, 0, bottom)` 会把左右 padding 整段清零 ——
+     * 这正是 layout-land 的 Activity 根布局一直无法声明 TV overscan 安全边距的原因：
+     * 写在根上的 paddingStart/End 会被这里抹掉，只能一层层挂到子容器上。
+     *
+     * insets 取 systemBars ∪ displayCutout：刘海屏下两者的安全区不总是相等，
+     * getInsets 传并集即为「逐边取大」。
+     */
     private fun applySystemBarInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+        val root = binding.root
+        val baseStart = root.paddingStart
+        val baseTop = root.paddingTop
+        val baseEnd = root.paddingEnd
+        val baseBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPaddingRelative(
+                baseStart + bars.left,
+                baseTop + bars.top,
+                baseEnd + bars.right,
+                baseBottom + bars.bottom
+            )
             insets
         }
     }

@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayoutMediator
@@ -112,6 +113,8 @@ class DownloadActivity : AppCompatActivity() {
         } else if (isInMultiSelectMode) {
             menuInflater.inflate(R.menu.menu_download_batch_delete, menu)
         }
+        // TV 适配：多选模式会重建工具栏菜单项（批量删除），补一次焦点遍历
+        binding.toolbar.post { TvFocus.applyToClickables(binding.toolbar) }
         return super.onCreateOptionsMenu(menu)
     }
 
@@ -169,10 +172,33 @@ class DownloadActivity : AppCompatActivity() {
 
     // ======================== 初始化 ========================
 
+    /**
+     * 消费系统栏 insets：**叠加**到布局声明的 padding 之上，而不是替代它。
+     *
+     * 基准 padding 只在挂监听前取一次，此后恒为「XML 值 + insets」。
+     * 旧实现 `setPadding(0, top, 0, bottom)` 会把左右 padding 整段清零 ——
+     * 这正是 layout-land 的 Activity 根布局一直无法声明 TV overscan 安全边距的原因：
+     * 写在根上的 paddingStart/End 会被这里抹掉，只能一层层挂到子容器上。
+     *
+     * insets 取 systemBars ∪ displayCutout：刘海屏下两者的安全区不总是相等，
+     * getInsets 传并集即为「逐边取大」。
+     */
     private fun applySystemBarInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+        val root = binding.root
+        val baseStart = root.paddingStart
+        val baseTop = root.paddingTop
+        val baseEnd = root.paddingEnd
+        val baseBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPaddingRelative(
+                baseStart + bars.left,
+                baseTop + bars.top,
+                baseEnd + bars.right,
+                baseBottom + bars.bottom
+            )
             insets
         }
     }
@@ -181,6 +207,9 @@ class DownloadActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "下载管理"
+        // TV 适配：工具栏的返回键 / 菜单项（全部暂停 / 全部继续）由 AppCompat 动态创建，
+        // 布局完成后用通用遍历给它们补上焦点环；手机端整体 no-op（TvFocus 入口带形态门控）。
+        binding.toolbar.doOnPreDraw { TvFocus.applyToClickables(binding.toolbar) }
     }
 
     private fun setupViewPager() {

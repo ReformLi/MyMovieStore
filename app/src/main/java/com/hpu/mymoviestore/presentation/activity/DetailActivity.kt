@@ -4,7 +4,6 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Typeface
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
@@ -219,14 +218,13 @@ class DetailActivity : AppCompatActivity() {
             )
         }
 
-        // TV 适配：下方三个「信息模块」（导演 / 主演 / 简介）在**横屏布局**里可聚焦但不可点击。
-        // 这里只补一件事：关掉 API 26+ 系统的默认焦点高亮，避免自绘焦点框外面再套一层系统描边。
-        // 竖屏布局里这些卡片没有 focusable / 焦点框（手机端不参与遥控器焦点导航），故仅电视端处理。
-        // 左栏「影片信息」卡不在列 —— 它在横屏布局里已改为不可聚焦，本就没有高亮可关。
-        if (isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            listOf(binding.cardDirector, binding.cardActors, binding.cardDescription)
-                .forEach { it.defaultFocusHighlightEnabled = false }
-        }
+        // TV 适配：下方三个「信息模块」（导演 / 主演 / 简介）在**横屏布局**里是"可聚焦不可点击"
+        // 的只读停靠点（结构约束 descendantFocusability=blocksDescendants 仍由 XML 承担）。
+        // 聚焦能力 + 自绘焦点环在这里由 TvFocus 在**电视端**赋予，**不写进 layout-land**：
+        // 那是手机横屏也会加载的目录，写死会让手机横屏一进详情页就冒出橙色描边。
+        // 左栏「影片信息」卡不在列 —— 它在横屏布局里本就不参与焦点导航。
+        listOf(binding.cardDirector, binding.cardActors, binding.cardDescription)
+            .forEach { TvFocus.applyFocusableOnly(it) }
 
         // 下载按钮
         binding.btnDownload.setOnClickListener {
@@ -277,10 +275,33 @@ class DetailActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 消费系统栏 insets：**叠加**到布局声明的 padding 之上，而不是替代它。
+     *
+     * 基准 padding 只在挂监听前取一次，此后恒为「XML 值 + insets」。
+     * 旧实现 `setPadding(0, top, 0, bottom)` 会把左右 padding 整段清零 ——
+     * 这正是 layout-land 的 Activity 根布局一直无法声明 TV overscan 安全边距的原因：
+     * 写在根上的 paddingStart/End 会被这里抹掉，只能一层层挂到子容器上。
+     *
+     * insets 取 systemBars ∪ displayCutout：刘海屏下两者的安全区不总是相等，
+     * getInsets 传并集即为「逐边取大」。
+     */
     private fun applySystemBarInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+        val root = binding.root
+        val baseStart = root.paddingStart
+        val baseTop = root.paddingTop
+        val baseEnd = root.paddingEnd
+        val baseBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPaddingRelative(
+                baseStart + bars.left,
+                baseTop + bars.top,
+                baseEnd + bars.right,
+                baseBottom + bars.bottom
+            )
             insets
         }
     }

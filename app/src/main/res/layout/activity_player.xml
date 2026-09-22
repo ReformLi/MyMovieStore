@@ -1,4 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  【竖屏版】播放页主布局（手机竖屏播放时加载）
+
+  与 layout-land/activity_player.xml 的关系：
+  1. id 集合必须完全一致（playerRoot / playerView / danmakuContainer / topControls /
+     btnBack / tvPlayerTitle / tvPlayerEpisode / statusContainer / tvTime / ivBattery /
+     ivNetwork / btnPiP / btnRotate / btnLock / lockedProgressBar / tvLockedPosition /
+     progressBarLocked / tvLockedDuration / tvGestureTip）。两份布局的 id 只要有一侧缺失，
+     ActivityPlayerBinding 对应字段就会退化为 @Nullable，PlayerActivity 里的直接访问
+     会编不过或在该形态下 NPE。
+  2. app:controller_layout_id 仍指向 @layout/exo_player_control_view —— 它是资源引用，
+     系统会按当前限定符自动挑选竖屏/横屏版本，此处无需区分。
+  3. 弹幕容器贴屏幕顶部：高度 = 屏幕高度 × 比例（默认 1/4，可选 1/4·1/2·3/4·全屏），
+     由 applyDanmakuDisplayArea() 动态改写，约束与 layout-land/activity_player.xml 完全一致。
+     ⚠ 切勿再给容器补 app:layout_constraintBottom_toBottomOf：一旦 top+bottom 双约束，
+     ConstraintLayout 会按 verticalBias（默认 0.5）把容器摆到屏幕垂直中央，弹幕就跑到
+     画面正中去了（曾误改为垂直居中，已回退）。
+  4. 顶部按钮 36→44dp、锁定按钮 40→48dp：竖屏下操作区远离手指自然停留位置，
+     且原尺寸低于 48dp 最小热区。
+  5. 锁定态进度条背景改用 bg_player_bottom_gradient（下深上透明）——横屏版此处复用的
+     是顶部渐变，底部边缘最透明，遮罩等于没生效。
+-->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -28,7 +50,7 @@
         app:use_controller="true"
         app:controller_layout_id="@layout/exo_player_control_view" />
 
-    <!-- 弹幕容器：屏幕顶部 25% 高度，覆盖在播放器之上 -->
+    <!-- 弹幕容器：贴屏幕顶部，高度由代码按比例改写（与 layout-land 一致） -->
     <FrameLayout
         android:id="@+id/danmakuContainer"
         android:layout_width="0dp"
@@ -47,9 +69,9 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingTop="12dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="16dp"
+        android:paddingTop="16dp"
+        android:paddingEnd="16dp"
         android:paddingBottom="12dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -57,11 +79,11 @@
 
         <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="返回"
-            android:padding="8dp"
+            android:padding="12dp"
             android:src="@drawable/ic_player_back" />
 
         <LinearLayout
@@ -112,20 +134,20 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/player_text_secondary"
-                android:textSize="12sp"
+                android:textSize="13sp"
                 tools:text="21:45" />
 
             <ImageView
                 android:id="@+id/ivBattery"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_marginStart="6dp"
                 android:src="@drawable/ic_battery_5" />
 
             <ImageView
                 android:id="@+id/ivNetwork"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_marginStart="6dp"
                 android:src="@drawable/ic_wifi" />
 
@@ -133,32 +155,32 @@
 
         <ImageButton
             android:id="@+id/btnPiP"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="画中画"
-            android:padding="8dp"
+            android:padding="12dp"
             android:src="@drawable/ic_player_pip" />
 
         <ImageButton
             android:id="@+id/btnRotate"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="切换屏幕方向"
-            android:padding="8dp"
+            android:padding="12dp"
             android:src="@drawable/ic_player_rotate" />
     </LinearLayout>
 
     <!-- 屏幕锁定按钮（左侧中间） -->
     <ImageButton
         android:id="@+id/btnLock"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_marginStart="20dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="16dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="锁定屏幕"
-        android:padding="10dp"
+        android:padding="12dp"
         android:src="@drawable/ic_player_unlock"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -170,13 +192,13 @@
         android:id="@+id/lockedProgressBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_player_top_gradient"
+        android:background="@drawable/bg_player_bottom_gradient"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -189,7 +211,7 @@
             android:includeFontPadding="false"
             android:paddingEnd="8dp"
             android:textColor="@color/player_text_primary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold"
             tools:text="00:00" />
 
@@ -210,7 +232,7 @@
             android:includeFontPadding="false"
             android:paddingStart="8dp"
             android:textColor="@color/player_text_primary"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textStyle="bold"
             tools:text="00:00" />
     </LinearLayout>

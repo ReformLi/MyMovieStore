@@ -41,12 +41,12 @@
                  位于图片右上角且在 NestedScrollView 之外，列表滚动时保持不动 -->
             <ImageView
                 android:id="@+id/btnThemeToggle"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:layout_gravity="top|end"
                 android:layout_margin="12dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:padding="8dp"
+                android:padding="12dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_theme_sun"
                 app:tint="@color/header_text_on_image"

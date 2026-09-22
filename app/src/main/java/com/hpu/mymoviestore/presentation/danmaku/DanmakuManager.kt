@@ -42,6 +42,28 @@ class DanmakuManager(private val context: Context) {
         Log.d(TAG, "DanmakuView 已挂载到容器（容器 childCount=${container.childCount}）")
     }
 
+    /**
+     * 布局重建后把同一个 DanmakuView 迁移到新容器。
+     *
+     * 与 [attachToContainer] 的区别：这里不会被「已存在就跳过」的守卫拦住，而是把已有
+     * 的 view 从旧容器摘下、挂到新容器 —— 已加载的弹幕列表与 prepared 状态全部保留。
+     *
+     * 播放页旋转重排时用它，弹幕不闪断；若改用 release() + attachToContainer()，
+     * 已加载弹幕会被清空，而 PlayerActivity.loadDanmakuForAnime 内部有
+     * 「animeId 未变则跳过」的守卫、不会重新拉取，弹幕就会一直空着。
+     */
+    fun reattachToContainer(container: ViewGroup) {
+        val view = danmakuView
+        if (view == null) {
+            attachToContainer(container)
+            return
+        }
+        if (view.parent === container) return
+        (view.parent as? ViewGroup)?.removeView(view)
+        container.addView(view)
+        Log.d(TAG, "DanmakuView 已迁移到新容器（childCount=${container.childCount}）")
+    }
+
     /** 加载弹幕列表（JSON 格式） */
     fun loadDanmaku(comments: List<DanmakuComment>?) {
         val view = danmakuView

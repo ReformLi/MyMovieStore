@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 只有按压涟漪、**没有焦点态**的可点击背景（TV 端专用替代品）。
+<!-- 只有按压涟漪、**没有焦点态**的可点击背景（TV / 手机通用）。
 
-     为什么不能再用 `?attr/selectableItemBackground`：
-     在 AppCompat 主题下它解析成 **Holo 遗留选择器** abc_item_background_holo_dark/light，
-     自带焦点态（#33B5E5 @60% 蓝）与按压态（#40CCCCCC 25% 白）高亮。控件的系统默认焦点高亮
-     已被 TvFocus 关掉、改由自绘橙环负责，这一层外来高亮会盖在控件底色之上与橙环抢戏 ——
-     用户看到的就是「一聚焦/一按下，底色自己变蓝变白」。
+     为什么不要用系统内置的 `?attr/selectableItemBackground`：它**自带焦点态**高亮，而本 App
+     的焦点高亮统一由 TvFocus 关掉系统默认值、改由自绘橙环负责；那层外来高亮会压在控件底色上
+     与橙环抢戏（表现为「一聚焦 / 一按下，底色自己变白变蓝」）。
 
-     ripple 颜色刻意不用 ?attr/colorControlHighlight：本 App 把它设成了不透明的
-     @color/colorSurfaceHighlight(#F0F0F0)，当涟漪色会刷出一整块实色。这里用 20% 白，
-     深色底（TV 默认）与浅色底都可见。
+     ⚠️ 一处曾写错的归因（已更正）：本文档旧版说它在 AppCompat 主题下解析成
+     **Holo 遗留选择器** abc_item_background_holo_dark/light。核实 appcompat-1.7.0 的 AAR 后
+     可以确认——该定义只存在于 `Base.V7.Theme.AppCompat`（API < 21 分支）；本项目 minSdk = 24，
+     走的是 `Base.V21.Theme.AppCompat`，`selectableItemBackground` 解析到的是平台
+     `<ripple android:color="?attr/colorControlHighlight">`，**不存在 Holo 选择器**。
+     也就是说：让人看到「一按就是一块实色」的真正原因是 **colorControlHighlight 被设成了
+     不透明填充色**（见 values/colors.xml 的 colorRipple 注释），不是 Holo 选择器。
+     结论（「别用它」）不变，理由是它**自带焦点态**。
 
      mask 层只做波纹遮罩、不参与绘制。 -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="#33FFFFFF">
+    android:color="?attr/colorControlHighlight">
     <item android:id="@android:id/mask">
         <shape android:shape="rectangle">
             <solid android:color="@android:color/white" />

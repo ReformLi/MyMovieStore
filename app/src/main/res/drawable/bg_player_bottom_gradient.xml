@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  播放页底部遮罩渐变（下深上透明）。
+
+  与 bg_player_top_gradient.xml 的分工：
+  - bg_player_top_gradient（angle=270）：顶部深、向下渐隐 —— 给屏幕顶部控制栏用；
+  - 本文件（angle=90）：底部深、向上渐隐 —— 给屏幕底部控制栏用。
+
+  横屏版 exo_player_control_view.xml 底部曾直接复用顶部渐变，等于底部边缘最透明、
+  遮罩没生效（底部文字压在亮画面上）。竖屏版底部有三行控件，需要真实遮罩，
+  故单独建此资源；横屏版保持原样未动。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="90"
+        android:startColor="#CC000000"
+        android:endColor="#00000000" />
+</shape>

@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  【竖屏版】播放器控制栏（手机竖屏播放时加载）
+
+  与 layout-land/exo_player_control_view.xml 的关系：
+  1. id 集合必须完全一致。其中 exo_position / exo_progress_placeholder / exo_duration /
+     exo_fullscreen 是 media3 库占用的 id（PlayerView 靠它们装配进度条与时间文本），
+     其余为应用自有 id。任一侧少一个 id，PlayerActivity 里
+     playerView.findViewById(R.id.xxx) 就会在该形态下返回 null。
+  2. 横屏版把「进度行 + 弹幕行」压成两行；竖屏可用宽度只有约 360~411dp，
+     同一行挤下「弹幕源 Spinner + 开关 + 全屏 + 设置」会互相挤压，
+     因此这里拆成三行：进度行 / 弹幕行 / 按钮行。
+  3. 竖屏播放时视频上下留黑边，操作区位于屏幕最底部，手指触达距离更长，
+     故按钮尺寸整体上调（36→44dp、44→48dp、56→64dp），顺带满足 48dp 最小热区。
+  4. 底部遮罩改用 bg_player_bottom_gradient（下深上透明）——横屏版底部复用的是
+     顶部渐变，底部边缘最透明，遮罩实际没生效；竖屏三行控件更需要可读性保障。
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -11,10 +26,11 @@
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="104dp"
         android:layout_gravity="bottom"
-        android:background="@drawable/bg_player_top_gradient" />
+        android:background="@drawable/bg_player_bottom_gradient" />
 
+    <!-- 中央播放按钮组：竖屏下屏幕中心即视频区域中心，位置天然正确 -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -24,50 +40,54 @@
 
         <ImageButton
             android:id="@+id/btnRewind10"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="快退10秒"
-            android:padding="10dp"
+            android:padding="12dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_player_rewind_10" />
 
         <ImageButton
             android:id="@+id/btnPlayPause"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="24dp"
-            android:layout_marginEnd="24dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_marginStart="28dp"
+            android:layout_marginEnd="28dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="播放/暂停"
-            android:padding="12dp"
+            android:padding="14dp"
             android:scaleType="fitCenter" />
 
         <ImageButton
             android:id="@+id/btnForward10"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="快进10秒"
-            android:padding="10dp"
+            android:padding="12dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_player_forward_10" />
     </LinearLayout>
 
+    <!-- 底部控制区：竖屏拆三行，每行都留足空白 -->
+    <!-- padding 基线会被 PlayerActivity.applyPlayerInsets() 读走后叠加系统栏 / 挖孔 inset -->
     <LinearLayout
+        android:id="@+id/exo_bottom_controls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:paddingBottom="4dp">
+        android:paddingBottom="8dp">
 
+        <!-- 第一行：当前时间 + 进度条 + 总时长 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
 
             <TextView
                 android:id="@id/exo_position"
@@ -76,13 +96,13 @@
                 android:includeFontPadding="false"
                 android:paddingEnd="8dp"
                 android:textColor="@color/player_text_primary"
-                android:textSize="13sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <View
                 android:id="@id/exo_progress_placeholder"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="30dp"
                 android:layout_weight="1" />
 
             <TextView
@@ -92,64 +112,71 @@
                 android:includeFontPadding="false"
                 android:paddingStart="8dp"
                 android:textColor="@color/player_text_primary"
-                android:textSize="13sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- 第二行：弹幕源 + 弹幕开关（弹幕源占满剩余宽度，避免长源名挤掉开关） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="2dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
 
             <Spinner
                 android:id="@+id/spinnerDanmakuSource"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:minHeight="24dp"
+                android:layout_weight="1"
+                android:minHeight="28dp"
                 android:backgroundTint="#00000000" />
 
             <TextView
                 android:id="@+id/tvDanmakuSwitchLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
+                android:layout_marginStart="12dp"
                 android:text="弹幕"
                 android:textColor="@color/player_text_secondary"
-                android:textSize="12sp" />
+                android:textSize="13sp" />
 
             <Switch
                 android:id="@+id/switchDanmaku"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="2dp" />
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
 
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
+        <!-- 第三行：全屏 / 播放设置（右对齐，靠近右手拇指） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical|end"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
 
             <ImageButton
                 android:id="@id/exo_fullscreen"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="8dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="全屏"
-                android:padding="6dp"
+                android:padding="12dp"
                 android:src="@drawable/ic_player_rotate" />
 
             <ImageButton
                 android:id="@+id/btnPlayerSettings"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="8dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="播放设置"
-                android:padding="6dp"
+                android:padding="12dp"
                 android:src="@drawable/ic_player_settings" />
         </LinearLayout>
     </LinearLayout>

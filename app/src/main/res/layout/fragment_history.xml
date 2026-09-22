@@ -53,7 +53,7 @@
             <TextView
                 android:id="@+id/tvClear"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="48dp"
                 android:background="@drawable/bg_episode_normal"
                 android:gravity="center"
                 android:paddingStart="14dp"

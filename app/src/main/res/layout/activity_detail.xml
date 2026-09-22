@@ -17,7 +17,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ScrollView
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/bg_detail_page"
@@ -227,7 +227,10 @@
 
                          clipChildren / clipToPadding 必须保持 true：置为 false 时滚动内容
                          会画到 ScrollView 边界之外，向上滚出的集数会盖住上面的「选集」标题。 -->
-                    <ScrollView
+                    <!-- 嵌套滚动：外层整页也是纵向滚动容器，内层（选集区）必须是 NestedScrollView，
+                         才会把「内层已滚到底」之后剩余的手势交给外层。用 android.widget.ScrollView
+                         时不参与嵌套滚动协议，手指停在内层就永远滑不动外层（真机表现为「滑不动」）。 -->
+                    <androidx.core.widget.NestedScrollView
                         android:layout_width="match_parent"
                         android:layout_height="230dp"
                         android:layout_marginTop="10dp"
@@ -244,7 +247,7 @@
                             android:clipChildren="false"
                             android:columnCount="4"
                             android:orientation="horizontal" />
-                    </ScrollView>
+                    </androidx.core.widget.NestedScrollView>
                 </LinearLayout>
             </LinearLayout>
 
@@ -340,7 +343,7 @@
                     tools:text="《红了樱桃绿了芭蕉》是一部融合剧情、爱情与古装元素的国产剧。" />
             </LinearLayout>
         </LinearLayout>
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 
     <!-- 加载覆盖层 -->
     <include

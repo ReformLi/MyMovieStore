@@ -10,9 +10,12 @@
 
      ⚠️ id 必须与竖屏版完全一致（scrollContent / tvClose）。
 
-     焦点模型：**每一行功能卡都是只读停靠点**（HelpFeatureRow 样式里 focusable +
-     自绘焦点环，无点击行为）——方向键逐行移动、获焦行自动滚入可视区，
-     方便遥控器上下浏览全部内容。ScrollView 自身刻意 focusable=false：
+     焦点模型：**每一行功能卡都是只读停靠点**（行上只有 android:tag="help_feature_row"，
+     聚焦能力与自绘焦点环由 HelpDialog 在**电视端**用 TvFocus.applyFocusableOnly 赋予，
+     无点击行为）——方向键逐行移动、获焦行自动滚入可视区，方便遥控器上下浏览全部内容。
+     ⚠️ 不要把 focusable / 焦点环写回 HelpFeatureRow 样式或行本身：本目录同时服务**手机横屏**，
+     写死会让手机横屏一进弹窗就长出橙色描边、焦点乱跳。
+     ScrollView 自身刻意 focusable=false：
      逐行焦点已接管滚动，容器再可聚焦只会多出一个「没有可见高亮」的怪停靠点
      （ScrollView 构造时默认 setFocusable(true)，必须显式关掉）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
@@ -131,7 +134,8 @@
 
                         <!-- 1 首页发现 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_home" />
@@ -150,7 +154,8 @@
 
                         <!-- 2 搜索播放 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_search" />
@@ -169,7 +174,8 @@
 
                         <!-- 3 播放体验 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_player_play" />
@@ -211,7 +217,8 @@
 
                         <!-- 4 离线下载 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_download" />
@@ -230,7 +237,8 @@
 
                         <!-- 5 弹幕观看 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_danmu" />
@@ -249,7 +257,8 @@
 
                         <!-- 6 播放历史 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_history" />
@@ -268,7 +277,8 @@
 
                         <!-- 7 视频源管理 -->
                         <LinearLayout
-                            style="@style/HelpFeatureRow">
+                            style="@style/HelpFeatureRow"
+                            android:tag="help_feature_row">
 
                             <ImageView style="@style/HelpFeatureIcon"
                                 android:src="@drawable/ic_source" />
@@ -309,7 +319,7 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/tvClose"
                     android:layout_width="match_parent"
-                    android:layout_height="46dp"
+                    android:layout_height="48dp"
                     android:backgroundTint="@color/colorPrimary"
                     android:text="@string/got_it"
                     android:textColor="@color/colorOnPrimary"

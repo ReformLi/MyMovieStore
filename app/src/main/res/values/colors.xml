@@ -21,6 +21,10 @@
     <color name="colorBackground">#F5F5F5</color>
     <color name="colorSurface">#FFFFFF</color>
     <color name="colorSurfaceHighlight">#F0F0F0</color>
+    <!-- 按压 / 涟漪色（= colorControlHighlight）：**必须半透明**。
+         ⚠️ 别再把 colorControlHighlight 指到 colorSurfaceHighlight —— 那是**填充色**，
+         不透明；RippleDrawable 拿它当涟漪色，按一下就会刷出一整块实心浅灰。 -->
+    <color name="colorRipple">#1F000000</color>
     <!-- 兼容旧引用 -->
     <color name="background">#F5F5F5</color>
     <color name="surface_background">#FFFFFF</color>

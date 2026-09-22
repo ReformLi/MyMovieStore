@@ -26,8 +26,10 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/colorSurface</item>
 
-        <!-- 底部导航栏 -->
-        <item name="colorControlHighlight">@color/colorSurfaceHighlight</item>
+        <!-- 按压 / 涟漪高亮色（半透明）。
+             ⚠️ 不能用 colorSurfaceHighlight —— 那是填充色（不透明 #F0F0F0 / #2A2A2A），
+             RippleDrawable 拿它当涟漪色会刷出一整块实心色（本项目曾经的线上表现）。 -->
+        <item name="colorControlHighlight">@color/colorRipple</item>
     </style>
 
     <!-- 全局主题（浅色）：状态栏图标为深色；深色模式见 values-night/themes.xml -->
@@ -36,6 +38,16 @@
     </style>
 
     <style name="Theme.MyMovieStore" parent="Base.Theme.MyMovieStore" />
+
+    <!-- 播放页 / Cloudflare 验证页共用：无 ActionBar（Base.Theme 本身就继承
+         Theme.Material3.DayNight.NoActionBar），窗口底色压成纯黑避免首帧闪一下浅色。
+         ⚠️ 这两页原来挂 `Theme.AppCompat.NoActionBar`，等于**整个脱离本 App 的主题** ——
+         连 colorPrimary / colorSurface / colorControlHighlight / DayNight 都不继承，
+         于是播放页的 ?attr/selectableItemBackgroundBorderless 取的是 appcompat 自己的
+         ripple_material_dark，与 App 其它页面成了「一个 App 两套按压高亮」。 -->
+    <style name="Theme.MyMovieStore.Player" parent="Base.Theme.MyMovieStore">
+        <item name="android:windowBackground">@color/player_background</item>
+    </style>
 
     <!-- 统一圆角弹框样式（12dp 圆角，背景色跟随日夜切换） -->
     <style name="RoundedDialog" parent="Theme.Material3.DayNight.Dialog.Alert">

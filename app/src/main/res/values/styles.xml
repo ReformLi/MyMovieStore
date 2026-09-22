@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Cloudflare 人工验证兜底窗口：不透明暗色背景（半透明 Activity 内 WebView 有白屏/表面合成问题） -->
-    <style name="Theme.MyMovieStore.Challenge" parent="Theme.AppCompat.NoActionBar">
+    <!-- Cloudflare 人工验证兜底窗口：不透明暗色背景（半透明 Activity 内 WebView 有白屏/表面合成问题）。
+         parent 走 App 自己的 Material3 体系（原先挂 Theme.AppCompat.NoActionBar，
+         不继承 colorPrimary / colorControlHighlight / DayNight —— 与播放页同属 W3）。 -->
+    <style name="Theme.MyMovieStore.Challenge" parent="Base.Theme.MyMovieStore">
         <item name="android:windowBackground">#B3000000</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">false</item>
@@ -105,9 +107,6 @@
         <item name="android:paddingEnd">14dp</item>
         <item name="android:paddingTop">10dp</item>
         <item name="android:paddingBottom">10dp</item>
-        <item name="android:focusable">true</item>
-        <item name="android:foreground">@drawable/bg_tv_focus_ring</item>
-        <item name="android:defaultFocusHighlightEnabled">false</item>
     </style>
 
     <!-- 条目左侧功能图标：圆角橙底徽章 + 主色 tint -->

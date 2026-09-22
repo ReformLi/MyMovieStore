@@ -8,6 +8,14 @@
     - 中心：旋转的胶片图标（自定义旋转动画）
     - 下方：加载提示文字
     - 背景：半透明遮罩，阻挡用户操作
+    - 形态：**刻意只有这一份，不建 layout-land 变体**。浮层内容是一个 wrap_content 的
+      居中小列（图标 + 两行文字），宽高都随容器自适应，横竖屏表现一致；再复制一份只会
+      多出一处"改一边忘一边"的维护点（同 S2 修掉的"两份一模一样的布局"）。
+    - 焦点：clickable + focusable 让它成为电视端的「焦点停靠点」—— 加载中不该让遥控器
+      点到背后的内容上。它不是 focusableInTouchMode，故手机端点击不会「要点两下」。
+      同时关掉系统默认焦点高亮（整屏大小的默认高亮是一圈很突兀的描边），
+      焦点环统一由 TvFocus 按需自绘。这是全项目唯一保留显式 focusable 的竖屏布局，
+      理由是"加载遮罩必须吃掉焦点"这一功能需求，不是遗留的 TV 属性。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -15,7 +23,9 @@
     android:background="@color/loading_overlay"
     android:clickable="true"
     android:focusable="true"
-    android:visibility="gone">
+    android:visibility="gone"
+    android:defaultFocusHighlightEnabled="false"
+>
 
     <LinearLayout
         android:layout_width="wrap_content"

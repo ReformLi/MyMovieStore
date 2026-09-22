@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  下载管理页 · 横屏 / 电视（10-foot UI）
+
+  ⚠️ 本目录（res/layout-land/）同时服务**手机横屏**，不是 TV 专属目录：
+  这里一律**不写** focusable / focusableInTouchMode / foreground 焦点环 —— 写死会让触屏
+  第一次点击只取焦点、不触发点击（按钮要点两下）。本页所有可聚焦控件都由代码赋予：
+  · 顶部两个标签页 → DownloadActivity.setupViewPager() 里逐个数 applyFocusableOnly
+  · 两个列表（下载中 / 已完成）的条目与行内按钮 → DownloadingAdapter / CompletedAdapter
+  · 工具栏的返回键与菜单项 → DownloadActivity.setupToolbar() 里 applyToClickables(toolbar)
+
+  三个刻意决策：
+
+  1. **id 与竖屏布局严格一致**（toolbar / tvTotalStorage / tvFreeStorage / tabLayout / viewPager），
+     一个不少。ViewBinding 按两份限定符的并集生成字段，只在一侧出现的 id 会在另一侧退化成
+     @Nullable，代码里直接用就编译不过。
+
+  2. **存储信息栏与标签页合并成一行**（竖屏是上下两行）。横屏的稀缺资源是高度而不是宽度：
+     电视 1080p 经 TvUiSupport 放大密度后可视高度只剩约 372dp，上下叠两行要吃掉 4dp 上边距 +
+     26dp 文字行 + 36dp 标签页 ≈ 66dp；并成一行立刻收回 26dp，等于多露出小半行列表。
+     两个 TextView 只改宽度策略（wrap_content + 右侧成簇），类型仍是 TextView，代码里
+     `binding.tvTotalStorage.text = ...` 没有任何感知。
+
+  3. 工具栏 40dp，并同时写 android:minHeight="40dp"。Material3 的 toolbarStyle 链
+     （Widget.MaterialComponents.Toolbar）给 Toolbar 设了
+     minHeight = @dimen/mtrl_toolbar_default_height（56dp），它经 getSuggestedMinimumHeight()
+     进入 Toolbar.onMeasure 的 Math.max(height, ...)，随后交给 View.resolveSizeAndState；
+     layout_height 是 EXACTLY 规格时 resolveSizeAndState 直接返回规格值 —— 所以 40dp 本来就会
+     生效（已反编译 appcompat 1.7.0 的 Toolbar.onMeasure 核对）。仍显式写一遍 minHeight：
+     把 56dp 这个下限彻底钉死，也让「高度是有意压过的」一眼可见。
+
+  安全边距 24dp（电视 5% overscan）走「Toolbar 的 padding + 各行的 paddingStart/End +
+  ViewPager2 的 padding」，**不能写在根节点上**：DownloadActivity.applySystemBarInsets() 对
+  binding.root 调的是 setPadding(0, top, 0, bottom)，根节点的左右 padding 会被整段覆盖
+  （电视端 systemBars insets 通常为 0，等于被清零）。同时把 contentInsetStart/End 归零，
+  避免出现 16 + 24 的双重缩进。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:orientation="vertical">
+
+    <!-- 顶部工具栏：左右留 24dp 安全边距，背景仍铺满整行 -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:minHeight="40dp"
+        android:background="@color/colorSurface"
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp"
+        android:title="下载管理"
+        android:titleTextColor="@color/colorOnSurface"
+        app:contentInsetStart="0dp"
+        app:contentInsetEnd="0dp"
+        app:contentInsetStartWithNavigation="0dp"
+        android:paddingTop="16dp"
+    />
+
+    <!-- 存储信息 + 标签页（合并成一行，省下一行高度给列表） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/colorSurface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="32dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="32dp"
+        android:paddingBottom="6dp">
+
+        <!-- 标签页：属性与竖屏逐条对齐（含 tabMode / tabGravity），只改了高度与宽度策略 -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:background="@color/colorSurface"
+            app:tabGravity="fill"
+            app:tabIndicatorColor="@color/colorPrimary"
+            app:tabMode="fixed"
+            app:tabSelectedTextColor="@color/colorPrimary"
+            app:tabTextColor="@color/colorOnSurfaceSecondary" />
+
+        <TextView
+            android:id="@+id/tvTotalStorage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:text="总占用：0 B"
+            android:textColor="@color/colorOnSurfaceSecondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvFreeStorage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="剩余：未知"
+            android:textColor="@color/colorOnSurfaceSecondary"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 两个标签页的列表容器：padding 保证条目卡片不贴屏幕边缘（条目自身还有 8dp margin） -->
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp"
+        android:layout_marginTop="8dp"
+    />
+</LinearLayout>

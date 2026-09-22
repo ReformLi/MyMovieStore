@@ -41,7 +41,7 @@
 
     5. 下方三个信息模块（导演 / 主演 / 简介）**可聚焦但不可点击**：
        给遥控器多几个稳定的停靠点，同时不绑定任何点击行为。
-       焦点框直接走 XML 的 foreground，无需代码介入。
+       聚焦能力与自绘焦点环由 DetailActivity 在电视端用 TvFocus 赋予（本目录同时服务手机横屏，故不写进 XML）。
 
        ⚠️ 与之相对，**左栏「影片信息」卡刻意不可聚焦**（focusable=false、无 foreground）：
        遥控器焦点只允许在「右栏（播放线路 / 选集）+ 下方三卡」之间移动。
@@ -77,9 +77,9 @@
             android:layout_height="wrap_content"
             android:clipChildren="false"
             android:orientation="vertical"
-            android:paddingStart="20dp"
+            android:paddingStart="32dp"
             android:paddingTop="18dp"
-            android:paddingEnd="20dp"
+            android:paddingEnd="32dp"
             android:paddingBottom="24dp">
 
             <!-- ==================== 上半区：模块 A（3） | 模块 B（4），等高 ==================== -->
@@ -335,9 +335,10 @@
                  且刻意不写 maxLines / ellipsize —— 导演和主演有多少名字就占多少行，简介有多少
                  字就撑多高，一律不做截断（不会出现「...」）。整页由最外层 ScrollView 承接滚动。
 
-                 「可聚焦但不可点击」是纯 XML 实现的：focusable="true" 让遥控器能停在这里，
-                 foreground 提供焦点框，descendantFocusability="blocksDescendants" 把焦点锁在
-                 卡片本身，并且**不绑定任何 OnClickListener** —— 按确定键没有任何反应。
+                 「可聚焦但不可点击」的聚焦能力与焦点环由 DetailActivity 在电视端用
+                 TvFocus.applyFocusableOnly 赋予（本目录同时服务手机横屏，故不写进 XML）；
+                 XML 只保留 descendantFocusability="blocksDescendants" 把焦点锁在卡片本身，
+                 并且**不绑定任何 OnClickListener** —— 按确定键没有任何反应。
             -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -353,11 +354,8 @@
                     android:layout_marginTop="16dp"
                     android:background="@drawable/bg_detail_card"
                     android:clipChildren="false"
-                    android:defaultFocusHighlightEnabled="false"
                     android:descendantFocusability="blocksDescendants"
                     android:elevation="2dp"
-                    android:focusable="true"
-                    android:foreground="@drawable/bg_tv_focus_ring"
                     android:orientation="vertical"
                     android:padding="14dp">
 
@@ -388,11 +386,8 @@
                     android:layout_marginTop="12dp"
                     android:background="@drawable/bg_detail_card"
                     android:clipChildren="false"
-                    android:defaultFocusHighlightEnabled="false"
                     android:descendantFocusability="blocksDescendants"
                     android:elevation="2dp"
-                    android:focusable="true"
-                    android:foreground="@drawable/bg_tv_focus_ring"
                     android:orientation="vertical"
                     android:padding="14dp">
 
@@ -423,11 +418,8 @@
                     android:layout_marginTop="12dp"
                     android:background="@drawable/bg_detail_card"
                     android:clipChildren="false"
-                    android:defaultFocusHighlightEnabled="false"
                     android:descendantFocusability="blocksDescendants"
                     android:elevation="2dp"
-                    android:focusable="true"
-                    android:foreground="@drawable/bg_tv_focus_ring"
                     android:orientation="vertical"
                     android:padding="14dp">
 

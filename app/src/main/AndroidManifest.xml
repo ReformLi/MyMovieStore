@@ -73,7 +73,7 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:screenOrientation="landscape"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
+            android:theme="@style/Theme.MyMovieStore.Player" />
         <activity
             android:name=".presentation.activity.HistoryActivity"
             android:exported="false"

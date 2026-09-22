@@ -420,7 +420,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/tvClose"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
+            android:layout_height="48dp"
             android:layout_marginTop="14dp"
             android:text="@string/got_it"
             android:textColor="@color/colorOnSurface"
