@@ -240,9 +240,15 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
     private fun showClearCacheDialog() {
         val dialogBinding = DialogClearCacheBinding.inflate(layoutInflater)
 
-        val dialog = AlertDialog.Builder(requireContext(), R.style.ClearCacheDialog)
-            .setView(dialogBinding.root)
-            .create()
+        // 用普通 Dialog 承载自定义卡片，而非 AlertDialog.setView(自定义卡)：
+        // 本弹窗（以及帮助/关于/视频源/确认框等）都是整块自定义卡片，不使用 AlertDialog 的
+        // 标题/正文/按钮区。真机栈采样显示，走 AlertDialog 会在「点击→show()」的同步路径上
+        // 额外背 ~230ms 的 AppCompatDelegate subdecor + AlertDialogLayout 两趟布局，
+        // 并触发 MaterialComponentsViewInflater 把每个 <TextView> 转成 MaterialTextView 的
+        // inflate 开销 —— 这些正是把主线程占住、导致被点控件按压水波纹冻结在半程的元凶。
+        // 普通 Dialog 用窗口默认 FrameLayout 承载，视觉/交互（返回键、点遮罩取消）与原来一致。
+        val dialog = android.app.Dialog(requireContext(), R.style.ClearCacheDialog)
+        dialog.setContentView(dialogBinding.root)
 
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))

@@ -3,7 +3,6 @@ package com.hpu.mymoviestore.presentation.dialog
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
-import androidx.appcompat.app.AlertDialog
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.databinding.DialogConfirmBinding
 import com.hpu.mymoviestore.presentation.tv.TvFocus
@@ -33,7 +32,7 @@ object ConfirmDialog {
         positiveText: String = "确定",
         negativeText: String = "取消",
         onConfirm: () -> Unit
-    ): AlertDialog {
+    ): android.app.Dialog {
         val binding = DialogConfirmBinding.inflate(LayoutInflater.from(context))
 
         binding.tvConfirmTitle.text = title
@@ -46,9 +45,11 @@ object ConfirmDialog {
         binding.btnConfirm.text = positiveText
         binding.btnCancel.text = negativeText
 
-        val dialog = AlertDialog.Builder(context, R.style.CardDialog)
-            .setView(binding.root)
-            .create()
+        // 用普通 Dialog 承载自定义卡片，绕开 appcompat AlertDialog 的 subdecor +
+        // AlertDialogLayout 两趟布局（真机栈采样显示这是弹窗首帧固定开销、会冻结被点控件的
+        // 按压水波纹）。本弹窗是整块自定义卡片，不使用 AlertDialog 的标题/正文/按钮区，可安全替换。
+        val dialog = android.app.Dialog(context, R.style.CardDialog)
+        dialog.setContentView(binding.root)
 
         binding.btnCancel.setOnClickListener { dialog.dismiss() }
         binding.btnConfirm.setOnClickListener {

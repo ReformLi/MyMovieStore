@@ -49,9 +49,20 @@
         <item name="android:windowBackground">@color/player_background</item>
     </style>
 
+    <!-- 弹窗无窗口动画样式：关掉 enter/exit 动画。
+         真机栈采样（华为 Android 9）显示弹窗入场动画的 ObjectAnimator 反射初始化 +
+         与首帧布局叠加，会在「点击→show()」的同步路径上把主线程占住 150~300ms，
+         导致被点控件的按压水波纹冻结在半程（「一半置灰像卡住」）。
+         弹窗改为瞬时出现，去掉这段动画开销。 -->
+    <style name="NoDialogWindowAnimation">
+        <item name="android:windowEnterAnimation">@null</item>
+        <item name="android:windowExitAnimation">@null</item>
+    </style>
+
     <!-- 统一圆角弹框样式（12dp 圆角，背景色跟随日夜切换） -->
     <style name="RoundedDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
         <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
+        <item name="android:windowAnimationStyle">@style/NoDialogWindowAnimation</item>
     </style>
 
     <!-- 居中卡片弹窗通用样式（UI 规范 5.3.1）：窗口背景透明，圆角/背景由内部 MaterialCardView 承担 -->

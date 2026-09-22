@@ -6,7 +6,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -47,7 +46,7 @@ class EpisodeSelectDialog private constructor(
     private val binding = DialogEpisodeSelectBinding.inflate(LayoutInflater.from(context))
 
     private lateinit var adapter: EpisodeAdapter
-    private lateinit var dialog: AlertDialog
+    private lateinit var dialog: android.app.Dialog
 
     companion object {
         /** 与原调用方式对齐：构建后立即显示，确认时回传新增集数 */
@@ -79,9 +78,11 @@ class EpisodeSelectDialog private constructor(
             onConfirm(newEpisodes)
         }
 
-        dialog = AlertDialog.Builder(context, R.style.CardDialog)
-            .setView(binding.root)
-            .create()
+        // 用普通 Dialog 承载自定义卡片，绕开 appcompat AlertDialog 的 subdecor +
+        // AlertDialogLayout 两趟布局（真机栈采样显示这是弹窗首帧固定开销、会冻结被点控件的
+        // 按压水波纹）。本弹窗是整块自定义卡片，不使用 AlertDialog 的标题/正文/按钮区。
+        dialog = android.app.Dialog(context, R.style.CardDialog)
+        dialog.setContentView(binding.root)
         dialog.show()
 
         // 卡片自身负责圆角与背景：窗口透明 + 以屏宽短边为准的宽度。
