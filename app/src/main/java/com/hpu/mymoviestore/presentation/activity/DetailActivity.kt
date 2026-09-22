@@ -503,6 +503,7 @@ class DetailActivity : AppCompatActivity() {
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setPadding(dp(14), dp(8), dp(14), dp(8))
+                minHeight = dp(48)  // 触控热区达 48dp 标准
                 setTextColor(if (index == selectedLineIndex) ContextCompat.getColor(this@DetailActivity, R.color.colorPrimary) else ContextCompat.getColor(this@DetailActivity, R.color.colorOnSurfaceSecondary))
                 setBackgroundResource(if (index == selectedLineIndex) R.drawable.bg_chip_selected else R.drawable.bg_episode_normal)
                 setOnClickListener {
@@ -544,6 +545,7 @@ class DetailActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 maxLines = 1
                 setPadding(dp(6), dp(8), dp(6), dp(8))
+                minHeight = dp(48)  // 触控热区达 48dp 标准
                 setTextColor(if (isSelected) Color.WHITE else ContextCompat.getColor(this@DetailActivity, R.color.colorOnSurfaceSecondary))
                 setBackgroundResource(if (isSelected) R.drawable.bg_episode_selected else R.drawable.bg_episode_normal)
                 setOnClickListener {

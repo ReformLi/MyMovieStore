@@ -221,6 +221,17 @@
     </LinearLayout>
 
     <!-- ==================== 结果态（整页接管，与首页同款摆放） ==================== -->
+    <!--
+      竖向预算（只影响本横屏变体）：TV 端正文画布很矮 —— 720p 经 TvUiSupport 放大密度后只剩约 329dp，
+      而网格卡片一行就要 155dp。原先摘要单独占一行 + 分页栏用 INVISIBLE 常驻占位（68dp）与网格争高，
+      网格被压成「恰好装得下一行」，于是下键换行时才滚出下一行。现在改为：
+      · 摘要（tvSearchSummary）并入标题行右侧，不再单独占一行；标题行上内边距 20dp → 10dp
+      · 分页栏改成叠在网格区底部的覆盖层：完全不占网格高度，掀起时仍是「原地浮现」，网格高度不变（不跳）
+      · 覆盖层会盖住最后一行的下半截，故掀起时由 SearchFragment.syncGridBottomPaddingForPagination()
+        按分页栏实测高度给网格补一段 paddingBottom（clipToPadding=false，只改内容布局边界，不改视口高度），
+        把最后一行整体抬到分页栏上方；收起时还原。
+      id 集合与改前完全一致（ViewBinding 要求横屏变体含竖屏全部同名 id）。
+    -->
     <LinearLayout
         android:id="@+id/layoutSearchResultPage"
         android:layout_width="match_parent"
@@ -236,7 +247,7 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="24dp"
-            android:paddingTop="20dp"
+            android:paddingTop="10dp"
             android:paddingEnd="24dp"
             android:paddingBottom="6dp">
 
@@ -250,6 +261,18 @@
                 android:textColor="@color/text_primary"
                 android:textSize="20sp"
                 android:textStyle="bold" />
+
+            <!-- 摘要（共 N 条 · 第 M 页）原先单独占一行，现并入标题行右侧省下行高 -->
+            <TextView
+                android:id="@+id/tvSearchSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/btnBackToSearch"
@@ -265,82 +288,80 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvSearchSummary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:paddingBottom="6dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvResultEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="没有搜索到相关影片"
-            android:textColor="@color/text_secondary"
-            android:textSize="16sp"
-            android:visibility="gone" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
+        <!-- 网格区：占位文案 / 结果网格 / 分页覆盖层 三者同槽叠放（靠 visibility 互斥） -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipChildren="false"
-            android:clipToPadding="false"
-            android:paddingStart="32dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="32dp"
-            android:paddingBottom="6dp"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:id="@+id/layoutPagination"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@color/surface_background"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingStart="32dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="32dp"
-            android:paddingBottom="10dp"
-            android:visibility="gone">
+            android:clipToPadding="false">
 
             <TextView
-                android:id="@+id/btnPrevPage"
-                android:layout_width="88dp"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_episode_normal"
+                android:id="@+id/tvResultEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:gravity="center"
-                android:text="上一页"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
-
-            <TextView
-                android:id="@+id/tvPageInfo"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
+                android:text="没有搜索到相关影片"
                 android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
+                android:textSize="16sp"
+                android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/btnNextPage"
-                android:layout_width="88dp"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_episode_normal"
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingStart="32dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="32dp"
+                android:paddingBottom="6dp"
+                android:visibility="gone" />
+
+            <!-- 覆盖层：贴在网格区底部，不参与网格高度分配；最后一个子 View 故绘制在上层 -->
+            <LinearLayout
+                android:id="@+id/layoutPagination"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="@color/surface_background"
                 android:gravity="center"
-                android:text="下一页"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
-        </LinearLayout>
+                android:orientation="horizontal"
+                android:paddingStart="32dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="32dp"
+                android:paddingBottom="10dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/btnPrevPage"
+                    android:layout_width="88dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_episode_normal"
+                    android:gravity="center"
+                    android:text="上一页"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/tvPageInfo"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/btnNextPage"
+                    android:layout_width="88dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_episode_normal"
+                    android:gravity="center"
+                    android:text="下一页"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 </LinearLayout>

@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -81,10 +82,45 @@ class HomeFragment : Fragment() {
 
         setupViews()
         setupTabs()
+        setupSubTabsGestureConflict()
         observeData()
 
         // 首次加载：全量视频列表
         viewModel.loadAllVideos()
+    }
+
+    /**
+     * 修复：子分类横向滚动条 [com.hpu.mymoviestore.R.id.layoutMovieSubTabs]（HorizontalScrollView）
+     * 嵌在 MainActivity 的 ViewPager2 里，二者都响应横向拖拽。ViewPager2 内部是 RecyclerView，
+     * 会在横滑时拦截事件，而 HorizontalScrollView 不参与嵌套滚动 → 子分类超出屏宽时，
+     * 手指在其上横滑会被 ViewPager2 抢去切主 Tab，手机端滑不到后面的分类。
+     *
+     * 处理：按下即禁止父级拦截；当已滑到左/右边界、用户仍继续朝该方向拉时放行，
+     * 让 ViewPager2 接管切页。返回 false 不消费事件，HSV 自身滚动不受影响。
+     * 仅触屏需要，电视端走 D-pad（scrollContainer 已处理），此监听对遥控器无副作用。
+     */
+    private fun setupSubTabsGestureConflict() {
+        var lastX = 0f
+        binding.layoutMovieSubTabs.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastX = event.x
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - lastX
+                    lastX = event.x
+                    // dx>0 向右拉（看左侧内容）；dx<0 向左拉（看右侧内容）
+                    val atLeftEdgePullingRight = dx > 0 && !v.canScrollHorizontally(-1)
+                    val atRightEdgePullingLeft = dx < 0 && !v.canScrollHorizontally(1)
+                    val yieldToPager = atLeftEdgePullingRight || atRightEdgePullingLeft
+                    v.parent?.requestDisallowInterceptTouchEvent(!yieldToPager)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            false
+        }
     }
 
     private var currentSpanCount = 3
@@ -158,6 +194,7 @@ class HomeFragment : Fragment() {
                 textSize = 14f
                 gravity = android.view.Gravity.CENTER
                 setPadding(dp(16), dp(8), dp(16), dp(8))
+                minHeight = dp(48)  // 触控热区达 48dp 标准（原 padding 高度约 34dp，手机易误触相邻项）
             }
             // TV 适配：子分类可遥控器聚焦 + 焦点框，获焦时自动横向滚动到可见
             TvFocus.applyTo(chip, scale = 1.06f, scrollContainer = binding.layoutMovieSubTabs)

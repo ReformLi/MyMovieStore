@@ -121,6 +121,9 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     private var tvBtnBackToSearch: View? = null
     private var tvResultEmpty: TextView? = null
 
+    /** 结果网格的 XML 底部内边距基线，供分页栏覆盖层掀起时在其上叠加高度（见 [syncGridBottomPaddingForPagination]） */
+    private var resultGridBasePaddingBottom = 0
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -342,6 +345,8 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             tvRecyclerView?.layoutManager = GridLayoutManager(context, currentSpanCount)
             tvRecyclerView?.adapter = tvAdapter
             tvAdapter.setSpanCount(currentSpanCount)
+            // 记下 XML 里的底部内边距基线：分页栏覆盖层掀起时在这段基线上加分页栏高度
+            tvRecyclerView?.let { resultGridBasePaddingBottom = it.paddingBottom }
         } else {
             // 手机端：竖向大卡片列表（9/11 基线的搜索结果形态）
             binding.recyclerView.layoutManager = LinearLayoutManager(context)
