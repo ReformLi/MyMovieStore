@@ -18,6 +18,8 @@ import kotlin.math.max
  *  - onDraw 每帧通过 System.currentTimeMillis() 推算当前视频时间，无需外部每秒同步
  *  - syncTo() 仅在播放器 seek（跳转）时调用，用来校准时间基准
  *  - 暂停/恢复通过 pause()/resume() 控制，内部自动处理时间偏移
+ *  - 绘制循环由 postInvalidateOnAnimation() 驱动（vsync 对齐，跟随屏幕原生刷新率）；
+ *    关闭/暂停/空列表/脱离窗口时自动停摆，任意外部 invalidate 即自动恢复
  *  - 扫描游标每帧按时间窗口二分重定位，时间跳变等异常可自动恢复
  *  - 墙钟跳变防御：系统时间前跳（NTP 校时等）时跳过当帧弹幕添加，等待校准恢复
  *
@@ -90,11 +92,15 @@ class DanmakuView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         typeface = android.graphics.Typeface.DEFAULT_BOLD
+        // 阴影一次性设置：原先每帧 onDraw 都 setShadowLayer，属无谓的 Paint 状态重建
+        setShadowLayer(2f, 1f, 1f, Color.argb(180, 0, 0, 0))
     }
 
     // 行高（动态计算）
     private var rowHeightPx: Float = 40f
-    private var lastDrawWallMs: Long = System.currentTimeMillis()
+
+    /** 上一帧的 System.nanoTime()：帧间隔专用单调时钟，不受系统时间跳变影响、分辨率高于毫秒 */
+    private var lastDrawNano: Long = System.nanoTime()
 
     // 上一帧的墙钟偏移（now - wallClockBase），用于检测系统时间前跳（NTP 校时等）
     private var lastWallDeltaMs: Long = -1L
@@ -103,6 +109,11 @@ class DanmakuView(context: Context) : View(context) {
     private val scrollDurationMs: Long = 10_000L
     // 固定弹幕：显示 4 秒后消失
     private val fixedDurationMs: Long = 4_000L
+
+    // findScrollRow 复用缓冲区：弹幕高峰期每帧可调用数十~200 次，
+    // 每次新建两个数组会在密集场景制造持续 GC 压力（偶发真掉帧的来源之一）
+    private var rowTailScratch = FloatArray(0)
+    private var rowCountScratch = IntArray(0)
 
     // 已扫描到的弹幕索引（避免每帧都从头遍历）
     private var scanIndex: Int = 0
@@ -184,7 +195,11 @@ class DanmakuView(context: Context) : View(context) {
     fun setDanmakuEnabled(on: Boolean) {
         enabled = on
         Log.d(TAG, "setDanmakuEnabled=$on")
-        if (on) invalidate()
+        if (on) {
+            // 重新使能前刷新帧间隔基准，避免停摆期累积成一次性大 delta
+            lastDrawNano = System.nanoTime()
+            invalidate()
+        }
     }
 
     fun setPaused(isPaused: Boolean) {
@@ -198,6 +213,8 @@ class DanmakuView(context: Context) : View(context) {
             paused = false
             videoTimeMs = pausedVideoTimeMs
             wallClockBase = System.currentTimeMillis()
+            // 暂停期间循环停摆，恢复前刷新帧间隔基准，避免弹幕恢复瞬间跳一截
+            lastDrawNano = System.nanoTime()
             Log.d(TAG, "resume from ${pausedVideoTimeMs}ms")
             invalidate()
         }
@@ -275,7 +292,10 @@ class DanmakuView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (!enabled || !prepared || danmakuList.isEmpty()) {
-            postInvalidateDelayed(50L)
+            // 不排帧 = 自驱动循环停摆：弹幕关闭/未就绪/空列表时不再以 20fps 持续重绘，
+            // 避免空闲帧与播放器争抢主线程与合成资源；
+            // 刷新帧间隔基准，防止停摆期间累积出一次性大 delta（恢复瞬间弹幕跳一截）
+            lastDrawNano = System.nanoTime()
             return
         }
 
@@ -298,10 +318,11 @@ class DanmakuView(context: Context) : View(context) {
         val maxRows = (viewHeight / rowHeightPx).toInt().coerceAtLeast(2)
         val defaultTextSize = rowHeightPx * 0.7f
 
-        // 帧间隔（真实时间）
+        // 帧间隔：用单调时钟测量（ currentTimeMillis 毫秒粒度在 90/120Hz 下会量化成 8/9ms 抖动）
         val nowWallMs = System.currentTimeMillis()
-        val frameMs = (nowWallMs - lastDrawWallMs).coerceIn(0L, 100L)
-        lastDrawWallMs = nowWallMs
+        val nowNano = System.nanoTime()
+        val frameMs = ((nowNano - lastDrawNano) / 1_000_000L).coerceIn(0L, 100L)
+        lastDrawNano = nowNano
 
         // 当前视频时间（自驱动，不依赖外部 syncTo）
         val currentVideoMs = getCurrentVideoMs()
@@ -316,7 +337,7 @@ class DanmakuView(context: Context) : View(context) {
             if (lastWallDeltaMs >= 0 && wallDelta - lastWallDeltaMs > MAX_CLOCK_JUMP_MS) {
                 Log.w(TAG, "检测到时钟跳变 (wallDelta ${lastWallDeltaMs}ms -> ${wallDelta}ms)，跳过本帧弹幕添加")
                 lastWallDeltaMs = wallDelta
-                postInvalidateDelayed(FRAME_INTERVAL_MS)
+                postInvalidateOnAnimation()
                 return
             }
             lastWallDeltaMs = wallDelta
@@ -458,7 +479,7 @@ class DanmakuView(context: Context) : View(context) {
             paint.textSize = defaultTextSize
 
             when (item.type) {
-                in listOf(1, 2, 3, 6) -> {
+                1, 2, 3, 6 -> {
                     // 计算弹幕已经"飞行"了多久（当前视频时间 - 弹幕出现时间）
                     val elapsedMs = currentVideoMs - (item.timeSec * 1000f).toLong()
                     // 限制入场延迟：延迟过久的弹幕从右边缘开始，不从中间出现
@@ -487,7 +508,7 @@ class DanmakuView(context: Context) : View(context) {
                         markAdded(item, currentVideoMs)
                     }
                 }
-                in listOf(5, 7) -> {
+                5, 7 -> {
                     val row = findFreeRow(activeTop, maxRows)
                     if (row >= 0) {
                         activeTop.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
@@ -495,7 +516,7 @@ class DanmakuView(context: Context) : View(context) {
                         addedThisFrame++
                     }
                 }
-                in listOf(4, 8) -> {
+                4, 8 -> {
                     val row = findFreeRow(activeBottom, maxRows)
                     if (row >= 0) {
                         activeBottom.add(ActiveDanmaku(item, 0f, row, (item.timeSec * 1000f).toLong(), tw))
@@ -543,8 +564,7 @@ class DanmakuView(context: Context) : View(context) {
         }
 
         // ========== 4. 绘制 ==========
-        paint.setShadowLayer(2f, 1f, 1f, Color.argb(180, 0, 0, 0))
-        paint.textSize = baseTextSize  // 统一设置字体大小
+        paint.textSize = baseTextSize  // 统一设置字体大小（阴影已在 paint 初始化时一次性设置）
 
         // 滚动弹幕：从右向左
         for (ad in activeScroll) {
@@ -570,9 +590,18 @@ class DanmakuView(context: Context) : View(context) {
             if (y > 0) canvas.drawText(ad.item.text, x, y, paint)
         }
 
-        // 请求下一帧
-        postInvalidateDelayed(FRAME_INTERVAL_MS)
+        // 请求下一帧：vsync 对齐。旧实现 postInvalidateDelayed(33ms) 与 vsync 相位随机漂移，
+        // 弹幕有时只显示 16.7ms、有时 33.4ms 就被推走，匀速运动以不均匀节奏上屏——
+        // 这正是"滑动掉帧感"的主因；postInvalidateOnAnimation 让重绘严格跟随屏幕刷新节拍，
+        // 并在 90/120Hz 屏自动升到对应帧率
+        if (shouldKeepLooping()) {
+            postInvalidateOnAnimation()
+        }
     }
+
+    /** 自驱动绘制循环是否继续；停摆后任何外部 invalidate（syncTo/开关/恢复）都会自动重启循环 */
+    private fun shouldKeepLooping(): Boolean =
+        isAttachedToWindow && enabled && prepared && !paused && danmakuList.isNotEmpty()
 
     // ================== 辅助方法 ==================
 
@@ -593,8 +622,14 @@ class DanmakuView(context: Context) : View(context) {
         maxRows: Int,
         gapPx: Float
     ): Int {
-        val rowTailX = FloatArray(maxRows) { -1f }
-        val rowCount = IntArray(maxRows) { 0 }
+        if (rowTailScratch.size < maxRows) {
+            rowTailScratch = FloatArray(maxRows)
+            rowCountScratch = IntArray(maxRows)
+        }
+        val rowTailX = rowTailScratch
+        val rowCount = rowCountScratch
+        rowTailX.fill(-1f, 0, maxRows)
+        rowCount.fill(0, 0, maxRows)
         for (ad in activeScroll) {
             if (ad.row in 0 until maxRows) {
                 // 所有活跃弹幕都计入尾部（含屏幕外右侧的新弹幕）
@@ -639,7 +674,6 @@ class DanmakuView(context: Context) : View(context) {
 
     companion object {
         private const val TAG = "DanmakuView"
-        private const val FRAME_INTERVAL_MS: Long = 33L
         private const val MAX_DANMAKU_PER_ROW = 8
         private const val MAX_PENDING_DANMAKU = 200
         /** pending 溢出被弹掉的弹幕最多保留条数（下帧只给一次重试机会） */
