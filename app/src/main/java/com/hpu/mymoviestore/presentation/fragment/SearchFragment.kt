@@ -531,8 +531,11 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
     /**
      * 电视端分页栏显隐。
      *
-     * 为何未掀起时用 INVISIBLE 而不是 GONE：结果网格是 `weight=1`，分页栏一旦 GONE，
-     * 网格高度会跟着变，掀起/收起时整片网格上下跳；INVISIBLE 保留占位，分页栏「原地浮现」。
+     * 分页栏在横屏布局里是**叠在网格区底部的覆盖层**（`layout_gravity=bottom`），不再与网格争高度
+     * —— 早先它是 `weight=1` 网格的下方兄弟节点，未掀起时用 INVISIBLE 占位，等于永久吞掉 68dp 行高，
+     * TV 上把网格压成「恰好一行」，下键换行时才滚出下一行。
+     * 现在未掀起时仍用 INVISIBLE 而不是 GONE：一来保持「原地浮现」的观感，二来覆盖层只有被测量过
+     * 才有 `height`，[syncGridBottomPaddingForPagination] 要靠它算抬升量。
      * 同时未掀起时把子控件设为 FOCUS_BLOCK_DESCENDANTS —— 不可见就绝不能可聚焦
      * （本项目已多次被「看不见却可聚焦」坑过）。
      */
@@ -548,6 +551,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
             paginationRevealed = false
             bar.visibility = View.GONE
             bar.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            syncGridBottomPaddingForPagination()        // 覆盖层没了，网格的抬升量一并清零
             if (wasRevealed) handOffFocusToResult()      // 掀起态下分页栏失效：焦点不能凭空消失
             return
         }
@@ -557,6 +561,28 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         } else {
             ViewGroup.FOCUS_BLOCK_DESCENDANTS
         }
+        syncGridBottomPaddingForPagination()
+    }
+
+    /**
+     * 分页栏覆盖层掀起时，给结果网格补一段等于分页栏高度的 `paddingBottom`，
+     * 把最后一行整体抬到分页栏上方；收起时还原到 XML 基线值。
+     *
+     * 网格本身 `clipToPadding=false`，所以这段 padding 只改变内容布局边界（滚动到底时最后一行的停靠位），
+     * 不改变视口高度 —— 网格不会因为掀起分页栏而缩一截，也就不会有「整片网格上下跳」。
+     * 只在掀起态加抬升量：收起态覆盖层是 INVISIBLE，不绘制也就不遮内容。
+     */
+    private fun syncGridBottomPaddingForPagination() {
+        if (!isTvMode) return
+        val rv = tvRecyclerView ?: return
+        val bar = tvLayoutPagination ?: return
+        val extra = if (paginationRevealed && bar.visibility == View.VISIBLE) {
+            // 首次掀起前分页栏一直是 INVISIBLE，正常已测量过；尚未测量时退到 measuredHeight
+            (if (bar.height > 0) bar.height else bar.measuredHeight).coerceAtLeast(0)
+        } else {
+            0
+        }
+        rv.setPadding(rv.paddingLeft, rv.paddingTop, rv.paddingRight, resultGridBasePaddingBottom + extra)
     }
 
     /** 焦点离开分页栏就收起。延后一拍判断，避免 prev -> next 的内部移动被误判成「离开」 */

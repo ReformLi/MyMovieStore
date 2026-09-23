@@ -291,6 +291,7 @@ ShenMaVideoSource / A38TvVideoSource / XingChenVideoSource / KaCheVideoSource
 * 实测：1080p 电视 `densityDpi ≈ 320` → 画布 960dp；放大后 ≈662dp，正文 14sp 渲染约 41px，符合 3 米视距下的可读性要求。
 * ⚠️ 改 `densityDpi` **必须同步重算** `screenWidthDp` / `screenHeightDp` / `smallestScreenWidthDp`，否则会留下「物理 1080p、密度 464、却仍声称宽 960dp」这种自相矛盾的 Configuration，任何读 `screenWidthDp` 的代码（含资源限定符匹配）都会拿到错值。
 * ⚠️ 密度放大对**纯 px 直算的自绘 View 无效**（如 `DanmakuView`），这类尺寸必须自己按形态分档 —— 见下方「弹幕字号随形态自适应」。
+* ⚠️ **高度方向的预算比宽度紧张得多**：720p / `densityDpi 213` 的电视放大后纵向只剩 `720 / 1.925 ≈ 374dp`，扣掉顶部 `tvNavBar` 只剩约 329dp 正文画布，而一张网格卡片行就要 155dp（封面按手机竖屏公式 `150dp × 3 / span` 算）。所以横屏页面上**任何常驻条带都在和 `weight=1` 的网格争高度**：搜索页曾同时有「标题行 74dp + 摘要行 25dp + 分页栏 INVISIBLE 占位 68dp」三条常驻，把网格压成恰好 1.04 行 —— 症状是只显示第一行结果，按下键换行时才滚出下一行。取舍口径：常驻条带能并进标题行的就并进去（摘要已并入标题行右侧）；必须留在底部又不能占高的就改**覆盖层**（`layout_gravity="bottom"` 叠在网格区），需要避让时按覆盖层实测高度给网格临时补 `paddingBottom`（`clipToPadding=false`，只改滚动停靠位、不改视口高度，因此不会上下跳）。取证手法：`adb shell uiautomator dump` 读各节点 bounds，比读代码猜可靠。
 
 ### 遥控器焦点体系（`TvFocus`）
 
@@ -400,7 +401,7 @@ val baseTextSize = minOf(viewWidth / 35f, viewHeight * rowsRatio).coerceIn(18f, 
 | -------- | ------------------------------------------------------------ |
 | 主页面 | 顶部 `tvNavBar` 替代底部导航 |
 | 首页 | 网格列数按 120dp 基准重算（电视约 5 列） |
-| 搜索结果 | 右栏 = 二维码伴侣；结果网格之外的分页栏由 `TvContentKeyHandler` 接管「翻出容器」的下键 |
+| 搜索结果 | 两态互斥：**输入态** = 左搜索区 + 右栏二维码伴侣；**结果态** = 整页接管（标题行含关键词 + 摘要 + 「重新搜索」，摘要不单独占行）+ 首页式网格。网格区是一层 `FrameLayout`，分页栏以覆盖层贴在底部（不占网格高度），下键走到最后一行由 `TvContentKeyHandler` 接管 → 掀起分页栏并按其高度给网格补 `paddingBottom`，把最后一行抬到分页栏上方 |
 | 详情页 | 左右分栏：左「影片信息」**纯展示不可聚焦**，右上「线路 / 选集」+ 右下三张信息卡；主操作行在电视端整行 `GONE`（播放入口即选集网格）；无播放线路时整张线路卡 `GONE` |
 | 我的 | 左右 2:3 分栏；下载管理入口在电视端剔除 |
 | 播放历史 | 紧凑操作条 + 网格列表 |
