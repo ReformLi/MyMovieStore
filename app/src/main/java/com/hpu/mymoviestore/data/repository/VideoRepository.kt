@@ -265,20 +265,6 @@ class VideoRepository(
         return resultWithError
     }
 
-    suspend fun searchVideos(keyword: String): List<VideoItem> {
-        return if (preferCrawler && videoSources.isNotEmpty()) {
-            val enabledSources = videoSources.filter { it.enabled }
-            if (enabledSources.isEmpty()) {
-                localSource.searchVideos(keyword)
-            } else {
-                enabledSources.firstOrNull()?.searchVideos(keyword, 1)?.getOrNull()?.items
-                    ?: localSource.searchVideos(keyword)
-            }
-        } else {
-            localSource.searchVideos(keyword)
-        }
-    }
-
     /**
      * 多源并行搜索 + 插空法合并结果。
      */
@@ -351,15 +337,11 @@ class VideoRepository(
         )
     }
 
-    // 根据 ID 获取视频详情（优先从本地，本地没有则尝试爬虫）
+    // 根据 ID 获取视频详情（当前仅本地源；爬虫路径见 getVideoByDetailUrl）
     suspend fun getVideoById(id: Long): VideoItem? {
         val localVideo = localSource.getVideoById(id)
         if (localVideo != null && localVideo.playUrl.isNotBlank()) {
             return localVideo
-        }
-
-        if (preferCrawler && videoSources.isNotEmpty()) {
-            return null
         }
         return null
     }

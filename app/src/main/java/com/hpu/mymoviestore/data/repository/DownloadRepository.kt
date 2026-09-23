@@ -135,8 +135,15 @@ class DownloadRepository(
     }
 
     suspend fun pauseAll() {
+        // 含 MERGING：若 App 恰在任务合并时被杀，重启后内存引擎已销毁，
+        // 该任务会以「合并中」状态成为孤儿，既不参与重启恢复也不在已完成列表。
+        // 一并重置为暂停，交由用户手动恢复。
         taskDao.updateStatuses(
-            listOf(DownloadTaskEntity.STATUS_PENDING, DownloadTaskEntity.STATUS_DOWNLOADING),
+            listOf(
+                DownloadTaskEntity.STATUS_PENDING,
+                DownloadTaskEntity.STATUS_DOWNLOADING,
+                DownloadTaskEntity.STATUS_MERGING
+            ),
             DownloadTaskEntity.STATUS_PAUSED
         )
     }

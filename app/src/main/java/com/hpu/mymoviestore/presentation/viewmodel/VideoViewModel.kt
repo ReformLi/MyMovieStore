@@ -19,7 +19,6 @@ import kotlinx.coroutines.withContext
  * 数据流程：
  * - loadAllVideos()        异步加载 → _allVideos LiveData
  * - loadVideosByCategory(category) 按分类过滤
- * - searchVideos(keyword)  关键字搜索
  * - getVideoById(id)       详情页异步获取单条视频
  */
 class VideoViewModel : ViewModel() {
@@ -31,9 +30,6 @@ class VideoViewModel : ViewModel() {
 
     private val _filterVideos = MutableLiveData<List<VideoItem>>()
     val filterVideos: LiveData<List<VideoItem>> = _filterVideos
-
-    private val _searchVideos = MutableLiveData<List<VideoItem>>()
-    val searchVideos: LiveData<List<VideoItem>> = _searchVideos
 
     private val _searchPageResult = MutableLiveData<SearchPageResult>()
     val searchPageResult: LiveData<SearchPageResult> = _searchPageResult
@@ -133,18 +129,6 @@ class VideoViewModel : ViewModel() {
             }
             _homeMovieHasMore.postValue(page.hasMore)
             page.error?.let { _error.postValue(it) }
-            _loading.postValue(false)
-        }
-    }
-
-    /** 关键字搜索视频列表 */
-    fun searchVideos(keyword: String) {
-        Log.d(TAG, "searchVideos(keyword=$keyword)")
-        viewModelScope.launch {
-            _loading.postValue(true)
-            _error.postValue(null)
-            val list = repository.searchVideos(keyword)
-            _searchVideos.postValue(list)
             _loading.postValue(false)
         }
     }

@@ -96,7 +96,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
         Log.d(TAG, "========== MovieApplication.onCreate 开始 ==========")
 
         val database = MovieDatabase.getInstance(this)
-        Log.d(TAG, "Room 数据库初始化完成 (movie_database, v4)")
+        Log.d(TAG, "Room 数据库初始化完成 (movie_database, v1)")
 
         // Repositories
         playHistoryRepository = PlayHistoryRepository(database.playHistoryDao())
@@ -122,7 +122,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
             videoSources = _allVideoSources,
             discoverySource = doubanDiscoverySource,
             cacheRepository = apiCacheRepository,
-            preferCrawler = true   // 暂时开启爬虫优先，上线前可改为 false 或通过配置控制
+            preferCrawler = true   // 爬虫优先（19 个爬虫源为产品核心）；false 时走本地 assets 挡板兜底
         )
 
         // 视频源远程配置管理器：同步加载缓存（毫秒级）或首次远程获取（重试 5 次）
