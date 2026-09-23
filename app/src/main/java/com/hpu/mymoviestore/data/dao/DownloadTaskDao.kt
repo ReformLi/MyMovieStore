@@ -78,6 +78,10 @@ interface DownloadTaskDao {
     @Query("UPDATE download_task SET localFilePath = :localFilePath, updateTime = :updateTime WHERE taskId = :taskId")
     suspend fun updateLocalFilePath(taskId: String, localFilePath: String, updateTime: Long = System.currentTimeMillis())
 
+    /** 仅更新文件大小（完成时保留下载期间写入的真实分片计数，不覆写为 1/1） */
+    @Query("UPDATE download_task SET fileSize = :fileSize, updateTime = :updateTime WHERE taskId = :taskId")
+    suspend fun updateFileSize(taskId: String, fileSize: Long, updateTime: Long = System.currentTimeMillis())
+
     /** 更新弹幕下载状态 */
     @Query("UPDATE download_task SET danmakuStatus = :danmakuStatus, danmakuFilePath = :danmakuFilePath, danmakuError = :danmakuError, updateTime = :updateTime WHERE taskId = :taskId")
     suspend fun updateDanmakuStatus(taskId: String, danmakuStatus: Int, danmakuFilePath: String = "", danmakuError: String = "", updateTime: Long = System.currentTimeMillis())

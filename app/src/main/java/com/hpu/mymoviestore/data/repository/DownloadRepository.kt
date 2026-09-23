@@ -169,7 +169,9 @@ class DownloadRepository(
     suspend fun markCompleted(taskId: String, localFilePath: String, fileSize: Long) {
         taskDao.updateStatus(taskId, DownloadTaskEntity.STATUS_COMPLETED)
         taskDao.updateLocalFilePath(taskId, localFilePath)
-        taskDao.updateProgress(taskId, downloadedSegments = 1, totalSegments = 1, fileSize = fileSize)
+        // 只更新文件大小：分片计数保留下载期间写入的真实值（downloaded == total 即 100%），
+        // 不再覆写成 1/1 抹掉数据
+        taskDao.updateFileSize(taskId, fileSize)
         Log.d(TAG, "任务下载完成: taskId=$taskId, size=${fileSize}")
     }
 

@@ -82,7 +82,9 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
     private fun setupTvFocus() {
         if (isTv) {
             binding.cardDownload.visibility = View.GONE
-            binding.switchDanmu.isFocusable = false
+            // 规范：焦点能力一律经 TvFocus（TV 端取消开关自身聚焦，焦点停靠整行卡片；
+            // 手机端 no-op，本方法已在 isTv 分支内）
+            TvFocus.setFocusable(binding.switchDanmu, enabled = false)
             binding.cardDanmu.setOnClickListener { binding.switchDanmu.toggle() }
         }
         tvMenuCards().forEach { TvFocus.applyTo(it, scale = 1.02f) }

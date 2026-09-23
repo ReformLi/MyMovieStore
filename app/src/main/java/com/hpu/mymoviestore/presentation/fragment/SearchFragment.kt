@@ -941,6 +941,7 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         Log.d(TAG, "SearchFragment onDestroyView")
         tvSearchServer?.stop()
         tvSearchServer = null
+        handler.removeCallbacksAndMessages(null)
         _binding = null
         tvRoot = null
     }

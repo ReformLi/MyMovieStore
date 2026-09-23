@@ -791,23 +791,36 @@ class DownloadEngine(context: Context) {
                 throw IOException("合并失败：缺失 ${missingSegments.size} 个分片（首个缺失 index=${missingSegments.first()}），已终止合并，不产出坏文件")
             }
 
-            FileOutputStream(outputFile).use { fos ->
-                for (i in task.segmentUrls.indices) {
-                    val segmentFile = File(taskTempDir, String.format("%05d.ts", i))
+            try {
+                FileOutputStream(outputFile).use { fos ->
+                    for (i in task.segmentUrls.indices) {
+                        // 协作检查：暂停/取消在大文件合并期间也要即时生效（此前合并中点暂停，
+                        // 通知立即变"已暂停"但合并仍在后台跑完，是假暂停）。
+                        // 同时检查协程取消：合并期间被快速恢复时旧协程已被 cancel，
+                        // 不在此退出就会与新协程并发写同一个输出文件。
+                        if (task.isCancelled.get() || task.isPaused.get() || !coroutineContext.isActive) {
+                            throw CancellationException("合并被中断: taskId=${task.taskId}")
+                        }
+                        val segmentFile = File(taskTempDir, String.format("%05d.ts", i))
 
-                    segmentFile.inputStream().use { sis ->
-                        val buffer = ByteArray(524288)
-                        var bytesRead: Int
-                        while (sis.read(buffer).also { bytesRead = it } != -1) {
-                            fos.write(buffer, 0, bytesRead)
+                        segmentFile.inputStream().use { sis ->
+                            val buffer = ByteArray(524288)
+                            var bytesRead: Int
+                            while (sis.read(buffer).also { bytesRead = it } != -1) {
+                                fos.write(buffer, 0, bytesRead)
+                            }
+                        }
+
+                        if (i % 20 == 0 || i == task.segmentUrls.lastIndex) {
+                            Log.d(TAG, "合并分片: $i/${task.segmentUrls.size}")
                         }
                     }
-
-                    if (i % 20 == 0 || i == task.segmentUrls.lastIndex) {
-                        Log.d(TAG, "合并分片: $i/${task.segmentUrls.size}")
-                    }
+                    fos.flush()
                 }
-                fos.flush()
+            } catch (e: CancellationException) {
+                // 中断产生的是半截坏文件，删掉避免残留在下载目录（恢复后会重新合并）
+                runCatching { outputFile.delete() }
+                throw e
             }
 
             Log.d(TAG, "合并完成: ${outputFile.absolutePath}, size=${outputFile.length()}")

@@ -61,6 +61,7 @@ import com.hpu.mymoviestore.data.repository.DanmakuRepository
 import com.hpu.mymoviestore.databinding.ActivityPlayerBinding
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuManager
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
+import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.viewmodel.PlayerViewModel
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -1089,8 +1090,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun applyTvPlaybackControls() {
         binding.playerView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         listOf(binding.btnBack, binding.btnPiP, binding.btnRotate, binding.btnLock).forEach {
-            it.isFocusable = false
-            it.isFocusableInTouchMode = false
+            // 规范：焦点能力一律经 TvFocus（本方法仅在 isTv 分支调用，语义不变）
+            TvFocus.setFocusable(it, enabled = false)
         }
         // 电视上不存在的能力直接不显示：
         // - 画中画：Android TV 不支持
@@ -1226,7 +1227,8 @@ class PlayerActivity : AppCompatActivity() {
         container.clipChildren = true
         container.clipToPadding = false
         container.isClickable = false
-        container.isFocusable = false
+        // 规范：焦点能力一律经 TvFocus（手机端 no-op，容器 XML 无 focusable 属性、默认不可聚焦，行为不变）
+        TvFocus.setFocusable(container, enabled = false)
         dm.reattachToContainer(container)
 
         applyDanmakuDisplayArea(danmakuAreaRatio)
