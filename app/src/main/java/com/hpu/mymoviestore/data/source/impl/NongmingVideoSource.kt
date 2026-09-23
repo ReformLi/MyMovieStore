@@ -121,72 +121,7 @@ class NongmingVideoSource(
         )
     }
 
-    /**
-     * 从播放页脚本中提取真实视频地址（m3u8）
-     *
-     * 该站点使用 player_aaaa 对象封装播放数据，格式与基类兼容。
-     * 增加了 URL 解码逻辑，防止百分号编码导致播放失败。
-     */
-    override fun extractRealVideoUrl(scriptContent: String): String? {
-        Log.d(logTag, "========== extractRealVideoUrl 开始 ==========")
-
-        // 方法1：提取 player_aaaa 中的 "url"
-        val urlRegex = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"")
-        var match = urlRegex.find(scriptContent)
-        if (match != null) {
-            var videoUrl = match.groupValues[1]
-                .replace("\\/", "/")  // 反转义斜杠
-                .trim()
-            // URL 解码（防止百分号编码）
-            videoUrl = try {
-                java.net.URLDecoder.decode(videoUrl, "UTF-8")
-            } catch (_: Exception) {
-                videoUrl
-            }
-            if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
-                Log.d(logTag, "✅ 从 url 提取到播放地址: $videoUrl")
-                return videoUrl
-            } else {
-                Log.w(logTag, "提取到的 url 不是有效的 m3u8: $videoUrl")
-            }
-        }
-
-        // 方法2：尝试从 url_next 提取备用地址
-        val urlNextRegex = Regex("\"url_next\"\\s*:\\s*\"([^\"]+)\"")
-        match = urlNextRegex.find(scriptContent)
-        if (match != null) {
-            var videoUrl = match.groupValues[1]
-                .replace("\\/", "/")
-                .trim()
-            videoUrl = try {
-                java.net.URLDecoder.decode(videoUrl, "UTF-8")
-            } catch (_: Exception) {
-                videoUrl
-            }
-            if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
-                Log.d(logTag, "✅ 从 url_next 提取到备用地址: $videoUrl")
-                return videoUrl
-            }
-        }
-
-        // 方法3：直接搜索 .m3u8 链接（兜底方案）
-        val m3u8Regex = Regex("https?://[^\\s\"']+\\.m3u8[^\\s\"']*")
-        val m3u8Match = m3u8Regex.find(scriptContent)
-        if (m3u8Match != null) {
-            var videoUrl = m3u8Match.value.trim()
-            videoUrl = try {
-                java.net.URLDecoder.decode(videoUrl, "UTF-8")
-            } catch (_: Exception) {
-                videoUrl
-            }
-            Log.d(logTag, "✅ 从全局搜索提取到 m3u8: $videoUrl")
-            return videoUrl
-        }
-
-        Log.e(logTag, "❌ 未能提取到播放地址")
-        Log.d(logTag, "脚本片段预览: ${scriptContent.take(500)}")
-        return null
-    }
+    // ========== 播放地址提取：复用基类默认实现（含 \uXXXX 解码） ==========
 
     override fun parseSearchPage(doc: Document, keyword: String, page: Int): SearchPageResult {
         Log.d(logTag, "========== parseSearchPage 开始 ==========")

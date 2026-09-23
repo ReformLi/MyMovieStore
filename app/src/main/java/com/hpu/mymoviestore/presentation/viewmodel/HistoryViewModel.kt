@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
+import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
 import kotlinx.coroutines.launch
 
 /**
@@ -15,9 +15,7 @@ import kotlinx.coroutines.launch
  * - 写入/更新播放历史：addOrUpdateHistory(...)
  * - 清空：clearAllHistory()
  */
-class HistoryViewModel : ViewModel() {
-
-    private val repository = MovieApplication.get().playHistoryRepository
+class HistoryViewModel(private val repository: PlayHistoryRepository) : ViewModel() {
 
     fun getAllHistory(): LiveData<List<PlayHistoryEntity>> = repository.getAllHistory()
 

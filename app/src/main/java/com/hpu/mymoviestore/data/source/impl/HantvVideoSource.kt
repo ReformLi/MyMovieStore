@@ -196,6 +196,7 @@ class HantvVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             // URL 解码
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -215,6 +216,7 @@ class HantvVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (e: Exception) {
@@ -231,6 +233,7 @@ class HantvVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (e: Exception) {

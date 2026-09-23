@@ -21,6 +21,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 
 /**
  * 爬虫视频源抽象基类。
@@ -351,19 +353,101 @@ abstract class CrawlerVideoSource(
 
     /**
      * 从播放页脚本内容中提取真实视频地址。
+     *
+     * 通用实现：由 Cechi/Chongchong/BaJie/Dadatu/Nongming/NongminTv 六份
+     * 逐字相同的子类拷贝上提。依次尝试 player_aaaa 的 url / url_next 字段，
+     * 最后全局搜索 .m3u8 链接兜底；所有出口统一经 [decodeJsonEscapes] 解码
+     * JSON \uXXXX 转义（部分站点返回的 URL 含 \u5168\u96c6 之类的转义，
+     * 未解码直接请求会 404）。
      */
     protected open fun extractRealVideoUrl(scriptContent: String): String? {
-        // 优先提取 player_aaaa 中的 "url":"https://..."
-        val urlRegex = Regex("\"url\":\"([^\"]+)\"")
-        val videoUrl = urlRegex.find(scriptContent)
-            ?.groupValues
-            ?.get(1)
-            ?.replace("\\/", "/")
-        if (!videoUrl.isNullOrBlank()) return videoUrl
+        Log.d(logTag, "========== extractRealVideoUrl 开始 ==========")
 
-        // 备用方案：直接查找 .m3u8 链接
-        val m3u8Regex = Regex("https?://[^\"]+\\.m3u8[^\"']*")
-        return m3u8Regex.find(scriptContent)?.value?.replace("\\/", "/")
+        // 方法1：提取 player_aaaa 中的 "url"
+        val urlRegex = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"")
+        var match = urlRegex.find(scriptContent)
+        if (match != null) {
+            var videoUrl = match.groupValues[1]
+                .replace("\\/", "/")  // 反转义斜杠
+                .trim()
+            // 解码 \uXXXX unicode 转义（如 \u5168\u96c6 → 全集）
+            videoUrl = decodeJsonEscapes(videoUrl)
+            // URL 解码（防止百分号编码）
+            videoUrl = try {
+                java.net.URLDecoder.decode(videoUrl, "UTF-8")
+            } catch (_: Exception) {
+                videoUrl
+            }
+            if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
+                Log.d(logTag, "✅ 从 url 提取到播放地址: $videoUrl")
+                return videoUrl
+            } else {
+                Log.w(logTag, "提取到的 url 不是有效的 m3u8: $videoUrl")
+            }
+        }
+
+        // 方法2：尝试从 url_next 提取备用地址
+        val urlNextRegex = Regex("\"url_next\"\\s*:\\s*\"([^\"]+)\"")
+        match = urlNextRegex.find(scriptContent)
+        if (match != null) {
+            var videoUrl = match.groupValues[1]
+                .replace("\\/", "/")
+                .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
+            videoUrl = try {
+                java.net.URLDecoder.decode(videoUrl, "UTF-8")
+            } catch (_: Exception) {
+                videoUrl
+            }
+            if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
+                Log.d(logTag, "✅ 从 url_next 提取到备用地址: $videoUrl")
+                return videoUrl
+            }
+        }
+
+        // 方法3：直接搜索 .m3u8 链接（兜底方案）
+        val m3u8Regex = Regex("https?://[^\\s\"']+\\.m3u8[^\\s\"']*")
+        val m3u8Match = m3u8Regex.find(scriptContent)
+        if (m3u8Match != null) {
+            var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
+            videoUrl = try {
+                java.net.URLDecoder.decode(videoUrl, "UTF-8")
+            } catch (_: Exception) {
+                videoUrl
+            }
+            Log.d(logTag, "✅ 从全局搜索提取到 m3u8: $videoUrl")
+            return videoUrl
+        }
+
+        Log.e(logTag, "❌ 未能提取到播放地址")
+        Log.d(logTag, "脚本片段预览: ${scriptContent.take(500)}")
+        return null
+    }
+
+    /**
+     * 解码 JSON 字符串中的 \uXXXX unicode 转义（大写/小写 hex 均支持，
+     * 如 \u5168\u96c6 → 全集、\uFF0F → ／）。
+     *
+     * 只允许作用于最终提取出的播放地址，绝不能对整段 HTML 解码。
+     * 单遍 Matcher + appendReplacement：不含转义时原样返回同一实例，
+     * 零开销零影响；非法序列（不足 4 位 hex 等）不会被正则命中，
+     * 原样保留且不抛异常。
+     */
+    protected fun decodeJsonEscapes(url: String): String {
+        val matcher = JSON_UNICODE_ESCAPE.matcher(url)
+        if (!matcher.find()) return url
+        // 注意：minSdk 24，须用 StringBuffer 重载（StringBuilder 重载是 Java 9 / API 26 才有）
+        val sb = StringBuffer(url.length)
+        do {
+            val decoded = try {
+                String(Character.toChars(matcher.group(1).orEmpty().toInt(16)))
+            } catch (e: RuntimeException) {
+                matcher.group().orEmpty()  // 无法解码的非法序列原样保留
+            }
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(decoded))
+        } while (matcher.find())
+        return matcher.appendTail(sb).toString()
     }
 
     /**
@@ -538,6 +622,9 @@ abstract class CrawlerVideoSource(
     companion object {
         // 爬虫统一 User-Agent 已迁移至 HttpClientProvider.CRAWLER_USER_AGENT
         // （cf_clearance 与 UA 绑定，WebView 过盾与 OkHttp 请求必须一致）
+
+        /** JSON \uXXXX unicode 转义（严格 4 位 hex，大小写均支持），供 [decodeJsonEscapes] 使用 */
+        private val JSON_UNICODE_ESCAPE = Pattern.compile("\\\\u([0-9a-fA-F]{4})")
 
         /** 详情页解析出的首个播放页链接：等价于当前的剧集播放模板，缓存 1 天 */
         private const val cachePrefixFirstPlayPage = ":detail:first_play_page"

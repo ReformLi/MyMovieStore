@@ -13,6 +13,7 @@ import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.ViewModelProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayoutMediator
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.databinding.ActivityDownloadBinding
@@ -22,6 +23,7 @@ import com.hpu.mymoviestore.presentation.adapter.DownloadingAdapter
 import com.hpu.mymoviestore.presentation.dialog.ConfirmDialog
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 
 /**
@@ -88,7 +90,10 @@ class DownloadActivity : AppCompatActivity() {
         binding = ActivityDownloadBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        viewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
+        viewModel = ViewModelProvider(
+            this,
+            AppViewModelFactory(application as MovieApplication)
+        )[DownloadViewModel::class.java]
 
         setupToolbar()
         setupViewPager()

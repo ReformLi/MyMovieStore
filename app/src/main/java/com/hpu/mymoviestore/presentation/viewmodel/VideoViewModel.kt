@@ -5,10 +5,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.data.model.CrawlError
 import com.hpu.mymoviestore.data.model.SearchPageResult
 import com.hpu.mymoviestore.data.model.VideoItem
+import com.hpu.mymoviestore.data.repository.VideoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,9 +21,7 @@ import kotlinx.coroutines.withContext
  * - loadVideosByCategory(category) 按分类过滤
  * - getVideoById(id)       详情页异步获取单条视频
  */
-class VideoViewModel : ViewModel() {
-
-    private val repository = MovieApplication.get().videoRepository
+class VideoViewModel(private val repository: VideoRepository) : ViewModel() {
 
     private val _allVideos = MutableLiveData<List<VideoItem>>()
     val allVideos: LiveData<List<VideoItem>> = _allVideos

@@ -5,9 +5,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
 import com.hpu.mymoviestore.data.model.VideoItem
+import com.hpu.mymoviestore.data.repository.PlayHistoryRepository
+import com.hpu.mymoviestore.data.repository.VideoRepository
 import kotlinx.coroutines.launch
 
 /**
@@ -17,10 +18,10 @@ import kotlinx.coroutines.launch
  * - 启动播放器时去重写入播放历史
  * - 提供视频信息缓存
  */
-class PlayerViewModel : ViewModel() {
-
-    private val playHistoryRepository = MovieApplication.get().playHistoryRepository
-    private val videoRepository = MovieApplication.get().videoRepository
+class PlayerViewModel(
+    private val playHistoryRepository: PlayHistoryRepository,
+    private val videoRepository: VideoRepository
+) : ViewModel() {
 
     private val _videoUrl = MutableLiveData<String>()
     val videoUrl: LiveData<String> = _videoUrl

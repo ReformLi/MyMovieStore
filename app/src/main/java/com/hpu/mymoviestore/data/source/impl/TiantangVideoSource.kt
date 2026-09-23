@@ -173,6 +173,7 @@ class TiantangVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")  // 反转义斜杠
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             // 确保是有效的 m3u8 地址
             if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
                 Log.d(logTag, "✅ 从 player_aaaa.url 提取到地址: $videoUrl")
@@ -189,6 +190,7 @@ class TiantangVideoSource(
             var videoUrl = nextMatch.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             if (videoUrl.isNotBlank() && videoUrl.contains(".m3u8")) {
                 Log.d(logTag, "✅ 从 player_aaaa.url_next 提取到备用地址: $videoUrl")
                 return videoUrl
@@ -199,7 +201,7 @@ class TiantangVideoSource(
         val m3u8Regex = Regex("https?://[^\\s\"']+\\.m3u8[^\\s\"']*")
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
-            val videoUrl = m3u8Match.value.trim()
+            val videoUrl = decodeJsonEscapes(m3u8Match.value.trim())
             Log.d(logTag, "✅ 从全局搜索提取到 m3u8: $videoUrl")
             return videoUrl
         }

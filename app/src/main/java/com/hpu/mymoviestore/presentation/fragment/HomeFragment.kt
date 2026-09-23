@@ -15,6 +15,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.tabs.TabLayout
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.R
 import com.hpu.mymoviestore.data.model.VideoItem
 import com.hpu.mymoviestore.databinding.FragmentHomeBinding
@@ -22,6 +23,7 @@ import com.hpu.mymoviestore.presentation.activity.MainActivity
 import com.hpu.mymoviestore.presentation.adapter.VideoAdapter
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 
 /**
@@ -70,7 +72,10 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         Log.d(TAG, "HomeFragment onViewCreated")
 
-        viewModel = ViewModelProvider(this)[VideoViewModel::class.java]
+        viewModel = ViewModelProvider(
+            this,
+            AppViewModelFactory(requireActivity().application as MovieApplication)
+        )[VideoViewModel::class.java]
         adapter = VideoAdapter(
             onItemClick = { video -> openDetail(video) },
             onLoadMoreClick = {

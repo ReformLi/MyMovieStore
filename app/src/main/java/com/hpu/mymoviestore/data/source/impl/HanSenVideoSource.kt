@@ -341,6 +341,7 @@ class HanSenVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -359,6 +360,7 @@ class HanSenVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -377,6 +379,7 @@ class HanSenVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -393,6 +396,7 @@ class HanSenVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -443,6 +447,7 @@ class HanSenVideoSource(
                     val match = nowRegex.find(content)
                     if (match != null) {
                         var url = match.groupValues[1].replace("\\/", "/").trim()
+                        url = decodeJsonEscapes(url)
                         url = try { java.net.URLDecoder.decode(url, "UTF-8") } catch (_: Exception) { url }
                         if (url.isNotBlank() && url.contains(".m3u8")) {
                             videoUrl = url
@@ -455,6 +460,7 @@ class HanSenVideoSource(
                     val urlMatch = urlRegex.find(content)
                     if (urlMatch != null) {
                         var url = urlMatch.groupValues[1].replace("\\/", "/").trim()
+                        url = decodeJsonEscapes(url)
                         url = try { java.net.URLDecoder.decode(url, "UTF-8") } catch (_: Exception) { url }
                         if (url.isNotBlank() && url.contains(".m3u8")) {
                             videoUrl = url
@@ -467,6 +473,7 @@ class HanSenVideoSource(
                     val m3u8Match = m3u8Regex.find(content)
                     if (m3u8Match != null) {
                         var url = m3u8Match.value.trim()
+                        url = decodeJsonEscapes(url)
                         url = try { java.net.URLDecoder.decode(url, "UTF-8") } catch (_: Exception) { url }
                         if (url.isNotBlank() && url.contains(".m3u8")) {
                             videoUrl = url

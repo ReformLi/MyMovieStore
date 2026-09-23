@@ -268,7 +268,7 @@ class A38TvVideoSource(
             }
             if (!decoded.isNullOrBlank() && decoded.contains(".m3u8")) {
                 Log.d(logTag, "✅ 从 encodedVideo 解码到播放地址: $decoded")
-                return decoded
+                return decodeJsonEscapes(decoded)
             }
         }
 
@@ -277,7 +277,7 @@ class A38TvVideoSource(
         val match = urlRegex.find(scriptContent)
         if (match != null) {
             var videoUrl = match.groupValues[1].replace("\\/", "/").trim()
-            videoUrl = unescapeUnicode(videoUrl)
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -294,21 +294,12 @@ class A38TvVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             Log.d(logTag, "✅ 从全局搜索提取到 m3u8: ${m3u8Match.value}")
-            return m3u8Match.value
+            return decodeJsonEscapes(m3u8Match.value)
         }
 
         Log.e(logTag, "❌ 未能提取到播放地址")
         Log.d(logTag, "脚本片段预览: ${scriptContent.take(500)}")
         return null
-    }
-
-    /** 解码 Unicode 转义字符（备用） */
-    private fun unescapeUnicode(input: String): String {
-        val regex = Regex("\\\\u([0-9a-fA-F]{4})")
-        return regex.replace(input) { matchResult ->
-            val codePoint = matchResult.groupValues[1].toInt(16)
-            String(Character.toChars(codePoint))
-        }
     }
 
     override suspend fun fetchVideoUrlByPlayPageUrl(playPageUrl: String): Result<String> = withContext(

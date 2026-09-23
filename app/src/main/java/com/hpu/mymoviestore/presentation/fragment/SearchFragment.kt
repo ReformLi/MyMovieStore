@@ -40,6 +40,7 @@ import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.tv.TvInitialFocusProvider
 import com.hpu.mymoviestore.presentation.tv.TvSearchServer
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.SearchHistoryViewModel
 import com.hpu.mymoviestore.presentation.viewmodel.VideoViewModel
 import kotlinx.coroutines.Dispatchers
@@ -168,8 +169,9 @@ class SearchFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler {
         super.onViewCreated(view, savedInstanceState)
         Log.d(TAG, "SearchFragment onViewCreated (TV=$isTvMode)")
 
-        viewModel = ViewModelProvider(this)[VideoViewModel::class.java]
-        historyViewModel = ViewModelProvider(this)[SearchHistoryViewModel::class.java]
+        val viewModelFactory = AppViewModelFactory(requireActivity().application as MovieApplication)
+        viewModel = ViewModelProvider(this, viewModelFactory)[VideoViewModel::class.java]
+        historyViewModel = ViewModelProvider(this, viewModelFactory)[SearchHistoryViewModel::class.java]
         // 结果样式按形态分流，横屏那套网格不外溢到竖屏：
         // - 电视端：首页同款卡片（图片 + 标题 + 视频源，评分位置换成来源）+ 网格
         // - 手机端：9/11 基线的大卡片列表（海报 + 标题 + 类型/年份 + 主演 + 简介）

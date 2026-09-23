@@ -166,9 +166,19 @@ class ProfileFragment : Fragment(), TvInitialFocusProvider, TvContentKeyHandler 
     /** 深色：背景 movie_background + 太阳图标（点击切浅色）；浅色：movie_background_light + 月亮图标（点击切深色） */
     private fun applyThemeUi() {
         val light = ThemeManager.isLightMode(requireContext())
-        binding.ivHeaderBackground.setImageResource(
-            if (light) R.drawable.movie_background_light else R.drawable.movie_background
-        )
+        val isTv = TvUiSupport.isTelevision(requireContext())
+
+        if (isTv) {
+            // TV 端的图片
+            binding.ivHeaderBackground.setImageResource(
+                if (light) R.drawable.land_movie_background_light else R.drawable.land_movie_background
+            )
+        } else {
+            // 手机端的图片（你原来的代码）
+            binding.ivHeaderBackground.setImageResource(
+                if (light) R.drawable.movie_background_light else R.drawable.movie_background
+            )
+        }
         binding.btnThemeToggle.setImageResource(
             if (light) R.drawable.ic_theme_moon else R.drawable.ic_theme_sun
         )

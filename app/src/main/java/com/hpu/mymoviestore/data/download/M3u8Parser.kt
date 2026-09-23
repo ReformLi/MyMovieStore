@@ -43,6 +43,7 @@ class HlsEncryptionException(message: String) : Exception(message)
  * - 处理相对 URL（基于 m3u8 基础 URL）
  * - 处理多级 m3u8（master playlist -> media playlist）
  * - 解析 HLS 加密信息（AES-128 的 key URI 与 IV）
+ * - 按 #EXT-X-DISCONTINUITY 分组识别并丢弃片头广告（保守启发式）
  * - 返回 M3u8Playlist（分片列表 + 加密信息）
  */
 class M3u8Parser(
@@ -70,6 +71,15 @@ class M3u8Parser(
         /** 广告区间标记 */
         private const val CUE_OUT_TAG = "#EXT-X-CUE-OUT"
         private const val CUE_IN_TAG = "#EXT-X-CUE-IN"
+
+        /** PTS 不连续标记（广告拼接进 m3u8 的典型特征，用于把分片划分成组） */
+        private const val DISCONTINUITY_TAG = "#EXT-X-DISCONTINUITY"
+
+        /** 片头广告判定：第一组 EXTINF 时长累计上限（秒） */
+        private const val LEAD_AD_MAX_DURATION_SEC = 90.0
+
+        /** 片头广告判定：第一组时长占其余组总时长的比例上限 */
+        private const val LEAD_AD_MAX_RATIO = 0.1
 
         /** 广告分片 URL 特征关键词 */
         private val AD_URL_PATTERNS = listOf(
@@ -144,12 +154,12 @@ class M3u8Parser(
             }
             isMediaPlaylist -> {
                 Log.d(TAG, "检测到 Media Playlist，直接提取 ts 分片")
-                parseMediaPlaylist(lines, baseUrl)?.let { M3u8Playlist(it, encryption) }
+                parseMediaPlaylist(lines, baseUrl, encryption)?.let { M3u8Playlist(it, encryption) }
             }
             else -> {
                 // 尝试按 media playlist 解析（有些非标准 m3u8 可能没有 TARGETDURATION）
                 Log.d(TAG, "未检测到标准标记，尝试按 Media Playlist 解析")
-                parseMediaPlaylist(lines, baseUrl)?.let { M3u8Playlist(it, encryption) }
+                parseMediaPlaylist(lines, baseUrl, encryption)?.let { M3u8Playlist(it, encryption) }
             }
         }
     }
@@ -274,9 +284,14 @@ class M3u8Parser(
      * 广告检测策略：
      * 1. #EXT-X-CUE-OUT / #EXT-X-CUE-IN 区间内的分片全部跳过
      * 2. URL 包含广告关键词的分片跳过
+     * 3. 按 #EXT-X-DISCONTINUITY 把分片划分成组，若第一组是短小的片头广告
+     *    （时长累计 < 90 秒且 < 其余组总时长的 10%），整组丢弃
      */
-    private fun parseMediaPlaylist(lines: List<String>, baseUrl: String): List<String>? {
-        val segments = mutableListOf<String>()
+    private fun parseMediaPlaylist(lines: List<String>, baseUrl: String, encryption: HlsEncryption?): List<String>? {
+        // 第一遍：按 #EXT-X-DISCONTINUITY 把分片划分成组；
+        // 组内同时应用既有的 CUE-OUT 区间过滤与 URL 关键词过滤
+        val groups = mutableListOf<SegmentGroup>()
+        var current = SegmentGroup()
         var inCueOut = false
         var skippedAdCount = 0
 
@@ -292,6 +307,14 @@ class M3u8Parser(
                     Log.d(TAG, "检测到 #EXT-X-CUE-IN，退出广告区间，跳过 $skippedAdCount 个广告分片")
                     skippedAdCount = 0
                 }
+                line == DISCONTINUITY_TAG -> {
+                    // PTS 不连续（常见于拼接进来的广告）：开启新组；
+                    // 空组（分片已被上面的规则过滤光）不入列表
+                    if (current.segments.isNotEmpty()) {
+                        groups.add(current)
+                    }
+                    current = SegmentGroup()
+                }
                 line.startsWith(SEGMENT_TAG) -> {
                     if (i + 1 < lines.size) {
                         val nextLine = lines[i + 1]
@@ -303,16 +326,98 @@ class M3u8Parser(
                             continue
                         }
 
-                        segments.add(segmentUrl)
+                        current.segments.add(segmentUrl)
+                        val duration = parseExtinfDuration(line)
+                        if (duration != null) {
+                            current.durationSum += duration
+                        } else {
+                            current.hasDuration = false
+                        }
                     }
                 }
             }
         }
+        if (current.segments.isNotEmpty()) {
+            groups.add(current)
+        }
+
+        // 第二遍：片头广告判定（保守策略，宁可放过不可错杀）
+        val segments = filterLeadAdGroup(groups, encryption).flatMap { it.segments }
 
         if (skippedAdCount > 0) {
             Log.d(TAG, "广告过滤完成: 保留 ${segments.size} 个分片, 跳过 $skippedAdCount 个广告分片")
         }
         return if (segments.isNotEmpty()) segments else null
+    }
+
+    /**
+     * 片头广告启发式判定（保守策略，宁可放过不可错杀）。
+     *
+     * 仅当同时满足以下条件时，把第一组整组判定为片头广告并丢弃：
+     * 1. 存在 #EXT-X-DISCONTINUITY 分隔出的至少两组分片
+     * 2. 第一组与其余组的 EXTINF 时长信息均完整
+     * 3. 第一组 EXTINF 时长累计 < 90 秒，且 < 其余组总时长的 10%
+     * 4. 流未加密，或 AES-128 带显式 IV（默认 IV 取自分片序号，
+     *    丢弃片头会使后续分片解密错位，此时宁可保留）
+     *
+     * 其余情况（时长信息缺失 / 只有一组 / 第一组不短 / 加密流默认 IV）
+     * 一律原样保留全部分片。不做片尾与中插过滤：信息不足，误删正片风险大。
+     */
+    private fun filterLeadAdGroup(groups: List<SegmentGroup>, encryption: HlsEncryption?): List<SegmentGroup> {
+        if (groups.size < 2) return groups
+
+        val first = groups.first()
+        val rest = groups.drop(1)
+        val restDuration = rest.sumOf { it.durationSum }
+
+        // 时长信息缺失：无法判定，原样保留
+        if (!first.hasDuration || !rest.all { it.hasDuration }) {
+            Log.d(TAG, "EXTINF 时长信息不完整，跳过片头广告判定，保留全部分片")
+            return groups
+        }
+
+        // AES-128 无显式 IV：默认 IV 基于分片序号，丢弃片头会让后续分片 IV 错位、解密失败
+        if (encryption != null && encryption.iv == null) {
+            Log.d(TAG, "加密流使用分片序号默认 IV，跳过片头广告判定，保留全部分片")
+            return groups
+        }
+
+        // 第一组不短：疑似正片首段（多线路拼接等），原样保留
+        if (restDuration <= 0.0 || first.durationSum >= LEAD_AD_MAX_DURATION_SEC ||
+            first.durationSum >= restDuration * LEAD_AD_MAX_RATIO
+        ) {
+            Log.d(TAG, "第一组时长 ${first.durationSum} 秒 / 其余 ${restDuration} 秒，" +
+                    "不满足片头广告特征，保留全部分片")
+            return groups
+        }
+
+        Log.i(TAG, "检测到片头广告: 第一组 ${first.segments.size} 个分片共 ${first.durationSum} 秒 " +
+                "（其余分片共 ${restDuration} 秒），整组丢弃")
+        return rest
+    }
+
+    /**
+     * 从 #EXTINF 行解析分片时长（秒）。
+     * 格式：#EXTINF:<duration>[,<title>]
+     *
+     * @return 时长值；无法解析返回 null
+     */
+    private fun parseExtinfDuration(line: String): Double? {
+        return Regex("""#EXTINF:([0-9]+(?:\.[0-9]+)?)""").find(line)?.groupValues?.get(1)?.toDoubleOrNull()
+    }
+
+    /**
+     * 按 #EXT-X-DISCONTINUITY 划分出的分片组。
+     */
+    private class SegmentGroup {
+        /** 组内分片 URL（已应用 CUE-OUT 区间过滤与 URL 关键词过滤） */
+        val segments = mutableListOf<String>()
+
+        /** 组内 EXTINF 声明时长的累计（秒） */
+        var durationSum = 0.0
+
+        /** 组内所有 EXTINF 时长均可解析 */
+        var hasDuration = true
     }
 
     /**

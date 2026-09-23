@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.hpu.mymoviestore.MovieApplication
 import com.hpu.mymoviestore.data.entity.PlayHistoryEntity
 import com.hpu.mymoviestore.databinding.FragmentHistoryBinding
 import com.hpu.mymoviestore.presentation.activity.DetailActivity
@@ -17,6 +18,7 @@ import com.hpu.mymoviestore.presentation.adapter.HistoryAdapter
 import com.hpu.mymoviestore.presentation.dialog.ConfirmDialog
 import com.hpu.mymoviestore.presentation.tv.TvFocus
 import com.hpu.mymoviestore.presentation.tv.TvUiSupport
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.HistoryViewModel
 
 /**
@@ -56,7 +58,10 @@ class HistoryFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         Log.d(TAG, "HistoryFragment onViewCreated")
 
-        viewModel = ViewModelProvider(this)[HistoryViewModel::class.java]
+        viewModel = ViewModelProvider(
+            this,
+            AppViewModelFactory(requireActivity().application as MovieApplication)
+        )[HistoryViewModel::class.java]
         isTv = TvUiSupport.isTelevision(requireContext())
         adapter = HistoryAdapter(gridMode = isTv) { history -> openDetail(history) }
 

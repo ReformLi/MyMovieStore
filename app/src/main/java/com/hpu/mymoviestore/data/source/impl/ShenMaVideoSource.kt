@@ -278,6 +278,7 @@ class ShenMaVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")  // 将 \/ 转换为 /
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             // 部分 URL 可能被编码，尝试解码
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -295,6 +296,7 @@ class ShenMaVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {

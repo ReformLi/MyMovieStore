@@ -325,6 +325,7 @@ class ZaiXianVideoSource(
         var match = vidRegex.find(scriptContent)
         if (match != null) {
             var videoUrl = match.groupValues[1].trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -343,6 +344,7 @@ class ZaiXianVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -361,6 +363,7 @@ class ZaiXianVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {
@@ -377,6 +380,7 @@ class ZaiXianVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {

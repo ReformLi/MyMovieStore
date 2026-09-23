@@ -173,6 +173,7 @@ class DoujiaoVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")  // 反转义斜杠
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             // URL 解码（处理可能的百分号编码）
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -194,6 +195,7 @@ class DoujiaoVideoSource(
             var videoUrl = match.groupValues[1]
                 .replace("\\/", "/")
                 .trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (e: Exception) {
@@ -210,6 +212,7 @@ class DoujiaoVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (e: Exception) {

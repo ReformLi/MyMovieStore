@@ -33,6 +33,7 @@ import com.hpu.mymoviestore.data.model.PlayLine
 import com.hpu.mymoviestore.databinding.ActivityDetailBinding
 import com.hpu.mymoviestore.presentation.dialog.EpisodeSelectDialog
 import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.DownloadViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -198,7 +199,10 @@ class DetailActivity : AppCompatActivity() {
         binding.btnDownload.isEnabled = videoUrl.isNotEmpty() || playLines.isNotEmpty()
 
         // 初始化 DownloadViewModel
-        downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
+        downloadViewModel = ViewModelProvider(
+            this,
+            AppViewModelFactory(application as MovieApplication)
+        )[DownloadViewModel::class.java]
 
         // TV 适配：播放按钮自绘焦点框 + 获焦放大。
         // 播放/下载按钮是品牌橙底，焦点环须用白色变体 —— 橙环压在橙底上等于没有焦点框。
@@ -813,7 +817,7 @@ class DetailActivity : AppCompatActivity() {
 
         // 启动前台服务
         val serviceIntent = Intent(this, DownloadService::class.java)
-        startForegroundService(serviceIntent)
+        ContextCompat.startForegroundService(this, serviceIntent)
 
         val app = MovieApplication.get()
         val downloadEngine = DownloadEngine.getInstance(this)

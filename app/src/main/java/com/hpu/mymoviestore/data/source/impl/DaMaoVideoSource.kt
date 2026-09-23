@@ -343,8 +343,8 @@ class DaMaoVideoSource(
                 .replace("\\/", "/")  // 反转义斜杠
                 .trim()
 
-            // ===== 【新增】解码 Unicode 转义字符（如 \u5168\u96c6 → 全集） =====
-            videoUrl = unescapeUnicode(videoUrl)
+            // 解码 \uXXXX unicode 转义（如 \u5168\u96c6 → 全集）
+            videoUrl = decodeJsonEscapes(videoUrl)
 
             // URL 解码（防止百分号编码）
             videoUrl = try {
@@ -368,8 +368,7 @@ class DaMaoVideoSource(
                 .replace("\\/", "/")
                 .trim()
 
-            // ===== 【新增】解码 Unicode 转义字符 =====
-            videoUrl = unescapeUnicode(videoUrl)
+            videoUrl = decodeJsonEscapes(videoUrl)
 
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -388,8 +387,7 @@ class DaMaoVideoSource(
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
 
-            // ===== 【新增】解码 Unicode 转义字符（兜底方案也需要） =====
-            videoUrl = unescapeUnicode(videoUrl)
+            videoUrl = decodeJsonEscapes(videoUrl)
 
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -403,18 +401,5 @@ class DaMaoVideoSource(
         Log.e(logTag, "❌ 未能提取到播放地址")
         Log.d(logTag, "脚本片段预览: ${scriptContent.take(500)}")
         return null
-    }
-
-    /**
-     * 将字符串中的 Unicode 转义序列（如 \u5168\u96c6）转换为实际字符
-     * 例如：\u5168\u96c6 → 全集
-     */
-    private fun unescapeUnicode(input: String): String {
-        val regex = Regex("\\\\u([0-9a-fA-F]{4})")
-        return regex.replace(input) { matchResult ->
-            val hex = matchResult.groupValues[1]
-            val codePoint = hex.toInt(16)
-            String(Character.toChars(codePoint))
-        }
     }
 }

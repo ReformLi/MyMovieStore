@@ -46,6 +46,7 @@ import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import androidx.annotation.OptIn
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.lifecycleScope
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -62,6 +63,7 @@ import com.hpu.mymoviestore.databinding.ActivityPlayerBinding
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuManager
 import com.hpu.mymoviestore.presentation.danmaku.DanmakuPrefs
 import com.hpu.mymoviestore.presentation.tv.TvFocus
+import com.hpu.mymoviestore.presentation.viewmodel.AppViewModelFactory
 import com.hpu.mymoviestore.presentation.viewmodel.PlayerViewModel
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -364,6 +366,7 @@ class PlayerActivity : AppCompatActivity() {
      * 非 TV 端 callback 保持禁用，返回行为与系统默认一致。
      */
     private val tvBackCallback = object : OnBackPressedCallback(false) {
+        @OptIn(UnstableApi::class)
         override fun handleOnBackPressed() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
                 // PiP 下的返回维持系统默认行为（关闭画中画窗口）
@@ -543,7 +546,10 @@ class PlayerActivity : AppCompatActivity() {
 
         title = videoTitle
 
-        viewModel = ViewModelProvider(this)[PlayerViewModel::class.java]
+        viewModel = ViewModelProvider(
+            this,
+            AppViewModelFactory(application as MovieApplication)
+        )[PlayerViewModel::class.java]
         danmakuRepository = DanmakuRepository(context = this)
 
         setupPlayerUi()
@@ -984,6 +990,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // ================== UI 设置 ==================
 
+    @OptIn(UnstableApi::class)
     private fun setupPlayerUi() {
         binding.tvPlayerTitle.text = videoTitle.ifBlank { "正在播放" }
         val normalized = normalizeEpisodeTitle(episodeTitle)
@@ -1002,9 +1009,12 @@ class PlayerActivity : AppCompatActivity() {
                 Toast.makeText(this, "本设备不支持画中画", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            updatePiPParams()
-            runCatching { enterPictureInPictureMode() }
-                .onFailure { Log.w(TAG, "进入画中画失败: ${it.message}") }
+            // pipSupported 已含 API ≥ 26 前提；此版本判断仅为 lint 提供静态守卫，运行时恒真
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                updatePiPParams()
+                runCatching { enterPictureInPictureMode() }
+                    .onFailure { Log.w(TAG, "进入画中画失败: ${it.message}") }
+            }
         }
         binding.btnRotate.setOnClickListener {
             // 电视恒横屏，旋转没有意义（该按钮在电视端也已隐藏）
@@ -1447,6 +1457,10 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // PiP 参数构建内部全部为 API 26+ 调用（RemoteAction / PictureInPictureParams）。
+    // 运行时由 pipSupported（含 FEATURE_PICTURE_IN_PICTURE 判断，仅 API 26+ 可为 true）守卫，
+    // 此处 @RequiresApi 仅为 lint 提供静态版本声明，不改变任何执行路径。
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun updatePiPParams() {
         if (!pipSupported) return
         player?.let { p ->
@@ -1677,6 +1691,7 @@ class PlayerActivity : AppCompatActivity() {
      * - 30°~60° 模糊区继续等待轨迹明朗，避免斜向滑动被误判
      * - 累计超过 3 倍 touchSlop 仍处于模糊区（近似 45° 斜线）时按分量大小兜底
      */
+    @OptIn(UnstableApi::class)
     private fun tryLockGestureDirection(event: MotionEvent) {
         val totalDx = event.x - gestureStartX
         val totalDy = event.y - gestureStartY
@@ -2308,6 +2323,7 @@ class PlayerActivity : AppCompatActivity() {
      * 返回键（BACK）不在这里处理：targetSdk 36 起预测性返回下系统不再下发 BACK KeyEvent，
      * 返回逻辑统一挂在 OnBackPressedDispatcher（见 [tvBackCallback]）。
      */
+    @OptIn(UnstableApi::class)
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (!isTv) return super.dispatchKeyEvent(event)
         if (isScreenLocked) return super.dispatchKeyEvent(event)

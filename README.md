@@ -798,8 +798,6 @@ Release 包签名使用根目录的 `MovieStore_key.jks`（已 gitignore），**
 
 * 增加收藏功能。
 
-* 补齐电视端页面形态：`layout-land/` 目前仍缺 `activity_history.xml` / `activity_download.xml`（下载管理页在电视上仍为竖屏布局）。
-
 * 弹幕字号设置项（小 / 中 / 大）：当前字号按「设备 × 形态」自动分档，参数算得再准也不如让用户自己调，换设备或换视距都不必再改代码。
 
 ### 应用内更新：已确认暂缓的优化项

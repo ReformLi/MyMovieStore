@@ -332,6 +332,8 @@ class XingChenVideoSource(
                 .replace("\\/", "/")  // 反转义斜杠
                 .trim()
 
+            videoUrl = decodeJsonEscapes(videoUrl)
+
             // URL 解码（防止百分号编码）
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
@@ -352,6 +354,7 @@ class XingChenVideoSource(
         val m3u8Match = m3u8Regex.find(scriptContent)
         if (m3u8Match != null) {
             var videoUrl = m3u8Match.value.trim()
+            videoUrl = decodeJsonEscapes(videoUrl)
             videoUrl = try {
                 java.net.URLDecoder.decode(videoUrl, "UTF-8")
             } catch (_: Exception) {

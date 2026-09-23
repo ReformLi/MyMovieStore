@@ -57,9 +57,7 @@
         android:titleTextColor="@color/colorOnSurface"
         app:contentInsetStart="0dp"
         app:contentInsetEnd="0dp"
-        app:contentInsetStartWithNavigation="0dp"
-        android:paddingTop="16dp"
-    />
+        app:contentInsetStartWithNavigation="0dp" />
 
     <!-- 存储信息 + 标签页（合并成一行，省下一行高度给列表） -->
     <LinearLayout

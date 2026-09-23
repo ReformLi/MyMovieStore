@@ -2,6 +2,7 @@ package com.hpu.mymoviestore.presentation.viewmodel
 
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -15,6 +16,7 @@ import com.hpu.mymoviestore.data.download.DownloadService
 import com.hpu.mymoviestore.data.download.DownloadStatus
 import com.hpu.mymoviestore.data.entity.DownloadTaskEntity
 import com.hpu.mymoviestore.data.model.PlayEpisode
+import com.hpu.mymoviestore.data.repository.DownloadRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,16 +36,16 @@ import kotlinx.coroutines.launch
  * - pauseAll / resumeAll: 批量控制
  * - refreshStorageInfo: 刷新存储信息
  */
-class DownloadViewModel : ViewModel() {
+class DownloadViewModel(
+    private val app: MovieApplication,
+    private val repository: DownloadRepository
+) : ViewModel() {
 
     companion object {
         private const val TAG = "DownloadViewModel"
         /** 默认下载保存目录名 */
         private const val DEFAULT_SAVE_DIR = "downloads"
     }
-
-    private val repository = MovieApplication.get().downloadRepository
-    private val app = MovieApplication.get()
 
     // ======================== LiveData ========================
 
@@ -377,7 +379,6 @@ class DownloadViewModel : ViewModel() {
 
     /** 获取下载保存目录的绝对路径 */
     private fun getSaveDir(): String {
-        val app = MovieApplication.get()
         val dir = app.getExternalFilesDir(DEFAULT_SAVE_DIR)
         return dir?.absolutePath ?: app.filesDir.resolve(DEFAULT_SAVE_DIR).absolutePath
     }
