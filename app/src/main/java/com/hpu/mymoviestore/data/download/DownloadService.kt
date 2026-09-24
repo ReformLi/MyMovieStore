@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.hpu.mymoviestore.MovieApplication
 import kotlinx.coroutines.*
 
@@ -114,16 +115,19 @@ class DownloadService : Service() {
         ).apply { acquire(30 * 60 * 1000L) }
         Log.d(TAG, "已获取 PARTIAL_WAKE_LOCK")
 
-        // 注册广播接收器（暂停全部 / 继续全部），Android 14+ 需要指定 RECEIVER_NOT_EXPORTED
+        // 注册广播接收器（暂停全部 / 继续全部）：
+        // ContextCompat.registerReceiver 各版本自动附加 RECEIVER_NOT_EXPORTED
+        // （API 33+ 走系统 flag，低版本静默忽略），满足 Android 14 强制要求
         val filter = IntentFilter().apply {
             addAction(DownloadNotificationManager.ACTION_PAUSE_ALL)
             addAction(DownloadNotificationManager.ACTION_RESUME_ALL)
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(actionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(actionReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            actionReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // 启动进度刷新定时器
         startProgressUpdateLoop()

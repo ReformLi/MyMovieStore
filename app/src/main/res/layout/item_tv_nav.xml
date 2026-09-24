@@ -4,6 +4,7 @@
   图标 20dp + 文字 13sp，底部细指示条，视觉轻量。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="wrap_content"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -27,7 +28,7 @@
             android:layout_height="20dp"
             android:scaleType="fitCenter"
             android:layout_marginEnd="8dp"
-            android:tint="@color/colorOnSurfaceSecondary" />
+            app:tint="@color/colorOnSurfaceSecondary" />
 
         <TextView
             android:id="@+id/tvNavLabel"

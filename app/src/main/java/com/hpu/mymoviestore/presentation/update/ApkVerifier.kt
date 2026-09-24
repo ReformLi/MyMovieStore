@@ -132,9 +132,13 @@ object ApkVerifier {
                 info.signatures
             }
             if (signatures.isNullOrEmpty()) {
+                // 低版本（< API 28）PackageInfo 无 signingInfo 字段，条件拼接避免 NoSuchFieldError
+                val signingInfoDesc =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "signingInfo=${info.signingInfo != null}"
+                    else "signingInfo=legacy"
                 Log.w(
                     TAG,
-                    "APK 签名信息为空: ${apk.name}, signingInfo=${info.signingInfo != null}, " +
+                    "APK 签名信息为空: ${apk.name}, $signingInfoDesc, " +
                         "signatures=${info.signatures?.size}"
                 )
                 return null

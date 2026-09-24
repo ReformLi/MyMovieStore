@@ -439,7 +439,7 @@ class DownloadViewModel(
     private fun ensureDownloadServiceRunning() {
         try {
             val intent = Intent(app, DownloadService::class.java)
-            app.startForegroundService(intent)
+            ContextCompat.startForegroundService(app, intent)
             Log.d(TAG, "已启动 DownloadService")
         } catch (e: Exception) {
             Log.w(TAG, "启动 DownloadService 失败: ${e.message}")
